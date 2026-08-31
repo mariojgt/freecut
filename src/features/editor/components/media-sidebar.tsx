@@ -42,6 +42,7 @@ import {
 import { importTranscriptEditorPanel } from '@/features/editor/deps/timeline-panels'
 import { LottieBrowserPanel } from '@/features/editor/deps/lottie-browser'
 import { TransitionsPanel } from './transitions-panel'
+import { BlockLibraryPanel } from './block-library-panel'
 import {
   createDefaultGradientItem,
   createDefaultShapeItem,
@@ -431,8 +432,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
     const { tracks, fps, addItemOnNewTrack } = useTimelineStore.getState()
     const { activeTrackId, selectItems, setActiveTrack } = useSelectionStore.getState()
     const currentProject = useProjectStore.getState().currentProject
-    const activeCompositionId =
-      useCompositionNavigationStore.getState().activeCompositionId
+    const activeCompositionId = useCompositionNavigationStore.getState().activeCompositionId
     const activeComposition = activeCompositionId
       ? useCompositionsStore.getState().getComposition(activeCompositionId)
       : undefined
@@ -1014,6 +1014,10 @@ export const MediaSidebar = memo(function MediaSidebar() {
                     {t('editor.mediaSidebar.pen')}
                   </span>
                 </button>
+              </div>
+
+              <div className="mt-4">
+                <BlockLibraryPanel />
               </div>
             </div>
 

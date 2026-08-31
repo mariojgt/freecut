@@ -14,7 +14,19 @@
         "copied": "MCP config copied",
         "copyFailed": "Could not access the clipboard. Select and copy the JSON manually.",
         "capabilities": "The connection exposes project, media, timeline, inspection, frame-grab, and rendering tools. Edit previews are dry-run by default.",
-        "dockerNote": "The copied configuration connects to the Docker container named freecut-headless."
+        "dockerNote": "One command brings up the editor, the render API, and the MCP endpoint together, all with restart: unless-stopped — they come back after a crash or a reboot, so there is nothing to run again. Settings live in .env, so there are no flags or variables to retype.",
+        "directTitle": "Add FreeCut to your LLM",
+        "directHint": "Paste this into your client's MCP server configuration. Nothing to start first — the server brings the editing service up itself. Set the path to your checkout and workspace folder.",
+        "dockerTitle": "Or run the service in Docker",
+        "remoteTitle": "Or connect to a remote host",
+        "remoteHint": "Run the HTTP entry on the machine hosting FreeCut, then point your client at its URL — no local path involved. The Docker form keeps it running across crashes and reboots; it needs the automation profile and FREECUT_MCP_BIND=0.0.0.0, or the port stays on loopback and no other machine can reach it.",
+        "copyRemoteConfig": "Copy remote config",
+        "copyDockerConfig": "Copy Docker config",
+        "copyRemoteCommand": "Copy host command",
+        "copyRemoteDockerCommand": "Copy supervised host command",
+        "copyDockerCommand": "Copy Docker command",
+        "copyRemoteTokenConfig": "Copy remote config with token",
+        "remoteTokenHint": "The endpoint is open to anyone who can reach the port. To require a token, set FREECUT_MCP_TOKEN on the host and use this config instead."
       },
       "provider": {
         "label": "Model",
@@ -951,6 +963,13 @@
       "dockTitle": "Color",
       "emptyState": "Select a clip to grade",
       "adjustmentLayerLabel": "Grade"
+    },
+    "blockLibrary": {
+      "title": "Rigged blocks",
+      "insert": "Insert {{name}}",
+      "partCount_one": "{{count}} part",
+      "partCount_other": "{{count}} parts",
+      "showParts": "Show parts of {{name}}"
     }
   }
 }

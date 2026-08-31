@@ -14,7 +14,19 @@
         "copied": "Configuration MCP copiée",
         "copyFailed": "Impossible d’accéder au presse-papiers. Sélectionnez et copiez le JSON manuellement.",
         "capabilities": "La connexion fournit des outils pour les projets, médias, timelines, inspections, captures d’images et rendus. Les aperçus de montage sont simulés par défaut.",
-        "dockerNote": "La configuration copiée se connecte au conteneur Docker freecut-headless."
+        "dockerNote": "Une seule commande démarre l'éditeur, l'API de rendu et le point de terminaison MCP, tous en restart: unless-stopped — ils reviennent après un plantage ou un redémarrage, il n'y a donc rien à relancer. Les réglages sont dans .env, aucun drapeau ni variable à retaper.",
+        "directTitle": "Ajouter FreeCut à votre LLM",
+        "directHint": "Collez ceci dans la configuration des serveurs MCP de votre client. Rien à démarrer au préalable : le serveur lance lui-même le service d'édition. Indiquez les chemins de votre dépôt et de votre dossier de travail.",
+        "dockerTitle": "Ou exécuter le service dans Docker",
+        "remoteTitle": "Ou se connecter à un hôte distant",
+        "remoteHint": "Lancez le point d'entrée HTTP sur la machine qui héberge FreeCut, puis pointez votre client vers son URL — aucun chemin local. La variante Docker le maintient après un plantage ou un redémarrage ; elle exige le profil automation et FREECUT_MCP_BIND=0.0.0.0, sinon le port reste en loopback et aucune autre machine ne l'atteint.",
+        "copyRemoteConfig": "Copier la configuration distante",
+        "copyDockerConfig": "Copier la configuration Docker",
+        "copyRemoteCommand": "Copier la commande de l'hôte",
+        "copyRemoteDockerCommand": "Copier la commande d'hôte supervisée",
+        "copyDockerCommand": "Copier la commande Docker",
+        "copyRemoteTokenConfig": "Copier la configuration distante avec jeton",
+        "remoteTokenHint": "Le point de terminaison est ouvert à quiconque atteint le port. Pour exiger un jeton, définissez FREECUT_MCP_TOKEN sur l'hôte et utilisez plutôt cette configuration."
       },
       "provider": {
         "label": "Modèle",
@@ -949,6 +961,13 @@
     "colorPanel": {
       "emptyState": "Sélectionnez un clip à étalonner",
       "adjustmentLayerLabel": "Étalonnage"
+    },
+    "blockLibrary": {
+      "title": "Blocs riggés",
+      "insert": "Insérer {{name}}",
+      "partCount_one": "{{count}} partie",
+      "partCount_other": "{{count}} parties",
+      "showParts": "Afficher les parties de {{name}}"
     }
   }
 }

@@ -14,7 +14,19 @@
         "copied": "MCP-Konfiguration kopiert",
         "copyFailed": "Kein Zugriff auf die Zwischenablage. Wähle das JSON aus und kopiere es manuell.",
         "capabilities": "Die Verbindung stellt Werkzeuge für Projekte, Medien, Timeline, Inspektion, Einzelbilder und Rendering bereit. Bearbeitungsvorschauen sind standardmäßig Testläufe.",
-        "dockerNote": "Die kopierte Konfiguration verbindet sich mit dem Docker-Container freecut-headless."
+        "dockerNote": "Ein Befehl startet Editor, Render-API und MCP-Endpunkt zusammen, alle mit restart: unless-stopped — sie kommen nach Absturz oder Neustart zurück, es ist also nichts erneut auszuführen. Die Einstellungen stehen in .env, es gibt keine Flags oder Variablen zum Wiedereintippen.",
+        "directTitle": "FreeCut zu deinem LLM hinzufügen",
+        "directHint": "Füge dies in die MCP-Server-Konfiguration deines Clients ein. Nichts muss vorher gestartet werden — der Server startet den Bearbeitungsdienst selbst. Passe die Pfade zu deinem Checkout und Arbeitsordner an.",
+        "dockerTitle": "Oder den Dienst in Docker betreiben",
+        "remoteTitle": "Oder mit einem entfernten Host verbinden",
+        "remoteHint": "Starte den HTTP-Einstieg auf der Maschine, die FreeCut hostet, und richte deinen Client auf ihre URL — ganz ohne lokalen Pfad. Die Docker-Variante hält ihn über Abstürze und Neustarts am Laufen; sie braucht das automation-Profil und FREECUT_MCP_BIND=0.0.0.0, sonst bleibt der Port auf Loopback und keine andere Maschine erreicht ihn.",
+        "copyRemoteConfig": "Remote-Konfiguration kopieren",
+        "copyDockerConfig": "Docker-Konfiguration kopieren",
+        "copyRemoteCommand": "Host-Befehl kopieren",
+        "copyRemoteDockerCommand": "Überwachten Host-Befehl kopieren",
+        "copyDockerCommand": "Docker-Befehl kopieren",
+        "copyRemoteTokenConfig": "Remote-Konfiguration mit Token kopieren",
+        "remoteTokenHint": "Der Endpunkt ist für jeden offen, der den Port erreicht. Für ein Token setze FREECUT_MCP_TOKEN auf dem Host und nutze stattdessen diese Konfiguration."
       },
       "provider": {
         "label": "Modell",
@@ -949,6 +961,13 @@
     "colorPanel": {
       "emptyState": "Wähle einen Clip für die Farbkorrektur aus",
       "adjustmentLayerLabel": "Farbkorrektur"
+    },
+    "blockLibrary": {
+      "title": "Gerigte Blöcke",
+      "insert": "{{name}} einfügen",
+      "partCount_one": "{{count}} Teil",
+      "partCount_other": "{{count}} Teile",
+      "showParts": "Teile von {{name}} anzeigen"
     }
   }
 }

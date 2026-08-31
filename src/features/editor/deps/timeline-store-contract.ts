@@ -64,3 +64,8 @@ export {
   createMotionClip,
   openComposition,
 } from '@/features/timeline/stores/actions/composition-actions'
+export { insertBlock } from '@/features/timeline/stores/actions/block-actions'
+export type {
+  InsertBlockParams,
+  InsertBlockResult,
+} from '@/features/timeline/stores/actions/block-actions'

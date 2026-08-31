@@ -14,7 +14,19 @@
         "copied": "已复制 MCP 配置",
         "copyFailed": "无法访问剪贴板。请选中 JSON 并手动复制。",
         "capabilities": "该连接提供项目、媒体、时间线、检查、帧抓取和渲染工具。编辑预览默认采用试运行。",
-        "dockerNote": "复制的配置会连接名为 freecut-headless 的 Docker 容器。"
+        "dockerNote": "一条命令即可同时启动编辑器、渲染 API 和 MCP 端点，全部使用 restart: unless-stopped——崩溃或重启后都会自动恢复，无需再次运行任何东西。配置放在 .env 中，也没有需要重新输入的参数或变量。",
+        "directTitle": "将 FreeCut 添加到你的 LLM",
+        "directHint": "把这段配置粘贴到客户端的 MCP 服务器设置中。无需事先启动任何东西——服务器会自行拉起编辑服务。请填写你的代码库和工作区文件夹路径。",
+        "dockerTitle": "或在 Docker 中运行该服务",
+        "remoteTitle": "或连接到远程主机",
+        "remoteHint": "在托管 FreeCut 的机器上运行 HTTP 入口，然后让客户端指向它的 URL——无需本地路径。Docker 方式可在崩溃和重启后继续运行；它需要 automation profile 和 FREECUT_MCP_BIND=0.0.0.0，否则端口只留在回环地址，其他机器无法访问。",
+        "copyRemoteConfig": "复制远程配置",
+        "copyDockerConfig": "复制 Docker 配置",
+        "copyRemoteCommand": "复制主机命令",
+        "copyRemoteDockerCommand": "复制常驻主机命令",
+        "copyDockerCommand": "复制 Docker 命令",
+        "copyRemoteTokenConfig": "复制带令牌的远程配置",
+        "remoteTokenHint": "该端点对任何能访问该端口的人开放。若要求令牌，请在主机上设置 FREECUT_MCP_TOKEN 并改用此配置。"
       },
       "provider": {
         "label": "模型",
@@ -949,6 +961,13 @@
     "colorPanel": {
       "emptyState": "选择要调色的剪辑",
       "adjustmentLayerLabel": "调色"
+    },
+    "blockLibrary": {
+      "title": "绑定块",
+      "insert": "插入 {{name}}",
+      "partCount_one": "{{count}} 个部件",
+      "partCount_other": "{{count}} 个部件",
+      "showParts": "显示 {{name}} 的部件"
     }
   }
 }

@@ -14,7 +14,19 @@
         "copied": "MCP 設定をコピーしました",
         "copyFailed": "クリップボードにアクセスできませんでした。JSON を選択して手動でコピーしてください。",
         "capabilities": "プロジェクト、メディア、タイムライン、検査、フレーム取得、レンダリングの各ツールを利用できます。編集プレビューは既定でドライランです。",
-        "dockerNote": "コピーされる設定は freecut-headless という名前の Docker コンテナに接続します。"
+        "dockerNote": "1 つのコマンドでエディタ、レンダー API、MCP エンドポイントがまとめて起動します。いずれも restart: unless-stopped なのでクラッシュや再起動の後も復帰し、再実行するものはありません。設定は .env にあるため、打ち直すフラグや変数もありません。",
+        "directTitle": "LLM に FreeCut を追加",
+        "directHint": "クライアントの MCP サーバー設定にこれを貼り付けてください。事前に起動するものはありません — サーバーが編集サービスを自動的に立ち上げます。チェックアウトとワークスペースのパスを設定してください。",
+        "dockerTitle": "または Docker でサービスを実行",
+        "remoteTitle": "またはリモートホストに接続",
+        "remoteHint": "FreeCut をホストするマシンで HTTP エントリを起動し、クライアントをその URL に向けてください — ローカルパスは不要です。Docker 版はクラッシュや再起動をまたいで動き続けます。automation プロファイルと FREECUT_MCP_BIND=0.0.0.0 が必要で、指定しないとポートはループバックのままで他のマシンからは届きません。",
+        "copyRemoteConfig": "リモート設定をコピー",
+        "copyDockerConfig": "Docker 設定をコピー",
+        "copyRemoteCommand": "ホストのコマンドをコピー",
+        "copyRemoteDockerCommand": "常駐ホストのコマンドをコピー",
+        "copyDockerCommand": "Docker コマンドをコピー",
+        "copyRemoteTokenConfig": "トークン付きリモート設定をコピー",
+        "remoteTokenHint": "このエンドポイントはポートに到達できる誰にでも開かれています。トークンを必須にするにはホストで FREECUT_MCP_TOKEN を設定し、こちらの設定を使ってください。"
       },
       "provider": {
         "label": "モデル",
@@ -949,6 +961,13 @@
     "colorPanel": {
       "emptyState": "グレーディングするクリップを選択してください",
       "adjustmentLayerLabel": "グレーディング"
+    },
+    "blockLibrary": {
+      "title": "リグ付きブロック",
+      "insert": "{{name}} を挿入",
+      "partCount_one": "{{count}} パーツ",
+      "partCount_other": "{{count}} パーツ",
+      "showParts": "{{name}} のパーツを表示"
     }
   }
 }

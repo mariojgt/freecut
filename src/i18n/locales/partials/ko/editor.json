@@ -14,7 +14,19 @@
         "copied": "MCP 설정을 복사했습니다",
         "copyFailed": "클립보드에 접근할 수 없습니다. JSON을 선택하여 직접 복사하세요.",
         "capabilities": "프로젝트, 미디어, 타임라인, 검사, 프레임 캡처 및 렌더링 도구를 제공합니다. 편집 미리보기는 기본적으로 시험 실행입니다.",
-        "dockerNote": "복사한 설정은 freecut-headless라는 Docker 컨테이너에 연결됩니다."
+        "dockerNote": "명령 하나로 에디터, 렌더 API, MCP 엔드포인트가 함께 올라옵니다. 모두 restart: unless-stopped라 크래시나 재부팅 후에도 돌아오므로 다시 실행할 것이 없습니다. 설정은 .env에 있어 다시 입력할 플래그나 변수도 없습니다.",
+        "directTitle": "LLM에 FreeCut 추가",
+        "directHint": "클라이언트의 MCP 서버 설정에 붙여넣으세요. 미리 실행할 것은 없습니다 — 서버가 편집 서비스를 직접 시작합니다. 체크아웃과 작업 폴더 경로를 설정하세요.",
+        "dockerTitle": "또는 Docker로 서비스 실행",
+        "remoteTitle": "또는 원격 호스트에 연결",
+        "remoteHint": "FreeCut을 호스팅하는 머신에서 HTTP 진입점을 실행한 뒤 클라이언트를 그 URL로 연결하세요 — 로컬 경로가 필요 없습니다. Docker 방식은 크래시와 재부팅을 넘어 계속 실행됩니다. automation 프로파일과 FREECUT_MCP_BIND=0.0.0.0이 필요하며, 없으면 포트가 루프백에 머물러 다른 머신에서 접근할 수 없습니다.",
+        "copyRemoteConfig": "원격 설정 복사",
+        "copyDockerConfig": "Docker 설정 복사",
+        "copyRemoteCommand": "호스트 명령 복사",
+        "copyRemoteDockerCommand": "상시 실행 호스트 명령 복사",
+        "copyDockerCommand": "Docker 명령 복사",
+        "copyRemoteTokenConfig": "토큰 포함 원격 설정 복사",
+        "remoteTokenHint": "이 엔드포인트는 포트에 접근할 수 있는 누구에게나 열려 있습니다. 토큰을 요구하려면 호스트에 FREECUT_MCP_TOKEN을 설정하고 이 설정을 사용하세요."
       },
       "provider": {
         "label": "모델",
@@ -949,6 +961,13 @@
     "colorPanel": {
       "emptyState": "색 보정할 클립을 선택하세요",
       "adjustmentLayerLabel": "색 보정"
+    },
+    "blockLibrary": {
+      "title": "리그 블록",
+      "insert": "{{name}} 삽입",
+      "partCount_one": "{{count}}개 파트",
+      "partCount_other": "{{count}}개 파트",
+      "showParts": "{{name}}의 파트 표시"
     }
   }
 }

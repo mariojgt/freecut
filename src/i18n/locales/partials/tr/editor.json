@@ -14,7 +14,19 @@
         "copied": "MCP yapılandırması kopyalandı",
         "copyFailed": "Panoya erişilemedi. JSON'u seçip elle kopyalayın.",
         "capabilities": "Bağlantı; proje, medya, zaman çizelgesi, inceleme, kare yakalama ve işleme araçlarını sunar. Düzenleme önizlemeleri varsayılan olarak deneme çalışmasıdır.",
-        "dockerNote": "Kopyalanan yapılandırma freecut-headless adlı Docker konteynerine bağlanır."
+        "dockerNote": "Tek komut editörü, render API'sini ve MCP uç noktasını birlikte ayağa kaldırır; hepsi restart: unless-stopped olduğundan çökme veya yeniden başlatma sonrası geri gelir, tekrar çalıştırılacak bir şey kalmaz. Ayarlar .env içinde durur, yeniden yazılacak bayrak veya değişken yoktur.",
+        "directTitle": "LLM'ine FreeCut ekle",
+        "directHint": "Bunu istemcinin MCP sunucu yapılandırmasına yapıştır. Önceden başlatılacak bir şey yok — sunucu düzenleme servisini kendisi ayağa kaldırır. Depo ve çalışma klasörü yollarını ayarla.",
+        "dockerTitle": "Ya da servisi Docker'da çalıştır",
+        "remoteTitle": "Ya da uzak bir sunucuya bağlan",
+        "remoteHint": "HTTP girişini FreeCut'ı barındıran makinede çalıştır ve istemcini onun URL'sine yönlendir — yerel yol gerekmez. Docker biçimi çökme ve yeniden başlatmalar boyunca çalışır durumda tutar; automation profilini ve FREECUT_MCP_BIND=0.0.0.0 değerini ister, aksi halde port loopback'te kalır ve başka hiçbir makine erişemez.",
+        "copyRemoteConfig": "Uzak yapılandırmayı kopyala",
+        "copyDockerConfig": "Docker yapılandırmasını kopyala",
+        "copyRemoteCommand": "Sunucu komutunu kopyala",
+        "copyRemoteDockerCommand": "Gözetimli sunucu komutunu kopyala",
+        "copyDockerCommand": "Docker komutunu kopyala",
+        "copyRemoteTokenConfig": "Token'lı uzak yapılandırmayı kopyala",
+        "remoteTokenHint": "Uç nokta, porta erişebilen herkese açıktır. Token zorunlu kılmak için sunucuda FREECUT_MCP_TOKEN ayarla ve bunun yerine bu yapılandırmayı kullan."
       },
       "provider": {
         "label": "Model",
@@ -949,6 +961,13 @@
     "colorPanel": {
       "emptyState": "Renk düzenlemek için bir klip seçin",
       "adjustmentLayerLabel": "Renk düzenleme"
+    },
+    "blockLibrary": {
+      "title": "Rigli bloklar",
+      "insert": "{{name}} ekle",
+      "partCount_one": "{{count}} parça",
+      "partCount_other": "{{count}} parça",
+      "showParts": "{{name}} parçalarını göster"
     }
   }
 }

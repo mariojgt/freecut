@@ -14,7 +14,19 @@
         "copied": "Configuração MCP copiada",
         "copyFailed": "Não foi possível acessar a área de transferência. Selecione e copie o JSON manualmente.",
         "capabilities": "A conexão oferece ferramentas de projeto, mídia, timeline, inspeção, captura de quadros e renderização. As prévias de edição são simulações por padrão.",
-        "dockerNote": "A configuração copiada se conecta ao contêiner Docker freecut-headless."
+        "dockerNote": "Um comando sobe o editor, a API de render e o endpoint MCP juntos, todos com restart: unless-stopped — eles voltam após uma falha ou reinicialização, então não há nada para executar de novo. As configurações ficam no .env, sem flags nem variáveis para redigitar.",
+        "directTitle": "Adicione o FreeCut ao seu LLM",
+        "directHint": "Cole isto na configuração de servidores MCP do seu cliente. Não há nada para iniciar antes — o servidor sobe o serviço de edição sozinho. Ajuste os caminhos do seu checkout e da pasta de trabalho.",
+        "dockerTitle": "Ou execute o serviço no Docker",
+        "remoteTitle": "Ou conecte-se a um host remoto",
+        "remoteHint": "Execute a entrada HTTP na máquina que hospeda o FreeCut e aponte seu cliente para a URL dela — sem caminho local. A forma com Docker a mantém rodando após falhas e reinicializações; ela exige o perfil automation e FREECUT_MCP_BIND=0.0.0.0, ou a porta fica em loopback e nenhuma outra máquina alcança.",
+        "copyRemoteConfig": "Copiar configuração remota",
+        "copyDockerConfig": "Copiar configuração do Docker",
+        "copyRemoteCommand": "Copiar comando do host",
+        "copyRemoteDockerCommand": "Copiar comando de host supervisionado",
+        "copyDockerCommand": "Copiar comando do Docker",
+        "copyRemoteTokenConfig": "Copiar configuração remota com token",
+        "remoteTokenHint": "O endpoint está aberto a qualquer um que alcance a porta. Para exigir um token, defina FREECUT_MCP_TOKEN no host e use esta configuração."
       },
       "provider": {
         "label": "Modelo",
@@ -949,6 +961,13 @@
     "colorPanel": {
       "emptyState": "Selecione um clipe para corrigir as cores",
       "adjustmentLayerLabel": "Correção de cor"
+    },
+    "blockLibrary": {
+      "title": "Blocos com rig",
+      "insert": "Inserir {{name}}",
+      "partCount_one": "{{count}} parte",
+      "partCount_other": "{{count}} partes",
+      "showParts": "Mostrar partes de {{name}}"
     }
   }
 }

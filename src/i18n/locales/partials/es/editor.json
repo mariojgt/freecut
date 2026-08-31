@@ -14,7 +14,19 @@
         "copied": "Configuración MCP copiada",
         "copyFailed": "No se pudo acceder al portapapeles. Selecciona y copia el JSON manualmente.",
         "capabilities": "La conexión ofrece herramientas de proyectos, medios, línea de tiempo, inspección, captura de fotogramas y renderizado. Las vistas previas de edición son simulaciones de forma predeterminada.",
-        "dockerNote": "La configuración copiada se conecta al contenedor Docker freecut-headless."
+        "dockerNote": "Un solo comando levanta el editor, la API de render y el endpoint MCP juntos, todos con restart: unless-stopped: vuelven tras un fallo o un reinicio, así que no hay nada que volver a ejecutar. Los ajustes están en .env, sin flags ni variables que reescribir.",
+        "directTitle": "Añade FreeCut a tu LLM",
+        "directHint": "Pega esto en la configuración de servidores MCP de tu cliente. No hay que iniciar nada antes: el servidor levanta el servicio de edición por sí mismo. Ajusta las rutas a tu copia del repositorio y a tu carpeta de trabajo.",
+        "dockerTitle": "O ejecuta el servicio en Docker",
+        "remoteTitle": "O conéctate a un host remoto",
+        "remoteHint": "Ejecuta el punto de entrada HTTP en la máquina que aloja FreeCut y apunta tu cliente a su URL: sin rutas locales. La variante Docker lo mantiene vivo tras fallos y reinicios; necesita el perfil automation y FREECUT_MCP_BIND=0.0.0.0, o el puerto se queda en loopback y ninguna otra máquina llega.",
+        "copyRemoteConfig": "Copiar configuración remota",
+        "copyDockerConfig": "Copiar configuración de Docker",
+        "copyRemoteCommand": "Copiar comando del host",
+        "copyRemoteDockerCommand": "Copiar comando de host supervisado",
+        "copyDockerCommand": "Copiar comando de Docker",
+        "copyRemoteTokenConfig": "Copiar configuración remota con token",
+        "remoteTokenHint": "El endpoint está abierto a cualquiera que alcance el puerto. Para exigir un token, define FREECUT_MCP_TOKEN en el host y usa esta configuración."
       },
       "provider": {
         "label": "Modelo",
@@ -949,6 +961,13 @@
     "colorPanel": {
       "emptyState": "Selecciona un clip para etalonar",
       "adjustmentLayerLabel": "Etalonaje"
+    },
+    "blockLibrary": {
+      "title": "Bloques con rig",
+      "insert": "Insertar {{name}}",
+      "partCount_one": "{{count}} parte",
+      "partCount_other": "{{count}} partes",
+      "showParts": "Mostrar partes de {{name}}"
     }
   }
 }
