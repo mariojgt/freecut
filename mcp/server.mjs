@@ -6,6 +6,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import * as z from 'zod/v4'
 import { FreeCutApiClient } from './freecut-api-client.mjs'
+import { ApiSupervisor } from './api-autostart.mjs'
 
 const projectId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/)
 const revision = z.string().regex(/^sha256:[0-9a-f]{64}$/)
@@ -63,6 +64,21 @@ export function createFreeCutMcpServer(options = {}) {
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async () => success(await api.requestJson('/v1/capabilities')),
+  )
+
+  registerTool(
+    server,
+    'list_blocks',
+    {
+      title: 'List rigged blocks',
+      description:
+        'List the committed illustration blocks an animation can be built from — their parts, ' +
+        'named slots, and the gestures each rig can perform. Call this before addBlock so you ' +
+        'choose parts and gestures that exist; blocks cannot be authored, only selected.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async () => success(await api.requestJson('/v1/blocks')),
   )
 
   registerTool(
@@ -306,6 +322,11 @@ const isEntrypoint =
   import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
 
 if (isEntrypoint) {
+  // Bring the API up before serving, so the first tool call does not fail while
+  // a cold Chrome and a dist/ build are still coming online.
+  const supervisor = new ApiSupervisor()
+  await supervisor.ensure()
+
   serveStdio(() => createFreeCutMcpServer(), {
     onerror: (error) => console.error('[freecut-mcp]', error.message),
   })

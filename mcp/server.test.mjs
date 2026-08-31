@@ -57,6 +57,7 @@ test('MCP server lists the full editing tool surface and calls the headless API'
   const names = listed.result.tools.map((tool) => tool.name)
   assert.deepEqual(names, [
     'get_capabilities',
+    'list_blocks',
     'list_projects',
     'get_project',
     'create_project',
