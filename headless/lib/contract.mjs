@@ -28,6 +28,14 @@ const projectFrameFields = {
 const hasExactlyOneProjectSource = (value) =>
   Boolean(value.project) !== Boolean(value.projectObject)
 
+// Mirrors src/shared/graphics/blocks/registry.ts. The catalog is the boundary
+// that keeps generated animation on-style, so an unknown id is refused at the
+// wire rather than producing an empty scene. Kept in sync by
+// src/shared/graphics/blocks/catalog-contract.test.ts.
+const BLOCK_IDS = ['character-astronaut', 'world-moon-surface']
+const GESTURE_IDS = ['walk', 'idle-breath', 'wave', 'parallax-pan', 'star-drift']
+const SCENE_PALETTE_IDS = ['brand', 'deep-space']
+
 const GPU_EFFECT_TYPES = [
   'gpu-ascii',
   'gpu-block-glitch',
@@ -289,6 +297,74 @@ const opSchemas = [
   z.object({ op: z.literal('removeEffect'), itemId: id, effectId: id }).strict(),
   z
     .object({
+      op: z.literal('addBlock'),
+      blockId: z.enum(BLOCK_IDS),
+      from: frame.optional(),
+      durationInFrames: positiveFrames.optional(),
+      x: finite.optional(),
+      y: finite.optional(),
+      scale: finite.positive().optional(),
+      palette: z.enum(SCENE_PALETTE_IDS).optional(),
+      idPrefix: id.optional(),
+      gestures: z
+        .array(
+          z
+            .object({
+              id: z.enum(GESTURE_IDS),
+              cycles: z.number().int().positive().optional(),
+              intensity: finite.nonnegative().optional(),
+              startFrame: frame.optional(),
+            })
+            .strict(),
+        )
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('applyGesture'),
+      idPrefix: id,
+      gestureId: z.enum(GESTURE_IDS),
+      durationInFrames: positiveFrames.optional(),
+      cycles: z.number().int().positive().optional(),
+      intensity: finite.nonnegative().optional(),
+      startFrame: frame.optional(),
+      scale: finite.positive().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('importSvg'),
+      source: z.string().min(1).max(4_000_000),
+      name: z.string().min(1).optional(),
+      from: frame.optional(),
+      durationInFrames: positiveFrames.optional(),
+      x: finite.optional(),
+      y: finite.optional(),
+      scale: finite.positive().optional(),
+      /** Contain-fit the document into a square of this size, overriding scale. */
+      size: finite.positive().optional(),
+      idPrefix: id.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('morphPath'),
+      itemId: id,
+      fromFrame: frame,
+      toFrame: frame,
+      targetItemId: id.optional(),
+      targetPathData: z.string().min(1).optional(),
+      easing: easing.optional(),
+    })
+    .strict()
+    .refine(
+      (value) => Boolean(value.targetItemId) !== Boolean(value.targetPathData),
+      'provide exactly one of targetItemId or targetPathData',
+    )
+    .refine((value) => value.toFrame !== value.fromFrame, 'toFrame must differ from fromFrame'),
+  z
+    .object({
       op: z.literal('setTransform'),
       id,
       transform: transform.refine(
@@ -319,6 +395,10 @@ export const EDIT_OPERATION_NAMES = [
   'addEffect',
   'removeEffect',
   'setTransform',
+  'addBlock',
+  'applyGesture',
+  'importSvg',
+  'morphPath',
 ]
 const EDIT_OPERATION_DESCRIPTIONS = Object.fromEntries(
   EDIT_OPERATION_NAMES.map((name) => [name, samplesDescription(name)]),
@@ -345,6 +425,10 @@ function samplesDescription(name) {
     addEffect: 'Add a registered GPU effect',
     removeEffect: 'Remove an existing item effect',
     setTransform: 'Update an item transform',
+    addBlock: `Add a rigged illustration block (${BLOCK_IDS.join(', ')}) with optional gestures (${GESTURE_IDS.join(', ')})`,
+    applyGesture: 'Bake a gesture onto an existing block instance by its id prefix',
+    importSvg: 'Import SVG source as editable path shapes, one per contour',
+    morphPath: 'Animate a path shape into another outline between two frames',
   }
   return descriptions[name]
 }
@@ -679,6 +763,7 @@ export function capabilities() {
     lifecycle: {
       routes: [
         'GET /v1/capabilities',
+        'GET /v1/blocks',
         'POST /v1/projects',
         'GET /v1/projects',
         'GET /v1/projects/:id',

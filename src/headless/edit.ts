@@ -33,6 +33,14 @@ import { useTransitionsStore } from '@/features/timeline/stores/transitions-stor
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { createClassicTrack } from '@/features/timeline/utils/classic-tracks'
+import { getBlock, getGesture } from '@/shared/graphics/blocks/registry'
+import { instantiateBlock } from '@/shared/graphics/blocks/instantiate'
+import { bakeGesture } from '@/shared/graphics/blocks/gesture-bake'
+import { SCENE_PALETTES, DEFAULT_SCENE_PALETTE } from '@/shared/graphics/blocks/scene-palette'
+import { importSvgSource } from '@/shared/graphics/shapes/svg-document-import'
+import { parseSvgPathToVertices } from '@/shared/graphics/shapes/svg-path-parse'
+import { preparePathMorph, pathVertexComponents } from '@/shared/graphics/shapes/path-morph'
+import { buildPathVertexAnimatableProperty } from '@/types/keyframe'
 import { seedMediaLibrary } from './seed-media'
 import {
   addItem,
@@ -78,6 +86,10 @@ export type EditOperationName =
   | 'addEffect'
   | 'removeEffect'
   | 'setTransform'
+  | 'addBlock'
+  | 'applyGesture'
+  | 'importSvg'
+  | 'morphPath'
 
 /** A wire operation. Node validates its discriminator and fields before this browser boundary. */
 export type EditOp = Record<string, unknown> & { op: EditOperationName }
@@ -290,6 +302,45 @@ function buildTextItem(op: EditOp): TextItem {
 }
 
 /** Apply a single op by driving the real timeline action modules. Throws on bad input. */
+interface KeyframeLane {
+  itemId: string
+  properties: Array<{
+    property: string
+    keyframes: Array<{ frame: number; value: number; easing?: EasingType }>
+  }>
+}
+
+/** Flatten instantiation keyframes into the batch action's payload shape. */
+function keyframePayloads(lanes: KeyframeLane[]) {
+  return lanes.flatMap((lane) =>
+    lane.properties.flatMap((entry) =>
+      entry.keyframes.map((keyframe) => ({
+        itemId: lane.itemId,
+        property: entry.property as AnimatableProperty,
+        frame: keyframe.frame,
+        value: keyframe.value,
+        ...(keyframe.easing ? { easing: keyframe.easing } : {}),
+      })),
+    ),
+  )
+}
+
+/**
+ * Append tracks above existing content.
+ *
+ * Lower order renders in front, so a new block claims the orders immediately
+ * above whatever is already on the timeline rather than landing behind it.
+ */
+function appendTracksOnTop(incoming: TimelineTrack[]): void {
+  const existing = tracks()
+  setTracks([...existing, ...incoming.map((track) => ({ ...track, items: [] }))])
+}
+
+function nextBlockTrackOrder(count: number): number {
+  const orders = tracks().map((track) => track.order)
+  return Math.min(0, ...orders) - count - 1
+}
+
 function applyOp(op: EditOp): unknown {
   switch (op.op) {
     case 'addText': {
@@ -623,6 +674,288 @@ function applyOp(op: EditOp): unknown {
       }
       removeEffect(itemId, effectId)
       return { itemId, effectId }
+    }
+    case 'addBlock': {
+      const blockId = asString(op.blockId)
+      if (!blockId) throw new Error('addBlock requires `blockId`')
+      const block = getBlock(blockId)
+      if (!block) throw new Error(`addBlock: unknown block "${blockId}"`)
+
+      const requested = Array.isArray(op.gestures) ? op.gestures : []
+      const gestures = requested.map((entry) => {
+        const record = (entry ?? {}) as Record<string, unknown>
+        const gestureId = asString(record.id)
+        const gesture = gestureId ? getGesture(gestureId) : undefined
+        if (!gesture) throw new Error(`addBlock: unknown gesture "${gestureId ?? ''}"`)
+        return {
+          gesture,
+          ...(asNumber(record.cycles) !== undefined && { cycles: asNumber(record.cycles)! }),
+          ...(asNumber(record.intensity) !== undefined && {
+            intensity: asNumber(record.intensity)!,
+          }),
+          ...(asNumber(record.startFrame) !== undefined && {
+            startFrame: asNumber(record.startFrame)!,
+          }),
+        }
+      })
+
+      const paletteName = asString(op.palette)
+      const idPrefix = asString(op.idPrefix) ?? `${blockId}-${newId()}`
+      const result = instantiateBlock({
+        block,
+        palette: (paletteName ? SCENE_PALETTES[paletteName] : undefined) ?? DEFAULT_SCENE_PALETTE,
+        from: asNumber(op.from, 0)!,
+        durationInFrames: asNumber(op.durationInFrames, 150)!,
+        placement: {
+          x: asNumber(op.x, 0)!,
+          y: asNumber(op.y, 0)!,
+          scale: asNumber(op.scale, 1)!,
+        },
+        gestures,
+        baseTrackOrder: nextBlockTrackOrder(block.parts.length),
+        idPrefix,
+      })
+
+      appendTracksOnTop(result.tracks)
+      for (const item of result.items) addItem(item)
+      addKeyframes(keyframePayloads(result.keyframes))
+      return {
+        idPrefix,
+        items: result.items.length,
+        tracks: result.tracks.length,
+        skipped: result.skipped,
+      }
+    }
+    case 'applyGesture': {
+      const idPrefix = asString(op.idPrefix)
+      const gestureId = asString(op.gestureId)
+      if (!idPrefix || !gestureId) {
+        throw new Error('applyGesture requires `idPrefix` and `gestureId`')
+      }
+      const gesture = getGesture(gestureId)
+      if (!gesture) throw new Error(`applyGesture: unknown gesture "${gestureId}"`)
+
+      // Positional contributions are authored in block units, so the caller
+      // restates the scale it placed the block at; rotation and opacity do not
+      // depend on it.
+      const scale = asNumber(op.scale, 1)!
+      const all = tracks().flatMap((track) => track.items)
+      const owned = new Map(
+        all
+          .filter((item) => item.id.startsWith(`${idPrefix}-`))
+          .map((item) => [item.id.slice(idPrefix.length + 1), item]),
+      )
+      if (owned.size === 0) throw new Error(`applyGesture: no items with prefix "${idPrefix}"`)
+
+      const anchor = [...owned.values()][0]!
+      const baked = bakeGesture(gesture, {
+        durationInFrames: asNumber(op.durationInFrames, anchor.durationInFrames)!,
+        ...(asNumber(op.cycles) !== undefined && { cycles: asNumber(op.cycles)! }),
+        ...(asNumber(op.intensity) !== undefined && { intensity: asNumber(op.intensity)! }),
+        ...(asNumber(op.startFrame) !== undefined && { startFrame: asNumber(op.startFrame)! }),
+      })
+
+      const payloads = []
+      let driven = 0
+      for (const track of baked) {
+        const item = owned.get(track.partId)
+        if (!item) continue
+        driven++
+        const transform = item.transform ?? {}
+        for (const keyframe of track.keyframes) {
+          const lane =
+            track.channel === 'rotation'
+              ? { property: 'rotation', value: (transform.rotation ?? 0) + keyframe.value }
+              : track.channel === 'x'
+                ? { property: 'x', value: (transform.x ?? 0) + keyframe.value * scale }
+                : track.channel === 'y'
+                  ? { property: 'y', value: (transform.y ?? 0) + keyframe.value * scale }
+                  : track.channel === 'opacity'
+                    ? {
+                        property: 'opacity',
+                        value: Math.max(0, Math.min(1, (transform.opacity ?? 1) + keyframe.value)),
+                      }
+                    : null
+          if (!lane) continue
+          payloads.push({
+            itemId: item.id,
+            property: lane.property as AnimatableProperty,
+            frame: keyframe.frame,
+            value: lane.value,
+            easing: keyframe.easing,
+          })
+        }
+      }
+      addKeyframes(payloads)
+      return { idPrefix, gestureId, parts: driven, keyframes: payloads.length }
+    }
+    case 'importSvg': {
+      const source = asString(op.source)
+      if (!source) throw new Error('importSvg requires `source`')
+      const imported = importSvgSource(source, { idPrefix: asString(op.idPrefix) ?? newId() })
+      if (imported.paths.length === 0) {
+        throw new Error('importSvg: the document contained no drawable geometry')
+      }
+      const MAX_PATHS = 120
+      if (imported.paths.length > MAX_PATHS) {
+        throw new Error(
+          `importSvg: ${imported.paths.length} paths exceeds the ${MAX_PATHS} path limit; simplify the file first`,
+        )
+      }
+
+      const from = asNumber(op.from, 0)!
+      const durationInFrames = asNumber(op.durationInFrames, 150)!
+      const { viewBox } = imported
+      // Contain-fit the document into the requested box so an import lands on
+      // canvas at a usable size regardless of its authored units.
+      const target = asNumber(op.size, 0)!
+      const fit =
+        target > 0 && viewBox.width > 0 && viewBox.height > 0
+          ? Math.min(target / viewBox.width, target / viewBox.height)
+          : (asNumber(op.scale, 1) ?? 1)
+      const offsetX = asNumber(op.x, 0)!
+      const offsetY = asNumber(op.y, 0)!
+
+      const baseOrder = nextBlockTrackOrder(imported.paths.length)
+      const groupTrackId = `svg-group-${newId()}`
+      const newTracks: TimelineTrack[] = [
+        {
+          id: groupTrackId,
+          name: asString(op.name) ?? 'Imported SVG',
+          kind: 'video',
+          height: 40,
+          locked: false,
+          visible: true,
+          muted: false,
+          solo: false,
+          order: baseOrder,
+          items: [],
+          isGroup: true,
+          isCollapsed: true,
+        },
+      ]
+      const pendingItems: TimelineItem[] = []
+
+      // Later paths paint on top, so they take the lower (frontmost) order.
+      const frontToBack = [...imported.paths].sort((a, b) => b.z - a.z)
+      frontToBack.forEach((path, index) => {
+        const trackId = `${path.id}-track`
+        newTracks.push({
+          id: trackId,
+          name: path.name,
+          kind: 'video',
+          height: 40,
+          locked: false,
+          visible: true,
+          muted: false,
+          solo: false,
+          order: baseOrder + 1 + index,
+          items: [],
+          parentTrackId: groupTrackId,
+        })
+        pendingItems.push({
+          id: path.id,
+          trackId,
+          type: 'shape',
+          shapeType: 'path',
+          from,
+          durationInFrames,
+          label: path.name,
+          pathVertices: path.vertices,
+          pathClosed: path.closed,
+          fillColor: path.fill ?? '#ffffff',
+          fillEnabled: path.fillEnabled,
+          ...(path.strokeEnabled && {
+            strokeColor: path.stroke,
+            strokeEnabled: true,
+            strokeWidth: path.strokeWidth * fit,
+          }),
+          transform: {
+            x:
+              (path.bounds.minX + path.bounds.width / 2 - (viewBox.minX + viewBox.width / 2)) *
+                fit +
+              offsetX,
+            y:
+              (path.bounds.minY + path.bounds.height / 2 - (viewBox.minY + viewBox.height / 2)) *
+                fit +
+              offsetY,
+            width: path.bounds.width * fit,
+            height: path.bounds.height * fit,
+            opacity: path.opacity,
+            aspectRatioLocked: false,
+          },
+        })
+      })
+
+      appendTracksOnTop(newTracks)
+      for (const item of pendingItems) addItem(item)
+      return { items: pendingItems.length, warnings: imported.warnings, viewBox }
+    }
+    case 'morphPath': {
+      const itemId = asString(op.itemId)
+      const fromFrame = asNumber(op.fromFrame)
+      const toFrame = asNumber(op.toFrame)
+      if (!itemId || fromFrame === undefined || toFrame === undefined) {
+        throw new Error('morphPath requires `itemId`, `fromFrame`, `toFrame`')
+      }
+      const item = requireItem(itemId, 'itemId')
+      if (item.type !== 'shape' || item.shapeType !== 'path' || !item.pathVertices) {
+        throw new Error(`morphPath: item "${itemId}" is not a custom path shape`)
+      }
+
+      const targetItemId = asString(op.targetItemId)
+      const targetPathData = asString(op.targetPathData)
+      let targetVertices
+      let targetClosed = true
+      if (targetItemId) {
+        const target = requireItem(targetItemId, 'targetItemId')
+        if (target.type !== 'shape' || target.shapeType !== 'path' || !target.pathVertices) {
+          throw new Error(`morphPath: target "${targetItemId}" is not a custom path shape`)
+        }
+        targetVertices = target.pathVertices
+        targetClosed = target.pathClosed ?? true
+      } else if (targetPathData) {
+        const parsed = parseSvgPathToVertices(targetPathData)[0]
+        if (!parsed) throw new Error('morphPath: `targetPathData` drew no geometry')
+        targetVertices = parsed.vertices
+        targetClosed = parsed.closed
+      } else {
+        throw new Error('morphPath requires `targetItemId` or `targetPathData`')
+      }
+
+      const alignment = preparePathMorph(
+        item.pathVertices,
+        item.pathClosed ?? true,
+        targetVertices,
+        targetClosed,
+      )
+      // Resampling changes the vertex count, so the item's own geometry has to
+      // become the resampled source or the keyframe indices address nothing.
+      updateItem(itemId, { pathVertices: alignment.from, pathClosed: alignment.closed })
+
+      const easing = (asString(op.easing) as EasingType | undefined) ?? 'ease-in-out'
+      const start = pathVertexComponents(alignment.from)
+      const end = pathVertexComponents(alignment.to)
+      const components = ['positionX', 'positionY', 'inX', 'inY', 'outX', 'outY'] as const
+      const payloads = start.flatMap((from, index) =>
+        components.flatMap((component) => {
+          const to = end[index]![component]
+          if (from[component] === to) return []
+          const property = buildPathVertexAnimatableProperty(index, component)
+          return [
+            { itemId, property, frame: fromFrame, value: from[component], easing },
+            { itemId, property, frame: toFrame, value: to, easing },
+          ]
+        }),
+      )
+      addKeyframes(payloads)
+      return {
+        itemId,
+        vertices: alignment.from.length,
+        keyframes: payloads.length,
+        reversed: alignment.reversed,
+        startOffset: alignment.startOffset,
+      }
     }
     case 'setTransform': {
       const id = asString(op.id)

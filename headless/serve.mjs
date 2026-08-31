@@ -291,6 +291,18 @@ async function main() {
     sendJson(res, 200, result)
   }
 
+  // The catalog is committed, compile-time data, so one page round trip serves
+  // every later request. Cached rather than re-evaluated because discovery is
+  // the first thing an agent calls and should not queue behind a render.
+  let blockCatalog = null
+  const handleBlocks = async (_req, res) => {
+    blockCatalog ??= await queue.enqueue(
+      () => session.page.evaluate(() => window.freecut.getBlockCatalog()),
+      { timeoutMs: editTimeoutMs, kind: 'block-catalog' },
+    )
+    sendJson(res, 200, { ok: true, apiVersion: HEADLESS_API_VERSION, ...blockCatalog })
+  }
+
   const browserNormalize = (project) =>
     queue.enqueue(
       () => session.page.evaluate((value) => window.freecut.normalizeProject(value), project),
@@ -606,7 +618,9 @@ async function main() {
           ? async () => sendJson(res, 200, capabilities())
           : route === 'GET /v1/capabilities'
             ? async () => sendJson(res, 200, { ok: true, ...capabilities() })
-            : route === 'POST /v1/projects'
+            : route === 'GET /v1/blocks'
+              ? () => handleBlocks(req, res)
+              : route === 'POST /v1/projects'
               ? () => handleV1ProjectCreate(req, res)
               : route === 'GET /v1/projects'
                 ? () => handleV1ProjectList(url, res)

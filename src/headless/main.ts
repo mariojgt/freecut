@@ -75,6 +75,7 @@ import { expandTextTransformToFitContent } from '@/runtime/composition-runtime/u
 import { layoutTextBlock, lineInkWidth } from '@/shared/typography/text-block-layout'
 import { createCanvasTextMeasurer } from '@/shared/typography/text-measurer'
 import { resolveAnimatedTextItem } from '@/features/keyframes/utils/animated-text-item'
+import { buildBlockCatalog, type BlockCatalog } from '@/shared/graphics/blocks/catalog'
 
 const log = createLogger('Headless')
 
@@ -161,7 +162,8 @@ async function waitForFaceApplied(
   const isApplied = (): boolean =>
     GENERICS.every(
       (generic) =>
-        measure(`${weight} 100px "${family}", ${generic}`) !== measure(`${weight} 100px ${generic}`),
+        measure(`${weight} 100px "${family}", ${generic}`) !==
+        measure(`${weight} 100px ${generic}`),
     )
 
   let streak = 0
@@ -1192,6 +1194,8 @@ async function dumpLayout(input: HeadlessLayoutInput): Promise<HeadlessLayoutRes
 
 interface FreecutHeadlessApi {
   ready: true
+  /** The committed block library, for agents choosing what to place. */
+  getBlockCatalog: () => BlockCatalog
   renderTimeline: typeof renderTimeline
   renderProject: typeof renderProject
   renderFrame: typeof renderFrame
@@ -1280,6 +1284,7 @@ declare global {
 
 window.freecut = {
   ready: true,
+  getBlockCatalog: buildBlockCatalog,
   renderTimeline,
   renderProject,
   renderFrame,

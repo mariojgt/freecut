@@ -68,6 +68,20 @@ const samples = {
   },
   removeEffect: { op: 'removeEffect', itemId: 'i', effectId: 'e' },
   setTransform: { op: 'setTransform', id: 'i', transform: { opacity: 0.5, rotation: 2 } },
+  addBlock: {
+    op: 'addBlock',
+    blockId: 'character-astronaut',
+    from: 0,
+    durationInFrames: 180,
+    x: -180,
+    y: 190,
+    scale: 0.9,
+    palette: 'deep-space',
+    gestures: [{ id: 'walk', cycles: 6 }],
+  },
+  applyGesture: { op: 'applyGesture', idPrefix: 'hero', gestureId: 'idle-breath', scale: 0.9 },
+  importSvg: { op: 'importSvg', source: '<svg/>', size: 480 },
+  morphPath: { op: 'morphPath', itemId: 'i', fromFrame: 0, toFrame: 30, targetPathData: 'M 0 0 L 1 1' },
 }
 
 test('every published edit discriminator has a valid strict schema', () => {
