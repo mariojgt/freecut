@@ -287,11 +287,6 @@ export function TextStyleSection(props: TextSectionProps) {
   return <TextSectionComposer {...props} slots={['effects']} />
 }
 
-/** Motion-text animation on its own — the Animation tab. */
-export function TextAnimationSection(props: TextSectionProps) {
-  return <TextSectionComposer {...props} slots={['animation']} />
-}
-
 /**
  * Style + animation together — used only for mixed (text + non-text)
  * selections, which keep the general Effects-tab layout.

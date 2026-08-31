@@ -4,6 +4,16 @@
     "saveAndReload": "保存并重新加载",
     "reloadWithoutSaving": "不保存直接重新加载",
     "dockPanel": "停靠面板",
+    "dockerUpdate": {
+      "button": "更新",
+      "ariaLabel": "检查 Docker 更新",
+      "checking": "正在检查…",
+      "requestedShort": "已请求",
+      "requested": "已开始检查更新",
+      "requestedDescription": "如果有更新的稳定版本，FreeCut 将自动安装、保存你的工作并重新加载。",
+      "failed": "无法开始更新",
+      "failedDescription": "Docker 主机更新程序未接受请求。请重试或检查更新服务。"
+    },
     "installPrompt": {
       "label": "安装 FreeCut",
       "title": "安装 FreeCut",
@@ -86,7 +96,13 @@
       "uiSounds": "界面音效",
       "uiSoundVolume": "音效音量",
       "uiSoundVoice": "音效主题",
-      "uiSoundPreview": "试听"
+      "uiSoundPreview": "试听",
+      "appearance": "外观",
+      "appearanceDescription": "选择应用主题。跟随系统会匹配设备设置。",
+      "themeSystem": "跟随系统",
+      "themeFreeCutDark": "FreeCut 深色",
+      "themeMidnight": "午夜",
+      "themeLight": "浅色"
     },
     "ai": {
       "captionSampleInterval": "字幕采样间隔",

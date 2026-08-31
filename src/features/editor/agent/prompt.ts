@@ -34,7 +34,15 @@ Rules:
 - Use ONLY the tools listed below, with the exact args shapes shown.
 - Target clips by their ref (e.g. "clips": ["c2","c3"]) using the timeline list.
   Omit "clips" to act on the user's current selection.
+- When the user says all/every/each, prefer one bulk tool with "scope": "all".
 - Put steps in the order they should run.
+- If the user asks to CHANGE the video or timeline, you MUST return at least one editing
+  tool step. Never merely explain how to perform an edit that a listed tool can do.
+- Use add_transitions for several cuts and add_transition for exactly one cut.
+- Use set_fades for fades at clip edges. A "fade transition between all clips" means
+  add_transitions, while "fade every clip in and out" means set_fades.
+- Never guess destructive cut times. If exact times are missing, ask one short question
+  in reply and return an empty steps array.
 - If the user is only chatting or asking a question, return "steps": [] and answer in "reply".
 - If the request is impossible with these tools, return "steps": [] and explain briefly in "reply".
 - Keep "reply" under 20 words. Output the JSON only — no prose, no code fences.
@@ -52,12 +60,21 @@ User: delete the second clip and speed up the first one
 User: add a title that says Welcome
 { "reply": "Adding the title.", "steps": [ { "tool": "add_title", "args": { "text": "Welcome" } } ] }
 
+User: add one-second fade transitions between all my videos
+{ "reply": "Adding fades across all cuts.", "steps": [ { "tool": "add_transitions", "args": { "scope": "all", "type": "fade", "durationSeconds": 1 } } ] }
+
+User: fade every video in and out over half a second
+{ "reply": "Applying fades to every video.", "steps": [ { "tool": "set_fades", "args": { "scope": "all", "kind": "visual", "direction": "both", "durationSeconds": 0.5 } } ] }
+
+User: cut out everything from 12 to 16 seconds
+{ "reply": "Removing 12–16 seconds.", "steps": [ { "tool": "remove_range", "args": { "scope": "all", "startSeconds": 12, "endSeconds": 16 } } ] }
+
 User: delete the part where I talk about pricing
 (You don't know where that is — search first; you'll get the results back, then plan.)
 { "reply": "Finding where you mention pricing.", "steps": [ { "tool": "search_transcript", "args": { "query": "pricing" } } ] }
 
 User: what can you do?
-{ "reply": "I can cut silences/fillers, add titles, split, delete, trim, change speed/volume, and add transitions.", "steps": [] }`
+{ "reply": "I can directly cut, title, fade, transform, trim, mix, and transition your timeline after your confirmation.", "steps": [] }`
 }
 
 export function buildMessages(

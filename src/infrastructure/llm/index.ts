@@ -5,8 +5,15 @@
 
 export type { LlmAdapter, LlmGenerateOptions, LlmLoadProgress, LlmMessage, LlmRole } from './types'
 export {
+  getBrowserLlmModelDefinition,
+  listBrowserLlmModels,
+  normalizeBrowserLlmModelId,
+} from './browser-llm-models'
+export {
   DEFAULT_LLM_ADAPTER_ID,
   getDefaultLlmAdapter,
+  getSelectedLlmAdapter,
   getLlmAdapter,
-  listLlmAdapters,
+  selectLlmAdapter,
 } from './llm-registry'
+export { getLocalLlmConfig, setLocalLlmConfig, subscribeLocalLlmConfig } from './local-llm-config'

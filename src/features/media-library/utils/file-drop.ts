@@ -1,4 +1,5 @@
 import { getMediaType, getMimeType, validateMediaFileContent } from './validation'
+import { createTransientFileHandle } from './media-file-picker'
 
 export interface ExtractedMediaFileEntry {
   handle: FileSystemFileHandle
@@ -31,7 +32,9 @@ export function formatMediaDropRejectionMessage(errors: string[]): string {
 export async function extractValidMediaFileEntriesFromDataTransfer(
   dataTransfer: DataTransfer,
 ): Promise<ExtractedMediaFileDropResult> {
-  if (!supportsFileSystemDragDrop(dataTransfer)) {
+  const supportsHandles = supportsFileSystemDragDrop(dataTransfer)
+  const droppedFiles = Array.from(dataTransfer.files ?? [])
+  if (!supportsHandles && droppedFiles.length === 0) {
     return {
       supported: false,
       entries: [],
@@ -39,15 +42,21 @@ export async function extractValidMediaFileEntriesFromDataTransfer(
     }
   }
 
-  const items = Array.from(dataTransfer.items)
-  const handlePromises: Promise<FileSystemHandle | null>[] = []
-  for (const item of items) {
-    if ('getAsFileSystemHandle' in item) {
-      handlePromises.push(item.getAsFileSystemHandle())
+  let rawHandles: Array<FileSystemHandle | null>
+  if (supportsHandles) {
+    const items = Array.from(dataTransfer.items)
+    const handlePromises: Promise<FileSystemHandle | null>[] = []
+    for (const item of items) {
+      if ('getAsFileSystemHandle' in item) {
+        handlePromises.push(item.getAsFileSystemHandle())
+      }
     }
+    rawHandles = await Promise.all(handlePromises)
+  } else {
+    // Firefox exposes dropped File objects but not getAsFileSystemHandle().
+    // Copy-mode import only needs a readable, session-scoped handle.
+    rawHandles = droppedFiles.map(createTransientFileHandle)
   }
-
-  const rawHandles = await Promise.all(handlePromises)
   const entries: ExtractedMediaFileEntry[] = []
   const errors: string[] = []
 

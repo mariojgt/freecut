@@ -4,6 +4,16 @@
     "saveAndReload": "저장하고 다시 로드",
     "reloadWithoutSaving": "저장하지 않고 다시 로드",
     "dockPanel": "패널 도킹",
+    "dockerUpdate": {
+      "button": "업데이트",
+      "ariaLabel": "Docker 업데이트 확인",
+      "checking": "확인 중…",
+      "requestedShort": "요청됨",
+      "requested": "업데이트 확인을 시작했습니다",
+      "requestedDescription": "새 안정 버전이 있으면 FreeCut이 설치하고 작업을 저장한 뒤 자동으로 다시 로드합니다.",
+      "failed": "업데이트를 시작할 수 없습니다",
+      "failedDescription": "Docker 호스트 업데이터가 요청을 수락하지 않았습니다. 다시 시도하거나 업데이터 서비스를 확인하세요."
+    },
     "installPrompt": {
       "label": "FreeCut 설치",
       "title": "FreeCut 설치",
@@ -86,7 +96,13 @@
       "uiSounds": "인터페이스 사운드",
       "uiSoundVolume": "사운드 볼륨",
       "uiSoundVoice": "사운드 테마",
-      "uiSoundPreview": "미리듣기"
+      "uiSoundPreview": "미리듣기",
+      "appearance": "화면 모드",
+      "appearanceDescription": "앱 테마를 선택합니다. 시스템은 기기 설정을 따릅니다.",
+      "themeSystem": "시스템",
+      "themeFreeCutDark": "FreeCut 다크",
+      "themeMidnight": "미드나이트",
+      "themeLight": "라이트"
     },
     "ai": {
       "captionSampleInterval": "자막 샘플링 간격",

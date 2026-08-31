@@ -24,52 +24,31 @@ body.canvas-translate-cursor-not-allowed * {
 }
 
 @layer base {
-  :root {
-    /* Professional Video Editor Dark Theme - OKLCH Colors */
-    /* Inspired by Premiere Pro & DaVinci Resolve */
-
-    /* Base - Very dark, reduced eye strain */
-    --background: oklch(0.15 0 0); /* #262626 - Main canvas */
-    --foreground: oklch(0.95 0 0); /* #f2f2f2 - Primary text */
-
-    /* Panels - Layered depth */
-    --card: oklch(0.18 0 0); /* #2e2e2e - Panel backgrounds */
-    --card-foreground: oklch(0.92 0 0); /* #ebebeb - Panel text */
-
-    --popover: oklch(0.16 0 0); /* #292929 - Dropdowns */
+  :root,
+  :root[data-theme='freecut-dark'] {
+    /* FreeCut Dark — the original professional editor palette. */
+    --background: oklch(0.15 0 0);
+    --foreground: oklch(0.95 0 0);
+    --card: oklch(0.18 0 0);
+    --card-foreground: oklch(0.92 0 0);
+    --popover: oklch(0.16 0 0);
     --popover-foreground: oklch(0.92 0 0);
-
-    /* Primary - Orange accent (playback, active states) */
-    --primary: oklch(0.68 0.19 45); /* #FF8C3A - Vibrant orange */
-    --primary-foreground: oklch(0.12 0 0); /* Dark text on primary */
-
-    /* Secondary - Subtle panel variation */
-    --secondary: oklch(0.22 0 0); /* #383838 - Secondary surfaces */
+    --primary: oklch(0.68 0.19 45);
+    --primary-foreground: oklch(0.12 0 0);
+    --secondary: oklch(0.22 0 0);
     --secondary-foreground: oklch(0.88 0 0);
-
-    /* Muted - Backgrounds and disabled states */
-    --muted: oklch(0.2 0 0); /* #333333 - Muted backgrounds */
-    --muted-foreground: oklch(0.6 0 0); /* #999999 - Muted text */
-
-    /* Accent - Hover states and highlights */
-    --accent: oklch(0.24 0 0); /* #3d3d3d - Hover backgrounds */
+    --muted: oklch(0.2 0 0);
+    --muted-foreground: oklch(0.6 0 0);
+    --accent: oklch(0.24 0 0);
     --accent-foreground: oklch(0.95 0 0);
-
-    /* Destructive - Red for delete/errors */
-    --destructive: oklch(0.58 0.22 25); /* #E53E3E - Error red */
+    --destructive: oklch(0.58 0.22 25);
     --destructive-foreground: oklch(0.98 0 0);
-
-    /* Borders - Subtle separators */
-    --border: oklch(0.25 0 0); /* #404040 - Borders */
-    --input: oklch(0.24 0 0); /* #3d3d3d - Input borders */
-    --ring: oklch(0.68 0.19 45); /* Orange focus ring */
-
-    /* Panel system - Layered depth */
-    --panel-bg: oklch(0.18 0 0); /* #2e2e2e - Panels */
-    --panel-header: oklch(0.14 0 0); /* #242424 - Panel headers */
-    --timeline-bg: oklch(0.12 0 0); /* #1f1f1f - Timeline darker */
-
-    /* Sidebar */
+    --border: oklch(0.25 0 0);
+    --input: oklch(0.24 0 0);
+    --ring: oklch(0.68 0.19 45);
+    --panel-bg: oklch(0.18 0 0);
+    --panel-header: oklch(0.14 0 0);
+    --timeline-bg: oklch(0.12 0 0);
     --sidebar: oklch(0.18 0 0);
     --sidebar-foreground: oklch(0.92 0 0);
     --sidebar-primary: oklch(0.68 0.19 45);
@@ -78,8 +57,81 @@ body.canvas-translate-cursor-not-allowed * {
     --sidebar-accent-foreground: oklch(0.92 0 0);
     --sidebar-border: oklch(0.25 0 0);
     --sidebar-ring: oklch(0.68 0.19 45);
-
+    --scrollbar-thumb: oklch(0.3 0 0);
+    --scrollbar-thumb-hover: oklch(0.35 0 0);
     --radius: 0.5rem;
+  }
+
+  :root[data-theme='midnight'] {
+    /* Cooler blue-black surfaces for late-night editing. */
+    --background: oklch(0.13 0.025 260);
+    --foreground: oklch(0.95 0.01 250);
+    --card: oklch(0.17 0.03 258);
+    --card-foreground: oklch(0.92 0.012 250);
+    --popover: oklch(0.145 0.028 260);
+    --popover-foreground: oklch(0.93 0.012 250);
+    --primary: oklch(0.72 0.16 250);
+    --primary-foreground: oklch(0.12 0.025 260);
+    --secondary: oklch(0.21 0.035 258);
+    --secondary-foreground: oklch(0.89 0.015 250);
+    --muted: oklch(0.19 0.028 258);
+    --muted-foreground: oklch(0.66 0.025 252);
+    --accent: oklch(0.24 0.05 255);
+    --accent-foreground: oklch(0.96 0.01 250);
+    --destructive: oklch(0.61 0.22 25);
+    --destructive-foreground: oklch(0.98 0 0);
+    --border: oklch(0.27 0.035 258);
+    --input: oklch(0.25 0.035 258);
+    --ring: oklch(0.72 0.16 250);
+    --panel-bg: oklch(0.16 0.03 258);
+    --panel-header: oklch(0.115 0.022 260);
+    --timeline-bg: oklch(0.095 0.02 260);
+    --sidebar: oklch(0.16 0.03 258);
+    --sidebar-foreground: oklch(0.92 0.012 250);
+    --sidebar-primary: oklch(0.72 0.16 250);
+    --sidebar-primary-foreground: oklch(0.12 0.025 260);
+    --sidebar-accent: oklch(0.21 0.04 258);
+    --sidebar-accent-foreground: oklch(0.92 0.012 250);
+    --sidebar-border: oklch(0.27 0.035 258);
+    --sidebar-ring: oklch(0.72 0.16 250);
+    --scrollbar-thumb: oklch(0.31 0.04 255);
+    --scrollbar-thumb-hover: oklch(0.38 0.055 252);
+  }
+
+  :root[data-theme='light'] {
+    /* Neutral daylight palette. The preview itself remains media-neutral. */
+    --background: oklch(0.975 0.004 250);
+    --foreground: oklch(0.21 0.015 255);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.22 0.015 255);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.22 0.015 255);
+    --primary: oklch(0.57 0.19 42);
+    --primary-foreground: oklch(0.99 0.004 85);
+    --secondary: oklch(0.93 0.008 250);
+    --secondary-foreground: oklch(0.28 0.018 255);
+    --muted: oklch(0.945 0.006 250);
+    --muted-foreground: oklch(0.47 0.018 255);
+    --accent: oklch(0.91 0.014 250);
+    --accent-foreground: oklch(0.22 0.015 255);
+    --destructive: oklch(0.54 0.22 25);
+    --destructive-foreground: oklch(0.99 0 0);
+    --border: oklch(0.84 0.012 250);
+    --input: oklch(0.8 0.015 250);
+    --ring: oklch(0.57 0.19 42);
+    --panel-bg: oklch(0.96 0.006 250);
+    --panel-header: oklch(0.925 0.01 250);
+    --timeline-bg: oklch(0.89 0.012 250);
+    --sidebar: oklch(0.955 0.008 250);
+    --sidebar-foreground: oklch(0.25 0.018 255);
+    --sidebar-primary: oklch(0.57 0.19 42);
+    --sidebar-primary-foreground: oklch(0.99 0.004 85);
+    --sidebar-accent: oklch(0.91 0.014 250);
+    --sidebar-accent-foreground: oklch(0.22 0.015 255);
+    --sidebar-border: oklch(0.84 0.012 250);
+    --sidebar-ring: oklch(0.57 0.19 42);
+    --scrollbar-thumb: oklch(0.72 0.012 250);
+    --scrollbar-thumb-hover: oklch(0.62 0.016 250);
   }
 }
 
@@ -110,8 +162,9 @@ body.canvas-translate-cursor-not-allowed * {
     -ms-user-select: none;
   }
 
-  /* Force dark mode always */
+  /* The bootstrap/controller sets the resolved light or dark color scheme. */
   html {
+    background: var(--background);
     color-scheme: dark;
   }
 
@@ -135,21 +188,21 @@ body.canvas-translate-cursor-not-allowed * {
   }
 
   ::-webkit-scrollbar-track {
-    background: oklch(0.15 0 0);
+    background: var(--background);
   }
 
   ::-webkit-scrollbar-thumb {
-    background: oklch(0.3 0 0);
+    background: var(--scrollbar-thumb);
     border-radius: 6px;
-    border: 2px solid oklch(0.15 0 0);
+    border: 2px solid var(--background);
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.35 0 0);
+    background: var(--scrollbar-thumb-hover);
   }
 
   ::-webkit-scrollbar-corner {
-    background: oklch(0.15 0 0);
+    background: var(--background);
   }
 
   /* Timeline keyframe sheets reserve a custom overlay rail matching the main
@@ -182,6 +235,7 @@ body.canvas-translate-cursor-not-allowed * {
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -205,24 +259,24 @@ body.canvas-translate-cursor-not-allowed * {
 /* Professional video editor utility classes */
 @layer utilities {
   .panel-bg {
-    background-color: oklch(var(--panel-bg));
+    background-color: var(--panel-bg);
   }
 
   .panel-header {
-    background-color: oklch(var(--panel-header));
+    background-color: var(--panel-header);
   }
 
   .timeline-bg {
-    background-color: oklch(var(--timeline-bg));
+    background-color: var(--timeline-bg);
   }
 
   /* Subtle glow for active elements */
   .glow-primary {
-    box-shadow: 0 0 12px oklch(var(--primary) / 0.3);
+    box-shadow: 0 0 12px color-mix(in oklch, var(--primary) 30%, transparent);
   }
 
   .glow-primary-sm {
-    box-shadow: 0 0 6px oklch(var(--primary) / 0.25);
+    box-shadow: 0 0 6px color-mix(in oklch, var(--primary) 25%, transparent);
   }
 
   /* Text shadows for better readability on dark */
@@ -296,8 +350,8 @@ body.canvas-translate-cursor-not-allowed * {
 }
 
 [data-media-id].media-marquee-preview > * {
-  border-color: oklch(var(--primary));
-  box-shadow: 0 0 0 1px oklch(var(--primary) / 0.2);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 20%, transparent);
 }
 
 [data-composition-id].composition-marquee-preview {

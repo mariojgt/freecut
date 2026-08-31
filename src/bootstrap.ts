@@ -1,3 +1,7 @@
+import { applyInitialAppTheme } from './app/theme'
+
+applyInitialAppTheme()
+
 const APP_SHELL_CACHE_PREFIX = 'freecut-app-shell-'
 
 async function removeProductionAppShellFromDevelopment(): Promise<boolean> {

@@ -1,16 +1,16 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState, useRef } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { createLogger } from '@/shared/logging/logger'
 
 const logger = createLogger('ProjectsIndex')
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Plus, Upload, FolderOpen, File, Github, BookOpen } from 'lucide-react'
+import { Plus, Upload, File, Github, BookOpen, Cable, HardDrive } from 'lucide-react'
 import { FreeCutLogo } from '@/components/brand/freecut-logo'
 import { DiscordIcon } from '@/components/brand/discord-icon'
-import { DISCORD_INVITE_URL } from '@/config/community'
+import { DISCORD_INVITE_URL, GITHUB_REPOSITORY_URL } from '@/config/community'
 import { ProjectList } from '@/features/projects/components/project-list'
 import { EditProjectForm } from '@/features/projects/components/project-form'
 import {
@@ -38,6 +38,7 @@ import { LegacyMigrationBanner } from '@/features/projects/components/legacy-mig
 import { LegacyMigrationErrors } from '@/features/projects/components/legacy-migration-errors'
 import { TrashSection } from '@/features/projects/components/trash-section'
 import { WorkspaceIndicator } from '@/features/workspace-gate'
+import { DockerUpdateButton } from '@/shared/ui/docker-update-button'
 import { LanguageSwitcher } from '@/shared/ui/language-switcher'
 
 export const Route = createFileRoute('/projects/')({
@@ -57,19 +58,15 @@ function ProjectsIndex() {
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Import state - two-step flow
+  // Import state. Bundles are copied into the active workspace so they remain
+  // portable and do not depend on an origin-scoped external folder handle.
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
   const [projectNameFromFile, setProjectNameFromFile] = useState<string | null>(null)
-  const [destinationDir, setDestinationDir] = useState<FileSystemDirectoryHandle | null>(null)
-  const [destinationName, setDestinationName] = useState<string | null>(null)
-  const [useProjectsFolder, setUseProjectsFolder] = useState(true) // Create FreeCutProjects subfolder
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [isImporting, setIsImporting] = useState(false)
-
-  const PROJECTS_FOLDER_NAME = 'FreeCutProjects'
 
   // Extract project name from bundle filename
   // Handles both "myproject.freecut.zip" and browser-renamed "myproject.freecut (1).zip"
@@ -108,7 +105,7 @@ function ProjectsIndex() {
     fileInputRef.current?.click()
   }
 
-  // Step 1: File selected - show destination selection dialog
+  // Step 1: File selected - show a confirmation/progress dialog.
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -126,75 +123,26 @@ function ProjectsIndex() {
     // Store file and extract project name, then show destination selection dialog
     setPendingImportFile(file)
     setProjectNameFromFile(extractProjectName(file.name))
-    setDestinationDir(null)
-    setDestinationName(null)
     setImportError(null)
     setImportProgress(null)
     setIsImporting(false)
     setImportDialogOpen(true)
   }
 
-  // Step 2: User clicks to select destination folder (fresh user gesture!)
-  const handleSelectDestination = async () => {
-    try {
-      const dirHandle = await window.showDirectoryPicker({
-        id: 'freecut-import',
-        mode: 'readwrite',
-        startIn: 'documents',
-      })
-      setDestinationDir(dirHandle)
-      setDestinationName(dirHandle.name)
-      setImportError(null)
-    } catch (err) {
-      // User cancelled - ignore
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        return
-      }
-      // Handle "contains system files" or permission errors
-      if (
-        err instanceof DOMException &&
-        (err.name === 'NotAllowedError' || err.name === 'SecurityError')
-      ) {
-        setImportError(t('projects.import.cannotSelectSystemFolders'))
-        return
-      }
-      logger.error('Failed to select directory:', err)
-      setImportError(t('projects.import.selectDestinationFailed'))
-    }
-  }
-
-  // Step 3: User clicks "Start Import" - begin actual import
+  // Step 2: Copy the bundle into the active workspace.
   const handleStartImport = async () => {
-    if (!pendingImportFile || !destinationDir) return
+    if (!pendingImportFile) return
 
     setIsImporting(true)
     setImportProgress({ percent: 0, stage: 'validating' })
 
     try {
-      // If useProjectsFolder is enabled, create/get the FreeCutProjects subfolder first
-      let finalDestination = destinationDir
-      if (useProjectsFolder) {
-        try {
-          finalDestination = await destinationDir.getDirectoryHandle(PROJECTS_FOLDER_NAME, {
-            create: true,
-          })
-        } catch (err) {
-          logger.error('Failed to create FreeCutProjects folder:', err)
-          throw new Error(t('projects.import.createFolderFailed', { folder: PROJECTS_FOLDER_NAME }))
-        }
-      }
-
       const { importProjectBundle } =
         await import('@/features/project-bundle/services/bundle-import-service')
 
-      const result = await importProjectBundle(
-        pendingImportFile,
-        finalDestination,
-        {},
-        (progress) => {
-          setImportProgress(progress)
-        },
-      )
+      const result = await importProjectBundle(pendingImportFile, null, {}, (progress) => {
+        setImportProgress(progress)
+      })
 
       // Reload projects list
       await loadProjects()
@@ -216,20 +164,9 @@ function ProjectsIndex() {
     setImportDialogOpen(false)
     setPendingImportFile(null)
     setProjectNameFromFile(null)
-    setDestinationDir(null)
-    setDestinationName(null)
     setImportError(null)
     setImportProgress(null)
     setIsImporting(false)
-  }
-
-  // Compute full destination path for display
-  const getFullDestinationPath = (): string => {
-    if (!destinationName) return ''
-    const parts = [destinationName]
-    if (useProjectsFolder) parts.push(PROJECTS_FOLDER_NAME)
-    if (projectNameFromFile) parts.push(projectNameFromFile)
-    return parts.join('/')
   }
 
   // Format file size for display
@@ -272,6 +209,7 @@ function ProjectsIndex() {
               />
             </Link>
             <div className="flex items-center gap-3">
+              <DockerUpdateButton />
               <LanguageSwitcher size="md" align="end" side="bottom" />
 
               <Separator orientation="vertical" className="h-6" />
@@ -290,7 +228,7 @@ function ProjectsIndex() {
               </Button>
               <Button variant="outline" size="lg" className="gap-2 px-4" asChild>
                 <a
-                  href="https://github.com/walterlow/freecut"
+                  href={GITHUB_REPOSITORY_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={t('projects.viewOnGitHub')}
@@ -301,6 +239,13 @@ function ProjectsIndex() {
               </Button>
 
               <Separator orientation="vertical" className="h-6" />
+
+              <Button variant="outline" size="lg" className="gap-2 px-4" asChild>
+                <Link to="/mcp">
+                  <Cable className="w-4 h-4" />
+                  {t('editor.agent.mcp.openSetup')}
+                </Link>
+              </Button>
 
               <WorkspaceIndicator />
               <Button
@@ -389,7 +334,7 @@ function ProjectsIndex() {
         </DialogContent>
       </Dialog>
 
-      {/* Import Project Dialog - Two Step Flow */}
+      {/* Import Project Dialog */}
       <Dialog
         open={importDialogOpen}
         onOpenChange={(open) => {
@@ -406,7 +351,9 @@ function ProjectsIndex() {
                   : t('projects.import.importTitle')}
             </DialogTitle>
             {!importError && !isImporting && pendingImportFile && (
-              <DialogDescription>{t('projects.import.selectWhereToExtract')}</DialogDescription>
+              <DialogDescription>
+                {t('projects.import.importIntoWorkspaceDescription')}
+              </DialogDescription>
             )}
             {!importError && isImporting && importProgress && (
               <DialogDescription>
@@ -444,7 +391,7 @@ function ProjectsIndex() {
               </p>
             </div>
           ) : pendingImportFile ? (
-            /* Destination selection state */
+            /* Import confirmation state */
             <div className="space-y-4">
               {/* File info */}
               <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
@@ -457,70 +404,27 @@ function ProjectsIndex() {
                 </div>
               </div>
 
-              {/* Destination selection */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">{t('projects.import.destinationFolder')}</p>
-                  {!destinationDir && (
-                    <p className="text-xs text-muted-foreground">
-                      {t('projects.import.useNewFolderIfNeeded')}
-                    </p>
-                  )}
+              <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-3">
+                <HardDrive className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {t('projects.import.activeWorkspaceDestination')}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('projects.import.activeWorkspaceDestinationDescription', {
+                      project: projectNameFromFile ?? pendingImportFile.name,
+                    })}
+                  </p>
                 </div>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  onClick={handleSelectDestination}
-                >
-                  <FolderOpen className="w-4 h-4" />
-                  {destinationName ? (
-                    <span className="truncate">{destinationName}</span>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {t('projects.import.selectOrCreateFolder')}
-                    </span>
-                  )}
-                </Button>
-
-                {/* FreeCutProjects subfolder option */}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={useProjectsFolder}
-                    onChange={(e) => setUseProjectsFolder(e.target.checked)}
-                    className="w-4 h-4 rounded border-border accent-primary"
-                  />
-                  <span className="text-sm">
-                    <Trans
-                      i18nKey="projects.import.createInSubfolder"
-                      values={{ folder: PROJECTS_FOLDER_NAME }}
-                      components={{
-                        code: <code className="text-xs bg-muted px-1 py-0.5 rounded" />,
-                      }}
-                    />
-                  </span>
-                </label>
-
-                {importError && <p className="text-xs text-destructive">{importError}</p>}
-                {destinationDir && !importError && (
-                  <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                    <p className="text-xs text-muted-foreground mb-1">
-                      {t('projects.import.mediaWillBeSavedTo')}
-                    </p>
-                    <p className="text-sm font-semibold text-foreground break-all">
-                      {getFullDestinationPath()}
-                    </p>
-                  </div>
-                )}
               </div>
+
+              {importError && <p className="text-xs text-destructive">{importError}</p>}
 
               <DialogFooter className="gap-2 sm:gap-0">
                 <Button variant="outline" onClick={handleCloseImportDialog}>
                   {t('common.cancel')}
                 </Button>
-                <Button onClick={handleStartImport} disabled={!destinationDir}>
-                  {t('projects.import.startImport')}
-                </Button>
+                <Button onClick={handleStartImport}>{t('projects.import.startImport')}</Button>
               </DialogFooter>
             </div>
           ) : null}

@@ -73,11 +73,19 @@ const CLIPS_PROP = {
     'Clip refs like ["c1","c3"] from the timeline list. Omit to use the current selection.',
 }
 
+const SCOPE_PROP = {
+  type: 'string',
+  enum: ['selection', 'all'],
+  description:
+    'Use "all" for every compatible timeline clip. Defaults to the current selection when clips are omitted.',
+}
+
 function objSchema(properties: Record<string, unknown>, required: string[] = []): JsonSchema {
   return { type: 'object', properties, required, additionalProperties: false }
 }
 
 const clipsField = z.array(z.string()).optional()
+const scopeField = z.enum(['selection', 'all']).optional()
 
 function getFps(): number {
   return useTimelineStore.getState().fps
@@ -85,6 +93,19 @@ function getFps(): number {
 
 function isMedia(item: TimelineItem): boolean {
   return item.type === 'video' || item.type === 'audio'
+}
+
+function isVisual(item: TimelineItem): boolean {
+  return item.type === 'video' || item.type === 'image' || item.type === 'composition'
+}
+
+function resolveScopedItems(
+  clips: string[] | undefined,
+  scope: 'selection' | 'all' | undefined,
+): TimelineItem[] {
+  if (clips && clips.length > 0) return resolveTargetItems(clips)
+  if (scope === 'all') return useTimelineStore.getState().items
+  return resolveTargetItems(undefined)
 }
 
 // --- query tools ------------------------------------------------------------
@@ -194,11 +215,36 @@ const addTitle = defineTool({
         minimum: 0,
         description: 'Start time; defaults to the playhead.',
       },
+      durationSeconds: {
+        type: 'number',
+        minimum: 0.1,
+        maximum: 3600,
+        description: 'How long the title stays visible; defaults to the editor title duration.',
+      },
+      position: {
+        type: 'string',
+        enum: ['center', 'top', 'bottom', 'lower-third'],
+        description: 'Title position on the canvas.',
+      },
+      fontSize: { type: 'number', minimum: 8, maximum: 400 },
+      color: { type: 'string', description: 'Text color as a hex value such as #ffffff.' },
     },
     ['text'],
   ),
-  schema: z.object({ text: z.string().min(1).max(300), atSeconds: z.number().min(0).optional() }),
+  schema: z.object({
+    text: z.string().min(1).max(300),
+    atSeconds: z.number().min(0).optional(),
+    durationSeconds: z.number().min(0.1).max(3600).optional(),
+    position: z.enum(['center', 'top', 'bottom', 'lower-third']).optional(),
+    fontSize: z.number().min(8).max(400).optional(),
+    color: z
+      .string()
+      .regex(/^#[\da-f]{3}(?:[\da-f]{3})?$/i)
+      .optional(),
+  }),
   summarize: (args) => `Add title: "${args.text.slice(0, 40)}"`,
+  // Placement and optional styling branches are covered by the title mutation tests.
+  // fallow-ignore-next-line complexity
   execute: (args) => {
     const { tracks, items, fps, addItem } = useTimelineStore.getState()
     const { activeTrackId, selectItems } = useSelectionStore.getState()
@@ -212,7 +258,9 @@ const addTitle = defineTool({
     })
     if (!targetTrack) throw new Error('No available track for a text layer.')
 
-    const durationInFrames = getDefaultGeneratedLayerDurationInFrames(fps)
+    const durationInFrames = args.durationSeconds
+      ? Math.max(1, Math.round(args.durationSeconds * fps))
+      : getDefaultGeneratedLayerDurationInFrames(fps)
     const proposed =
       args.atSeconds !== undefined
         ? Math.round(args.atSeconds * fps)
@@ -220,17 +268,33 @@ const addTitle = defineTool({
     const from =
       findNearestAvailableSpace(proposed, durationInFrames, targetTrack.id, items) ?? proposed
 
-    const textItem: TextItem = createTextTemplateItem({
+    const canvasWidth = currentProject?.metadata.width ?? DEFAULT_PROJECT_WIDTH
+    const canvasHeight = currentProject?.metadata.height ?? DEFAULT_PROJECT_HEIGHT
+    const baseTextItem = createTextTemplateItem({
       placement: {
         trackId: targetTrack.id,
         from,
         durationInFrames,
-        canvasWidth: currentProject?.metadata.width ?? DEFAULT_PROJECT_WIDTH,
-        canvasHeight: currentProject?.metadata.height ?? DEFAULT_PROJECT_HEIGHT,
+        canvasWidth,
+        canvasHeight,
         fps,
       },
       text: args.text,
     })
+    const positionY =
+      args.position === 'top'
+        ? -canvasHeight * 0.32
+        : args.position === 'bottom'
+          ? canvasHeight * 0.32
+          : args.position === 'lower-third'
+            ? canvasHeight * 0.24
+            : 0
+    const textItem: TextItem = {
+      ...baseTextItem,
+      ...(args.fontSize !== undefined ? { fontSize: args.fontSize } : {}),
+      ...(args.color ? { color: args.color } : {}),
+      transform: { ...baseTextItem.transform, y: positionY },
+    }
 
     addItem(textItem)
     if (useTimelineStore.getState().items.some((item) => item.id === textItem.id)) {
@@ -297,14 +361,22 @@ const setSpeed = defineTool({
   title: 'Set speed',
   description: 'Change playback speed of video/audio clips. 1 = normal, 2 = double, 0.5 = half.',
   inputSchema: objSchema(
-    { clips: CLIPS_PROP, speed: { type: 'number', minimum: 0.1, maximum: 10 } },
+    {
+      clips: CLIPS_PROP,
+      scope: SCOPE_PROP,
+      speed: { type: 'number', minimum: 0.1, maximum: 10 },
+    },
     ['speed'],
   ),
-  schema: z.object({ clips: clipsField, speed: z.number().min(0.1).max(10) }),
+  schema: z.object({
+    clips: clipsField,
+    scope: scopeField,
+    speed: z.number().min(0.1).max(10),
+  }),
   summarize: (args) => `Set speed to ${args.speed}x`,
   execute: (args) => {
     const { rateStretchItem } = useTimelineStore.getState()
-    const media = resolveTargetItems(args.clips).filter(isMedia)
+    const media = resolveScopedItems(args.clips, args.scope).filter(isMedia)
     if (media.length === 0) throw new Error('Select or name one or more video/audio clips.')
     for (const item of media) {
       const current = item.speed ?? 1
@@ -321,21 +393,189 @@ const setSpeed = defineTool({
 const setVolume = defineTool({
   name: 'set_volume',
   title: 'Set volume',
-  description: 'Set the volume of video/audio clips (0 = mute, 1 = full).',
+  description: 'Set video/audio volume as a percentage (0 = mute, 100 = original level).',
   inputSchema: objSchema(
-    { clips: CLIPS_PROP, volume: { type: 'number', minimum: 0, maximum: 1 } },
+    {
+      clips: CLIPS_PROP,
+      scope: SCOPE_PROP,
+      volume: { type: 'number', minimum: 0, maximum: 200 },
+    },
     ['volume'],
   ),
-  schema: z.object({ clips: clipsField, volume: z.number().min(0).max(1) }),
-  summarize: (args) => `Set volume to ${Math.round(args.volume * 100)}%`,
+  schema: z.object({
+    clips: clipsField,
+    scope: scopeField,
+    volume: z.number().min(0).max(200),
+  }),
+  summarize: (args) => `Set volume to ${Math.round(args.volume)}%`,
   execute: (args) => {
-    const { updateItem } = useTimelineStore.getState()
-    const media = resolveTargetItems(args.clips).filter(isMedia)
+    const { updateItemsTransformMap } = useTimelineStore.getState()
+    const media = resolveScopedItems(args.clips, args.scope).filter(isMedia)
     if (media.length === 0) throw new Error('Select or name one or more video/audio clips.')
-    for (const item of media) updateItem(item.id, { volume: args.volume })
+    const volumeDb = args.volume <= 0 ? -60 : Math.min(12, 20 * Math.log10(args.volume / 100))
+    updateItemsTransformMap(new Map(), {
+      itemUpdates: new Map(media.map((item) => [item.id, { volume: volumeDb }])),
+    })
     return {
       ok: true,
-      message: `Set ${media.length} clip${media.length === 1 ? '' : 's'} to ${Math.round(args.volume * 100)}% volume.`,
+      message: `Set ${media.length} clip${media.length === 1 ? '' : 's'} to ${Math.round(args.volume)}% volume.`,
+    }
+  },
+})
+
+const setFades = defineTool({
+  name: 'set_fades',
+  title: 'Set clip fades',
+  description:
+    'Apply fade-in, fade-out, or both to selected clips or every compatible clip. Use this for fades on clip edges, not transitions between cuts.',
+  inputSchema: objSchema(
+    {
+      clips: CLIPS_PROP,
+      scope: SCOPE_PROP,
+      direction: { type: 'string', enum: ['in', 'out', 'both'] },
+      kind: { type: 'string', enum: ['visual', 'audio', 'both'] },
+      durationSeconds: { type: 'number', minimum: 0, maximum: 30 },
+    },
+    ['durationSeconds'],
+  ),
+  schema: z.object({
+    clips: clipsField,
+    scope: scopeField,
+    direction: z.enum(['in', 'out', 'both']).optional(),
+    kind: z.enum(['visual', 'audio', 'both']).optional(),
+    durationSeconds: z.number().min(0).max(30),
+  }),
+  summarize: (args) =>
+    `Set ${args.direction ?? 'in/out'} ${args.kind ?? 'visual'} fades to ${args.durationSeconds.toFixed(1)}s`,
+  // Visual/audio and in/out combinations intentionally share one atomic update command.
+  // fallow-ignore-next-line complexity
+  execute: (args) => {
+    const { fps, updateItemsTransformMap } = useTimelineStore.getState()
+    const direction = args.direction ?? 'both'
+    const kind = args.kind ?? 'visual'
+    const updates = new Map<string, Partial<TimelineItem>>()
+
+    for (const item of resolveScopedItems(args.clips, args.scope)) {
+      const visual = kind !== 'audio' && (item.type === 'video' || item.type === 'composition')
+      const audio = kind !== 'visual' && (item.type === 'video' || item.type === 'audio')
+      if (!visual && !audio) continue
+
+      const clipSeconds = item.durationInFrames / Math.max(1, fps)
+      const maxFadeSeconds = direction === 'both' ? clipSeconds / 2 : clipSeconds
+      const duration = Math.min(args.durationSeconds, maxFadeSeconds)
+      const update: Partial<TimelineItem> = {}
+      if (visual && direction !== 'out') update.fadeIn = duration
+      if (visual && direction !== 'in') update.fadeOut = duration
+      if (audio && direction !== 'out') update.audioFadeIn = duration
+      if (audio && direction !== 'in') update.audioFadeOut = duration
+      updates.set(item.id, update)
+    }
+
+    if (updates.size === 0) throw new Error('Select compatible video, composition, or audio clips.')
+    updateItemsTransformMap(new Map(), { itemUpdates: updates })
+    return {
+      ok: true,
+      message: `Applied ${args.durationSeconds.toFixed(1)}s fades to ${updates.size} clip${updates.size === 1 ? '' : 's'}.`,
+    }
+  },
+})
+
+const setTransform = defineTool({
+  name: 'set_transform',
+  title: 'Position and transform clips',
+  description:
+    'Set canvas position, rotation, or opacity for visual clips. Coordinates are pixel offsets from canvas center.',
+  inputSchema: objSchema({
+    clips: CLIPS_PROP,
+    scope: SCOPE_PROP,
+    x: { type: 'number', description: 'Horizontal pixels from canvas center.' },
+    y: { type: 'number', description: 'Vertical pixels from canvas center.' },
+    rotation: { type: 'number', minimum: -360, maximum: 360 },
+    opacity: { type: 'number', minimum: 0, maximum: 1 },
+  }),
+  schema: z
+    .object({
+      clips: clipsField,
+      scope: scopeField,
+      x: z.number().optional(),
+      y: z.number().optional(),
+      rotation: z.number().min(-360).max(360).optional(),
+      opacity: z.number().min(0).max(1).optional(),
+    })
+    .refine(
+      (args) =>
+        args.x !== undefined ||
+        args.y !== undefined ||
+        args.rotation !== undefined ||
+        args.opacity !== undefined,
+      { message: 'Provide at least one transform property.' },
+    ),
+  summarize: () => 'Transform visual clips',
+  execute: (args) => {
+    const targets = resolveScopedItems(args.clips, args.scope).filter(
+      (item) => item.type !== 'audio' && item.type !== 'adjustment',
+    )
+    if (targets.length === 0) throw new Error('Select or name one or more visual clips.')
+    useTimelineStore.getState().updateItemsTransform(
+      targets.map((item) => item.id),
+      {
+        ...(args.x !== undefined ? { x: args.x } : {}),
+        ...(args.y !== undefined ? { y: args.y } : {}),
+        ...(args.rotation !== undefined ? { rotation: args.rotation } : {}),
+        ...(args.opacity !== undefined ? { opacity: args.opacity } : {}),
+      },
+    )
+    return {
+      ok: true,
+      message: `Transformed ${targets.length} clip${targets.length === 1 ? '' : 's'}.`,
+    }
+  },
+})
+
+const removeRange = defineTool({
+  name: 'remove_range',
+  title: 'Remove a timeline range',
+  description:
+    'Cut out an exact timeline time range and ripple-close the gap. Use absolute timeline seconds; this is destructive and always reviewed first.',
+  inputSchema: objSchema(
+    {
+      clips: CLIPS_PROP,
+      scope: SCOPE_PROP,
+      startSeconds: { type: 'number', minimum: 0 },
+      endSeconds: { type: 'number', minimum: 0 },
+    },
+    ['startSeconds', 'endSeconds'],
+  ),
+  destructive: true,
+  schema: z
+    .object({
+      clips: clipsField,
+      scope: scopeField,
+      startSeconds: z.number().min(0),
+      endSeconds: z.number().min(0),
+    })
+    .refine((args) => args.endSeconds > args.startSeconds, {
+      message: 'endSeconds must be greater than startSeconds.',
+      path: ['endSeconds'],
+    }),
+  summarize: (args) =>
+    `Remove ${args.startSeconds.toFixed(1)}–${args.endSeconds.toFixed(1)}s and close the gap`,
+  execute: (args) => {
+    const state = useTimelineStore.getState()
+    const targets = resolveScopedItems(args.clips, args.scope).filter(isMedia)
+    if (targets.length === 0) throw new Error('Select media clips or use scope "all".')
+    const result = state.removeTimelineRangeFromItems(
+      targets.map((item) => item.id),
+      Math.round(args.startSeconds * state.fps),
+      Math.round(args.endSeconds * state.fps),
+    )
+    if (result.removedItemCount === 0) {
+      throw new Error('That range does not contain a removable part of the targeted clips.')
+    }
+    return {
+      ok: true,
+      message: `Removed ${args.startSeconds.toFixed(1)}–${args.endSeconds.toFixed(1)}s from the timeline.`,
+      data: result,
     }
   },
 })
@@ -373,7 +613,36 @@ const trimClip = defineTool({
   },
 })
 
-const TRANSITION_TYPES = ['fade', 'dissolve', 'wipe', 'slide', 'flip', 'iris', 'pixelate'] as const
+const TRANSITION_STYLES = ['fade', 'dissolve', 'wipe', 'slide', 'flip', 'iris', 'pixelate'] as const
+
+// Handle both sides of every failed transition while coalescing updates by clip.
+// fallow-ignore-next-line complexity
+function applyFallbackFadeEdges(
+  pairs: Array<{ leftClipId: string; rightClipId: string }>,
+  durationSeconds: number,
+): number {
+  const state = useTimelineStore.getState()
+  const byId = new Map(state.items.map((item) => [item.id, item]))
+  const updates = new Map<string, Partial<TimelineItem>>()
+  for (const pair of pairs) {
+    const left = byId.get(pair.leftClipId)
+    const right = byId.get(pair.rightClipId)
+    if (left && (left.type === 'video' || left.type === 'composition')) {
+      updates.set(left.id, {
+        ...(updates.get(left.id) ?? {}),
+        fadeOut: Math.min(durationSeconds, left.durationInFrames / Math.max(1, state.fps) / 2),
+      })
+    }
+    if (right && (right.type === 'video' || right.type === 'composition')) {
+      updates.set(right.id, {
+        ...(updates.get(right.id) ?? {}),
+        fadeIn: Math.min(durationSeconds, right.durationInFrames / Math.max(1, state.fps) / 2),
+      })
+    }
+  }
+  if (updates.size > 0) state.updateItemsTransformMap(new Map(), { itemUpdates: updates })
+  return updates.size
+}
 
 const addTransition = defineTool({
   name: 'add_transition',
@@ -384,15 +653,17 @@ const addTransition = defineTool({
       ...CLIPS_PROP,
       description: 'Exactly two adjacent clip refs. Omit to use the current selection.',
     },
-    type: { type: 'string', enum: [...TRANSITION_TYPES] },
+    type: { type: 'string', enum: [...TRANSITION_STYLES] },
     durationSeconds: { type: 'number', minimum: 0.1, maximum: 5 },
   }),
   schema: z.object({
     clips: clipsField,
-    type: z.enum(TRANSITION_TYPES).optional(),
+    type: z.enum(TRANSITION_STYLES).optional(),
     durationSeconds: z.number().min(0.1).max(5).optional(),
   }),
   summarize: (args) => `Add ${args.type ?? 'default'} transition`,
+  // A real transition and its handle-free fade fallback are validated as one user-facing tool.
+  // fallow-ignore-next-line complexity
   execute: (args) => {
     const targets = resolveTargetItems(args.clips)
     if (targets.length !== 2) throw new Error('Name exactly two adjacent clips for a transition.')
@@ -404,9 +675,104 @@ const addTransition = defineTool({
     const durationInFrames = args.durationSeconds
       ? Math.max(1, Math.round(args.durationSeconds * fps))
       : undefined
-    const ok = add(left.id, right.id, args.type as Parameters<typeof add>[2], durationInFrames)
-    if (!ok) throw new Error('Could not add a transition between those clips.')
-    return { ok: true, message: `Added a ${args.type ?? 'default'} transition.` }
+    const style = args.type ?? 'fade'
+    const ok = add(left.id, right.id, 'crossfade', durationInFrames, style)
+    if (ok) return { ok: true, message: `Added a ${style} transition.` }
+
+    if (style === 'fade' || style === 'dissolve') {
+      const fallbackCount = applyFallbackFadeEdges(
+        [{ leftClipId: left.id, rightClipId: right.id }],
+        args.durationSeconds ?? 1,
+      )
+      if (fallbackCount > 0) {
+        return {
+          ok: true,
+          message:
+            'Applied fade edges at the cut because the source clips have no transition handles.',
+        }
+      }
+    }
+    throw new Error('Could not add a transition between those clips.')
+  },
+})
+
+const addTransitions = defineTool({
+  name: 'add_transitions',
+  title: 'Add transitions across clips',
+  description:
+    'Add the same transition at every adjacent cut among selected clips or all visual clips. Use one bulk call instead of one call per cut.',
+  inputSchema: objSchema({
+    clips: CLIPS_PROP,
+    scope: SCOPE_PROP,
+    type: { type: 'string', enum: [...TRANSITION_STYLES] },
+    durationSeconds: { type: 'number', minimum: 0.1, maximum: 5 },
+  }),
+  schema: z.object({
+    clips: clipsField,
+    scope: scopeField,
+    type: z.enum(TRANSITION_STYLES).optional(),
+    durationSeconds: z.number().min(0.1).max(5).optional(),
+  }),
+  summarize: (args) =>
+    `Add ${args.type ?? 'fade'} transitions across ${args.scope === 'all' ? 'all clips' : 'the target clips'}`,
+  // Track grouping, adjacency checks, and fade fallbacks are covered by bulk transition tests.
+  // fallow-ignore-next-line complexity
+  execute: (args) => {
+    const state = useTimelineStore.getState()
+    const targets = resolveScopedItems(args.clips, args.scope).filter(isVisual)
+    if (targets.length < 2) throw new Error('Select at least two visual clips or use scope "all".')
+
+    const existingCuts = new Set(
+      state.transitions.map((transition) => `${transition.leftClipId}:${transition.rightClipId}`),
+    )
+    const byTrack = new Map<string, TimelineItem[]>()
+    for (const item of targets) {
+      const trackItems = byTrack.get(item.trackId) ?? []
+      trackItems.push(item)
+      byTrack.set(item.trackId, trackItems)
+    }
+
+    const style = args.type ?? 'fade'
+    const durationInFrames = args.durationSeconds
+      ? Math.max(1, Math.round(args.durationSeconds * state.fps))
+      : undefined
+    const requests = Array.from(byTrack.values()).flatMap((items) => {
+      const ordered = items.toSorted((a, b) => a.from - b.from)
+      return ordered.slice(0, -1).flatMap((left, index) => {
+        const right = ordered[index + 1]
+        if (!right || left.from + left.durationInFrames !== right.from) return []
+        if (existingCuts.has(`${left.id}:${right.id}`)) return []
+        return [
+          {
+            leftClipId: left.id,
+            rightClipId: right.id,
+            type: 'crossfade' as const,
+            durationInFrames,
+            presentation: style,
+          },
+        ]
+      })
+    })
+    if (requests.length === 0) throw new Error('No new adjacent cuts were found in those clips.')
+
+    const result = state.addTransitions(requests)
+    const fallbackCount =
+      style === 'fade' || style === 'dissolve'
+        ? applyFallbackFadeEdges(result.failed, args.durationSeconds ?? 1)
+        : 0
+    if (result.added === 0 && fallbackCount === 0) {
+      throw new Error('The adjacent clips do not have enough source handles for transitions.')
+    }
+
+    const fallbackCuts = result.failed.length > 0 && fallbackCount > 0 ? result.failed.length : 0
+    return {
+      ok: true,
+      message:
+        fallbackCuts > 0
+          ? `Added ${result.added} transition${result.added === 1 ? '' : 's'} and fade edges at ${fallbackCuts} cut${fallbackCuts === 1 ? '' : 's'} without media handles.`
+          : `Added ${result.added} ${style} transition${result.added === 1 ? '' : 's'}.`,
+      data: { ...result, fallbackCuts },
+    }
   },
 })
 
@@ -465,8 +831,12 @@ export const EDITOR_TOOLS: readonly EditorAgentTool[] = [
   deleteClips,
   setSpeed,
   setVolume,
+  setFades,
+  setTransform,
+  removeRange,
   trimClip,
   addTransition,
+  addTransitions,
   removeSilence,
   removeFillers,
 ]

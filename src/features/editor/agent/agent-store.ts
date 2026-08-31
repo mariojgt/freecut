@@ -30,6 +30,9 @@ interface AgentState {
   supported: boolean
   modelStatus: ModelStatus
   loadPercent: number
+  loadStage: string | null
+  loadLoadedBytes: number
+  loadTotalBytes: number
   loadError: string | null
 
   messages: ChatMessage[]
@@ -37,6 +40,7 @@ interface AgentState {
   streamingText: string
   plan: PlanStepState[] | null
 
+  refreshAdapter: () => void
   loadModel: () => Promise<void>
   submit: (text: string) => Promise<void>
   runPlan: () => Promise<void>
@@ -46,6 +50,13 @@ interface AgentState {
 }
 
 let activeController: AbortController | null = null
+let modelLoadGeneration = 0
+
+function createModelLoadCancelledError(): Error {
+  return typeof DOMException === 'undefined'
+    ? new Error('Model loading cancelled.')
+    : new DOMException('Model loading cancelled.', 'AbortError')
+}
 
 function newId(): string {
   return crypto.randomUUID()
@@ -60,6 +71,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   supported: getAgentAdapter().isSupported(),
   modelStatus: 'idle',
   loadPercent: 0,
+  loadStage: null,
+  loadLoadedBytes: 0,
+  loadTotalBytes: 0,
   loadError: null,
 
   messages: [],
@@ -67,22 +81,63 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   streamingText: '',
   plan: null,
 
+  refreshAdapter: () => {
+    modelLoadGeneration += 1
+    activeController?.abort()
+    activeController = null
+    const adapter = getAgentAdapter()
+    adapter.dispose()
+    set({
+      supported: adapter.isSupported(),
+      modelStatus: 'idle',
+      loadPercent: 0,
+      loadStage: null,
+      loadLoadedBytes: 0,
+      loadTotalBytes: 0,
+      loadError: null,
+      phase: 'idle',
+      streamingText: '',
+      plan: null,
+    })
+  },
+
   loadModel: async () => {
     const adapter = getAgentAdapter()
     if (!adapter.isSupported()) {
-      set({ modelStatus: 'error', loadError: 'WebGPU is required to run the on-device assistant.' })
-      throw new Error('WebGPU unsupported')
+      const message = `${adapter.label} is not supported in this browser.`
+      set({ modelStatus: 'error', loadError: message })
+      throw new Error(message)
     }
     if (get().modelStatus === 'ready') return
-    set({ modelStatus: 'loading', loadError: null })
+    const generation = ++modelLoadGeneration
+    set({
+      modelStatus: 'loading',
+      loadPercent: 0,
+      loadStage: 'preparing-model',
+      loadLoadedBytes: 0,
+      loadTotalBytes: 0,
+      loadError: null,
+    })
     try {
-      await adapter.load((progress) => set({ loadPercent: progress.percent }))
-      set({ modelStatus: 'ready', loadPercent: 100 })
-    } catch (error) {
-      set({
-        modelStatus: 'error',
-        loadError: error instanceof Error ? error.message : 'Failed to load the model.',
+      await adapter.load((progress) => {
+        if (generation !== modelLoadGeneration) return
+        set({
+          loadPercent: progress.percent,
+          loadStage: progress.stage,
+          loadLoadedBytes: progress.loadedBytes ?? 0,
+          loadTotalBytes: progress.totalBytes ?? 0,
+        })
       })
+      if (generation !== modelLoadGeneration) throw createModelLoadCancelledError()
+      set({ modelStatus: 'ready', loadPercent: 100, loadStage: 'ready' })
+    } catch (error) {
+      if (generation === modelLoadGeneration) {
+        set({
+          modelStatus: 'error',
+          loadStage: null,
+          loadError: error instanceof Error ? error.message : 'Failed to load the model.',
+        })
+      }
       throw error
     }
   },
@@ -196,9 +251,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   cancel: () => {
+    const wasLoading = get().modelStatus === 'loading'
+    modelLoadGeneration += 1
     activeController?.abort()
     activeController = null
-    set({ phase: 'idle', streamingText: '' })
+    if (wasLoading) getAgentAdapter().dispose()
+    set({
+      phase: 'idle',
+      streamingText: '',
+      modelStatus: wasLoading ? 'idle' : get().modelStatus,
+      loadPercent: wasLoading ? 0 : get().loadPercent,
+      loadStage: wasLoading ? null : get().loadStage,
+      loadLoadedBytes: wasLoading ? 0 : get().loadLoadedBytes,
+      loadTotalBytes: wasLoading ? 0 : get().loadTotalBytes,
+      loadError: null,
+    })
   },
 
   clearChat: () => {

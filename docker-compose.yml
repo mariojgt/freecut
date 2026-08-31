@@ -1,0 +1,44 @@
+name: freecut
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: freecut-web:local
+    ports:
+      - "127.0.0.1:${FREECUT_WEB_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  headless:
+    profiles: [automation]
+    # Google Chrome for Linux is published for amd64. Docker Desktop runs this
+    # image through emulation on Apple Silicon; native amd64 Linux is unchanged.
+    platform: ${FREECUT_HEADLESS_PLATFORM:-linux/amd64}
+    build:
+      context: .
+      dockerfile: headless/Dockerfile
+    image: freecut-headless:local
+    container_name: freecut-headless
+    environment:
+      FREECUT_API_TOKEN: ${FREECUT_API_TOKEN:-}
+    ports:
+      - "127.0.0.1:${FREECUT_API_PORT:-8787}:8787"
+    volumes:
+      - "${FREECUT_WORKSPACE:-./freecut-workspace}:/workspace"
+      - "${FREECUT_MCP_OUTPUT:-./freecut-output}:/output"
+    restart: unless-stopped
+
+  ollama:
+    profiles: [local-ai]
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_ORIGINS: "http://localhost:${FREECUT_WEB_PORT:-8080},http://127.0.0.1:${FREECUT_WEB_PORT:-8080}"
+    ports:
+      - "127.0.0.1:${FREECUT_LLM_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

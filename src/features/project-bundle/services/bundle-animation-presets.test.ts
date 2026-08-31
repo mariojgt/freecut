@@ -31,6 +31,15 @@ const storageMocks = vi.hoisted(() => ({
   saveProjectThumbnail: vi.fn(async () => {}),
   associateMediaWithProject: vi.fn(async () => {}),
   updateProject: vi.fn(async () => {}),
+  deleteMedia: vi.fn<(mediaId: string) => Promise<void>>(async () => {}),
+  writeMediaSource: vi.fn<
+    (
+      mediaId: string,
+      blob: Blob,
+      fileName: string | undefined,
+      options?: { strict?: boolean },
+    ) => Promise<void>
+  >(async () => {}),
 }))
 
 vi.mock('@/infrastructure/storage', () => ({
@@ -237,6 +246,30 @@ describe('bundle animation presets round-trip', () => {
   })
 })
 
+describe('portable bundle import', () => {
+  it('copies bundled media into the active workspace by default', async () => {
+    const file = await buildBundleWithMedia()
+
+    const result = await importProjectBundle(file)
+
+    expect(result.mediaImported).toBe(1)
+    expect(storageMocks.writeMediaSource).toHaveBeenCalledTimes(1)
+    const [mediaId, copiedFile, fileName, options] = storageMocks.writeMediaSource.mock.calls[0]!
+    expect(mediaId).toEqual(expect.any(String))
+    expect(copiedFile).toEqual(expect.objectContaining({ name: 'clip.mp4', type: 'video/mp4' }))
+    expect(fileName).toBe('clip.mp4')
+    expect(options).toEqual({ strict: true })
+    expect(storageMocks.createMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: mediaId,
+        storageType: 'workspace',
+        fileName: 'clip.mp4',
+      }),
+    )
+    expect(result.project).not.toHaveProperty('rootFolderHandle')
+  })
+})
+
 /**
  * Hand-build a valid bundle whose animation-presets.json contains arbitrary
  * raw bytes, recomputing the manifest checksum so validation passes.
@@ -285,4 +318,65 @@ async function buildBundleWithRawPresets(rawPresets: string): Promise<File> {
     offset += c.length
   }
   return fileFromBytes(out)
+}
+
+async function buildBundleWithMedia(): Promise<File> {
+  const relativePath = 'media/hash/clip.mp4'
+  const manifest = {
+    version: BUNDLE_VERSION,
+    createdAt: Date.now(),
+    editorVersion: '1.0.0',
+    projectId: 'project-a',
+    projectName: 'My Project',
+    media: [
+      {
+        originalId: 'media-a',
+        relativePath,
+        fileName: 'clip.mp4',
+        fileSize: 4,
+        sha256: 'hash',
+        mimeType: 'video/mp4',
+        metadata: {
+          duration: 1,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          codec: 'h264',
+          bitrate: 1_000_000,
+        },
+      },
+    ],
+    checksum: '',
+  }
+  manifest.checksum = await computeBundleManifestChecksum(manifest)
+
+  const chunks: Uint8Array[] = []
+  await new Promise<void>((resolve, reject) => {
+    const zip = new Zip((error, chunk, final) => {
+      if (error) reject(error)
+      else {
+        if (chunk) chunks.push(chunk)
+        if (final) resolve()
+      }
+    })
+    const add = (name: string, bytes: Uint8Array) => {
+      const entry = new ZipDeflate(name)
+      zip.add(entry)
+      entry.push(bytes, true)
+    }
+    const encoder = new TextEncoder()
+    add('project.json', encoder.encode(JSON.stringify({ ...makeProject(), timeline: undefined })))
+    add('manifest.json', encoder.encode(JSON.stringify(manifest)))
+    add(relativePath, new Uint8Array([0, 1, 2, 3]))
+    zip.end()
+  })
+
+  const size = chunks.reduce((total, chunk) => total + chunk.length, 0)
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.length
+  }
+  return fileFromBytes(bytes)
 }

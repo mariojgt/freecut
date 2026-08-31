@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DiscordIcon } from '@/components/brand/discord-icon'
-import { DISCORD_INVITE_URL } from '@/config/community'
+import { DISCORD_INVITE_URL, GITHUB_REPOSITORY_URL } from '@/config/community'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +37,7 @@ import { WhatsNewDialog } from './whats-new-dialog'
 import { hasUnseenChangelog } from './whats-new-seen'
 import { EDITOR_LAYOUT_CSS_VALUES } from '@/config/editor-layout'
 import { cn } from '@/shared/ui/cn'
+import { DockerUpdateButton } from '@/shared/ui/docker-update-button'
 import { LanguageSwitcher } from '@/shared/ui/language-switcher'
 import { useDebugStore } from '@/features/editor/stores/debug-store'
 import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
@@ -98,18 +99,15 @@ export const Toolbar = memo(function Toolbar({
   const maxItemEndFrame = useItemsStore((state) => state.maxItemEndFrame)
   const mediaDependencyIds = useItemsStore((state) => state.mediaDependencyIds)
   const brokenMediaIds = useMediaLibraryStore((state) => state.brokenMediaIds)
-  const projectSummary = useMemo(
-    () => {
-      const projectMediaIds = new Set(mediaDependencyIds)
-      return {
-        durationSeconds: project.fps > 0 ? maxItemEndFrame / project.fps : 0,
-        clipCount: itemCount,
-        mediaCount: mediaDependencyIds.length,
-        brokenMediaCount: brokenMediaIds.filter((mediaId) => projectMediaIds.has(mediaId)).length,
-      }
-    },
-    [brokenMediaIds, itemCount, maxItemEndFrame, mediaDependencyIds, project.fps],
-  )
+  const projectSummary = useMemo(() => {
+    const projectMediaIds = new Set(mediaDependencyIds)
+    return {
+      durationSeconds: project.fps > 0 ? maxItemEndFrame / project.fps : 0,
+      clipCount: itemCount,
+      mediaCount: mediaDependencyIds.length,
+      brokenMediaCount: brokenMediaIds.filter((mediaId) => projectMediaIds.has(mediaId)).length,
+    }
+  }, [brokenMediaIds, itemCount, maxItemEndFrame, mediaDependencyIds, project.fps])
 
   useEffect(() => {
     setHasUnseenWhatsNew(hasUnseenChangelog())
@@ -232,7 +230,7 @@ export const Toolbar = memo(function Toolbar({
         {/* Socials */}
         <Button variant="outline" size="icon" className="h-7 w-7" asChild>
           <a
-            href="https://github.com/walterlow/freecut"
+            href={GITHUB_REPOSITORY_URL}
             target="_blank"
             rel="noopener noreferrer"
             data-tooltip={t('toolbar.viewOnGitHub')}
@@ -287,6 +285,7 @@ export const Toolbar = memo(function Toolbar({
             />
           )}
         </Button>
+        <DockerUpdateButton compact />
         <Button
           variant="outline"
           size="icon"
@@ -442,7 +441,7 @@ function DebugPopover({ projectId }: { projectId: string }) {
       <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-64 p-0 bg-zinc-900 border-zinc-700 text-zinc-100"
+        className="w-64 border-border bg-popover p-0 text-popover-foreground"
       >
         <ProjectDebugPanel projectId={projectId} />
       </PopoverContent>

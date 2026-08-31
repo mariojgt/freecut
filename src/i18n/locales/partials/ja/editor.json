@@ -1,5 +1,73 @@
 {
   "editor": {
+    "agent": {
+      "tabs": { "assistant": "アシスタント", "generate": "生成", "mcp": "MCP" },
+      "mcp": {
+        "openSetup": "MCP 設定",
+        "title": "LLM を接続",
+        "description": "Codex、Claude、または MCP 対応クライアントをヘッドレスサービスに接続し、FreeCut プロジェクトの確認と編集を行います。",
+        "startTitle": "1. 編集サービスを起動",
+        "startHint": "FreeCut のチェックアウト内でこのコマンドを実行します。先にワークスペースのパスとトークンを置き換えてください。",
+        "configTitle": "2. FreeCut を LLM に追加",
+        "configHint": "この JSON をクライアントの MCP サーバー設定に貼り付けます。",
+        "copyConfig": "MCP 設定をコピー",
+        "copied": "MCP 設定をコピーしました",
+        "copyFailed": "クリップボードにアクセスできませんでした。JSON を選択して手動でコピーしてください。",
+        "capabilities": "プロジェクト、メディア、タイムライン、検査、フレーム取得、レンダリングの各ツールを利用できます。編集プレビューは既定でドライランです。",
+        "dockerNote": "コピーされる設定は freecut-headless という名前の Docker コンテナに接続します。"
+      },
+      "provider": {
+        "label": "モデル",
+        "browserModelOption": "{{name}} — {{profile}}（{{size}}）",
+        "browserModelDescription": "{{profile}}のブラウザモデルです。初回ダウンロードは{{size}}で、その後はローカルにキャッシュされます。",
+        "localServerOption": "ローカルサーバー — Ollama / LM Studio",
+        "profiles": {
+          "fast": "最速",
+          "balanced": "バランス",
+          "quality": "最高品質"
+        },
+        "configure": "ローカルサーバーを設定",
+        "localServerTitle": "ローカルモデルサーバー",
+        "localServerDescription": "Ollama、LM Studio、LocalAI の OpenAI 互換エンドポイントに接続します。サーバー側でこのアプリのオリジンからのリクエストを許可してください。",
+        "endpoint": "エンドポイント",
+        "model": "モデル名"
+      },
+      "plan": {
+        "title": "プラン",
+        "handoffNote": "一部の手順では、確認用の画面が開きます。",
+        "run": "編集を適用",
+        "discard": "破棄",
+        "running": "実行中…"
+      },
+      "unsupported": {
+        "title": "アシスタントを利用できません",
+        "body": "ブラウザモデルには WebGPU が必要です。CPU でも使えるローカルサーバーモデルを上から選択してください。"
+      },
+      "status": {
+        "loadingModel": "{{model}}を読み込み中… {{percent}}%",
+        "loadingBytes": "{{total}}中{{loaded}}",
+        "prepare": "準備",
+        "ready": "準備完了",
+        "cancel": "キャンセル",
+        "retry": "再試行",
+        "thinking": "編集プランを作成中…"
+      },
+      "empty": {
+        "infoLabel": "このアシスタントについて",
+        "intro": "タイムラインの編集内容を自然な言葉で依頼できます。モデルはブラウザ内、または選択したローカルサーバーで動作します。最初にプランを提示し、確認後に変更を行います。"
+      },
+      "composer": { "placeholder": "編集内容を入力…" },
+      "suggestions": {
+        "transitions": "すべての動画にフェードトランジションを追加",
+        "fades": "すべての動画をフェードイン・アウト",
+        "silence": "無音部分を削除",
+        "fillers": "フィラーワードを削除",
+        "title": "「こんにちは」というタイトルを追加",
+        "cut": "5〜8秒をカット",
+        "split": "再生ヘッド位置で分割"
+      },
+      "clear": "会話を消去"
+    },
     "compose": {
       "title": "コンポジション",
       "newComposition": "新規コンポジション",

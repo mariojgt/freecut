@@ -6,7 +6,16 @@ import path from 'node:path';
 import process from 'node:process';
 
 const DEFAULT_BASE_REF = 'origin/staging';
+const FALLBACK_BASE_REFS = ['origin/main', 'HEAD^'];
 const FALLOW_PACKAGE = 'fallow@2.89.0';
+
+function gitRefExists(ref) {
+  return spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], {
+    cwd: process.cwd(),
+    stdio: 'ignore',
+    shell: false,
+  }).status === 0;
+}
 
 function getBaseRef() {
   const baseFlagIndex = process.argv.indexOf('--base');
@@ -18,7 +27,11 @@ function getBaseRef() {
     return value;
   }
 
-  return process.env.FALLOW_AUDIT_BASE || DEFAULT_BASE_REF;
+  if (process.env.FALLOW_AUDIT_BASE) {
+    return process.env.FALLOW_AUDIT_BASE;
+  }
+
+  return [DEFAULT_BASE_REF, ...FALLBACK_BASE_REFS].find(gitRefExists) ?? 'HEAD';
 }
 
 function valueOrDefault(value, fallback) {
@@ -35,7 +48,10 @@ function parseJson(stdout) {
 
 function getNpmExecPath() {
   const npmExecPath = process.env.npm_execpath;
-  if (npmExecPath && fs.existsSync(npmExecPath)) {
+  // npm_execpath can point at a native runtime (for example Bun) when this
+  // script is launched through another task runner. Only pass JavaScript CLI
+  // files to Node; native executables must be invoked directly instead.
+  if (npmExecPath && /\.[cm]?js$/i.test(npmExecPath) && fs.existsSync(npmExecPath)) {
     return npmExecPath;
   }
 

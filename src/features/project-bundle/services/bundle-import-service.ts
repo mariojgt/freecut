@@ -2,8 +2,10 @@
  * Project Bundle Import Service
  *
  * Imports a .freecut.zip bundle (ZIP archive) and creates a project with media.
- * Media files are extracted to a user-selected directory and referenced via
- * FileSystemFileHandle for local-first storage.
+ * By default media files are copied into the active FreeCut workspace so the
+ * imported project remains portable across browsers, origins, and headless
+ * tooling. A destination directory may still be supplied for legacy linked
+ * imports.
  */
 
 import { unzip } from 'fflate'
@@ -20,12 +22,14 @@ import type {
 import {
   createProject,
   createMedia,
+  deleteMedia,
   saveThumbnail,
   saveProjectThumbnail,
   associateMediaWithProject,
   updateProject,
   saveAnimationPresets,
   sanitizeAnimationPresets,
+  writeMediaSource,
 } from '@/infrastructure/storage'
 import { generateThumbnail } from '@/features/project-bundle/deps/media-library'
 import { createLogger } from '@/shared/logging/logger'
@@ -38,14 +42,17 @@ const logger = createLogger('BundleImportService')
  * Import a project bundle
  *
  * @param file - The .freecut.zip bundle file to import
- * @param destinationDirectory - Directory where media files will be extracted (must be provided by caller)
+ * @param destinationDirectory - Optional legacy extraction directory. Omit to
+ * copy media into the active workspace (recommended and Firefox-compatible).
  * @param options - Import options (new name, etc.)
  * @param onProgress - Progress callback
  * @returns Import result with project and media counts
  */
+// Covered by bundle round-trip and portable-media tests; the staged rollback flow is intentionally linear.
+// fallow-ignore-next-line complexity
 export async function importProjectBundle(
   file: File,
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: FileSystemDirectoryHandle | null = null,
   options: Omit<ImportOptions, 'destinationDirectory'> = {},
   onProgress?: (progress: ImportProgress) => void,
 ): Promise<ImportResult> {
@@ -65,12 +72,12 @@ export async function importProjectBundle(
   const files = await unzipBundle(file)
   const bundleProject = JSON.parse(new TextDecoder().decode(files['project.json'])) as BundleProject
 
-  // Step 3: Create project subdirectory in destination
+  // Step 3: Optionally create a legacy external project directory. The normal
+  // path writes source bytes into workspace/media/{id}/ instead.
   const projectName = options.newProjectName ?? bundleProject.name
-  const projectDir = await fileSystemService.getOrCreateSubdirectory(
-    destinationDirectory,
-    projectName,
-  )
+  const projectDir = destinationDirectory
+    ? await fileSystemService.getOrCreateSubdirectory(destinationDirectory, projectName)
+    : null
 
   // Step 5: Extract and import media files
   onProgress?.({ percent: 20, stage: 'extracting' })
@@ -88,6 +95,7 @@ export async function importProjectBundle(
       currentFile: entry.fileName,
     })
 
+    let newMediaId: string | null = null
     try {
       // Get the file data from the unzipped bundle
       const fileData = files[entry.relativePath]
@@ -97,15 +105,23 @@ export async function importProjectBundle(
         continue
       }
 
-      // Generate unique filename if needed
-      const uniqueFileName = await fileSystemService.getUniqueFileName(projectDir, entry.fileName)
-
-      // Write file to destination directory
-      const fileHandle = await fileSystemService.writeFile(projectDir, uniqueFileName, fileData)
-
       // Create new media ID
-      const newMediaId = crypto.randomUUID()
-      mediaIdMap.set(entry.originalId, newMediaId)
+      newMediaId = crypto.randomUUID()
+
+      let uniqueFileName = entry.fileName
+      let fileHandle: FileSystemFileHandle | undefined
+      let extractedFile: File
+      if (projectDir) {
+        uniqueFileName = await fileSystemService.getUniqueFileName(projectDir, entry.fileName)
+        fileHandle = await fileSystemService.writeFile(projectDir, uniqueFileName, fileData)
+        extractedFile = await fileHandle.getFile()
+      } else {
+        extractedFile = new File([new Uint8Array(fileData)], uniqueFileName, {
+          type: entry.mimeType,
+          lastModified: Date.now(),
+        })
+        await writeMediaSource(newMediaId, extractedFile, uniqueFileName, { strict: true })
+      }
 
       // Generate thumbnail from the extracted file
       onProgress?.({
@@ -116,7 +132,6 @@ export async function importProjectBundle(
 
       let thumbnailId: string | undefined
       try {
-        const extractedFile = await fileHandle.getFile()
         const thumbnailBlob = await generateThumbnail(extractedFile)
         thumbnailId = crypto.randomUUID()
 
@@ -137,7 +152,7 @@ export async function importProjectBundle(
       // Create media metadata entry
       const mediaMetadata: MediaMetadata = {
         id: newMediaId,
-        storageType: 'handle',
+        storageType: projectDir ? 'handle' : 'workspace',
         fileHandle,
         fileName: uniqueFileName,
         fileSize: entry.fileSize,
@@ -156,8 +171,13 @@ export async function importProjectBundle(
       }
 
       await createMedia(mediaMetadata)
+      mediaIdMap.set(entry.originalId, newMediaId)
       imported++
     } catch (error) {
+      if (newMediaId) {
+        mediaIdMap.delete(entry.originalId)
+        await deleteMedia(newMediaId).catch(() => undefined)
+      }
       logger.error(`Failed to import media ${entry.fileName}:`, error)
       conflicts.push({
         type: 'media_duplicate',
@@ -185,9 +205,9 @@ export async function importProjectBundle(
     duration: bundleProject.duration,
     thumbnail: bundleProject.thumbnail,
     metadata: bundleProject.metadata,
-    // Store the project folder handle for smarter relinking and path display
-    rootFolderHandle: projectDir,
-    rootFolderName: projectName,
+    // Legacy external imports retain their folder hint. Workspace-copy imports
+    // need no origin-scoped handle and are fully described by project/media files.
+    ...(projectDir ? { rootFolderHandle: projectDir, rootFolderName: projectName } : {}),
     timeline: restoreTimelineFromBundle(bundleProject.timeline, mediaIdMap),
   }
 

@@ -61,26 +61,6 @@
       "reason": "unreviewed: carried over by the 2026-07-09 re-baseline; trace individually before deleting."
     },
     {
-      "path": "src/features/editor/agent/agent-service.ts",
-      "exportName": "getAgentAdapter",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/agent-service.ts",
-      "exportName": "planRequest",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/agent-service.ts",
-      "exportName": "runStep",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/agent-store.ts",
-      "exportName": "useAgentStore",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
       "path": "src/features/editor/agent/index.ts",
       "exportName": "buildToolCatalog",
       "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
@@ -106,28 +86,8 @@
       "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
     },
     {
-      "path": "src/features/editor/agent/index.ts",
-      "exportName": "useAgentStore",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/prompt.ts",
-      "exportName": "buildMessages",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
       "path": "src/features/editor/agent/prompt.ts",
       "exportName": "buildSystemPrompt",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/prompt.ts",
-      "exportName": "parsePlan",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/timeline-context.ts",
-      "exportName": "buildTimelineContext",
       "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
     },
     {
@@ -137,22 +97,7 @@
     },
     {
       "path": "src/features/editor/agent/tools/index.ts",
-      "exportName": "buildClipRefs",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/tools/index.ts",
-      "exportName": "buildToolCatalog",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/tools/index.ts",
       "exportName": "callMcpTool",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/features/editor/agent/tools/index.ts",
-      "exportName": "getEditorTool",
       "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
     },
     {
@@ -246,16 +191,6 @@
       "reason": "Called through the canvas-audio namespace from export rendering."
     },
     {
-      "path": "src/features/export/utils/canvas-audio.ts",
-      "exportName": "hasAudioContent",
-      "reason": "Called through the canvas-audio namespace from export rendering."
-    },
-    {
-      "path": "src/features/export/utils/canvas-render-orchestrator.ts",
-      "exportName": "renderSingleFrame",
-      "reason": "Dynamically imported by thumbnail and timeline persistence flows."
-    },
-    {
       "path": "src/features/keyframes/utils/easing-presets.ts",
       "exportName": "areBezierPointsEqual",
       "reason": "unreviewed: carried over by the 2026-07-09 re-baseline; trace individually before deleting."
@@ -303,11 +238,6 @@
     {
       "path": "src/features/media-library/transcription/transcription-engine.ts",
       "exportName": "PARAKEET_MODEL",
-      "reason": "unreviewed: carried over by the 2026-07-09 re-baseline; trace individually before deleting."
-    },
-    {
-      "path": "src/features/media-library/transcription/transcription-engine.ts",
-      "exportName": "PARAKEET_SUPPORTED_LANGUAGES",
       "reason": "unreviewed: carried over by the 2026-07-09 re-baseline; trace individually before deleting."
     },
     {
@@ -486,16 +416,6 @@
       "reason": "barrel-surface: feature barrel defines the public API; current consumers import the underlying module directly."
     },
     {
-      "path": "src/infrastructure/llm/create-gemma-llm-worker.ts",
-      "exportName": "createGemmaLlmWorker",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/infrastructure/llm/gemma-llm-adapter.ts",
-      "exportName": "gemmaLlmAdapter",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
       "path": "src/infrastructure/llm/index.ts",
       "exportName": "DEFAULT_LLM_ADAPTER_ID",
       "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
@@ -511,11 +431,6 @@
       "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
     },
     {
-      "path": "src/infrastructure/llm/index.ts",
-      "exportName": "listLlmAdapters",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
       "path": "src/infrastructure/llm/llm-registry.ts",
       "exportName": "DEFAULT_LLM_ADAPTER_ID",
       "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
@@ -528,11 +443,6 @@
     {
       "path": "src/infrastructure/llm/llm-registry.ts",
       "exportName": "getLlmAdapter",
-      "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
-    },
-    {
-      "path": "src/infrastructure/llm/llm-registry.ts",
-      "exportName": "listLlmAdapters",
       "reason": "parked-ai-feature: the on-device assistant is deliberately unwired (see the note in ai-tab.tsx); restore when the Assistant tab ships."
     },
     {
@@ -564,6 +474,11 @@
       "path": "src/infrastructure/storage/workspace-fs/exports.ts",
       "exportName": "saveExportFile",
       "reason": "Storage implementation exported through the indexed storage API and dynamic render queue path."
+    },
+    {
+      "path": "src/runtime/composition-runtime/hooks/use-player-compat.ts",
+      "exportName": "useCurrentFrame",
+      "reason": "Compatibility hook retained for composition-style consumers even though the current runtime avoids per-frame subscriptions at this layer."
     },
     {
       "path": "src/shared/logging/preview-trace.ts",

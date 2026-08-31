@@ -13,6 +13,7 @@ import type {
   SlideDirection,
   FlipDirection,
 } from '@/types/transition'
+import type { AddTransitionRequest, AddTransitionsResult } from '../../types'
 import { TRANSITION_CONFIGS } from '@/types/transition'
 import { useItemsStore } from '../items-store'
 import { useTransitionsStore } from '../transitions-store'
@@ -23,6 +24,83 @@ import {
   getMaxTransitionDurationForHandles,
 } from '../../utils/transition-utils'
 import { execute, getLogger } from './shared'
+
+function addTransitionInCommand({
+  leftClipId,
+  rightClipId,
+  type = 'crossfade',
+  durationInFrames,
+  presentation,
+  direction,
+  alignment = 0.5,
+}: AddTransitionRequest): boolean {
+  const items = useItemsStore.getState().items
+  const transitions = useTransitionsStore.getState().transitions
+  const leftClip = items.find((item) => item.id === leftClipId)
+  const rightClip = items.find((item) => item.id === rightClipId)
+
+  if (!leftClip || !rightClip) {
+    getLogger().warn('[addTransition] Clips not found')
+    return false
+  }
+
+  const maxByClipDuration = Math.floor(
+    Math.min(leftClip.durationInFrames, rightClip.durationInFrames) - 1,
+  )
+  if (maxByClipDuration < 1) {
+    getLogger().warn('[addTransition] Cannot add transition: clips are too short')
+    return false
+  }
+
+  const config = TRANSITION_CONFIGS[type]
+  const requestedDuration = durationInFrames ?? config.defaultDuration
+  let duration = Math.max(1, Math.min(Math.round(requestedDuration), maxByClipDuration))
+
+  const leftEnd = leftClip.from + leftClip.durationInFrames
+  const isAdjacent = areFramesAligned(leftEnd, rightClip.from)
+  const timelineFps = useTimelineSettingsStore.getState().fps
+  if (isAdjacent) {
+    const maxHandleDuration = getMaxTransitionDurationForHandles(
+      leftClip,
+      rightClip,
+      alignment,
+      timelineFps,
+    )
+    if (maxHandleDuration < 1) {
+      getLogger().warn('[addTransition] Cannot add transition: insufficient source handle at cut')
+      return false
+    }
+    duration = Math.min(duration, maxHandleDuration)
+  }
+
+  const validation = canAddTransition(leftClip, rightClip, duration, alignment, timelineFps)
+  if (!validation.canAdd) {
+    getLogger().warn('[addTransition] Cannot add transition:', validation.reason)
+    return false
+  }
+
+  const existingTransition = transitions.find(
+    (transition) => transition.leftClipId === leftClipId && transition.rightClipId === rightClipId,
+  )
+  if (existingTransition) {
+    getLogger().warn('[addTransition] Transition already exists between these clips')
+    return false
+  }
+
+  useTransitionsStore
+    .getState()
+    ._addTransition(
+      leftClipId,
+      rightClipId,
+      leftClip.trackId,
+      type,
+      duration,
+      presentation,
+      direction,
+      alignment,
+    )
+  return true
+}
 
 export function addTransition(
   leftClipId: string,
@@ -36,82 +114,39 @@ export function addTransition(
   return execute(
     'ADD_TRANSITION',
     () => {
-      const items = useItemsStore.getState().items
-      const transitions = useTransitionsStore.getState().transitions
-      // Find the clips
-      const leftClip = items.find((i) => i.id === leftClipId)
-      const rightClip = items.find((i) => i.id === rightClipId)
-
-      if (!leftClip || !rightClip) {
-        getLogger().warn('[addTransition] Clips not found')
-        return false
-      }
-
-      const maxByClipDuration = Math.floor(
-        Math.min(leftClip.durationInFrames, rightClip.durationInFrames) - 1,
-      )
-      if (maxByClipDuration < 1) {
-        getLogger().warn('[addTransition] Cannot add transition: clips are too short')
-        return false
-      }
-
-      const config = TRANSITION_CONFIGS[type]
-      const requestedDuration = durationInFrames ?? config.defaultDuration
-      let duration = Math.max(1, Math.min(Math.round(requestedDuration), maxByClipDuration))
-
-      const leftEnd = leftClip.from + leftClip.durationInFrames
-      const isAdjacent = areFramesAligned(leftEnd, rightClip.from)
-      const timelineFps = useTimelineSettingsStore.getState().fps
-      if (isAdjacent) {
-        const maxHandleDuration = getMaxTransitionDurationForHandles(
-          leftClip,
-          rightClip,
-          alignment,
-          timelineFps,
-        )
-        if (maxHandleDuration < 1) {
-          getLogger().warn(
-            '[addTransition] Cannot add transition: insufficient source handle at cut',
-          )
-          return false
-        }
-        duration = Math.min(duration, maxHandleDuration)
-      }
-
-      // Validate that transition can be added (includes handle check)
-      const validation = canAddTransition(leftClip, rightClip, duration, alignment, timelineFps)
-      if (!validation.canAdd) {
-        getLogger().warn('[addTransition] Cannot add transition:', validation.reason)
-        return false
-      }
-
-      // Check if transition already exists
-      const existingTransition = transitions.find(
-        (t) => t.leftClipId === leftClipId && t.rightClipId === rightClipId,
-      )
-      if (existingTransition) {
-        getLogger().warn('[addTransition] Transition already exists between these clips')
-        return false
-      }
-
-      // Create transition record
-      useTransitionsStore
-        .getState()
-        ._addTransition(
-          leftClipId,
-          rightClipId,
-          leftClip.trackId,
-          type,
-          duration,
-          presentation,
-          direction,
-          alignment,
-        )
-
-      useTimelineSettingsStore.getState().markDirty()
-      return true
+      const added = addTransitionInCommand({
+        leftClipId,
+        rightClipId,
+        type,
+        durationInFrames,
+        presentation,
+        direction,
+        alignment,
+      })
+      if (added) useTimelineSettingsStore.getState().markDirty()
+      return added
     },
-    { leftClipId, rightClipId, type },
+    { leftClipId, rightClipId, type, presentation },
+  )
+}
+
+/** Add several cut transitions as one undoable editor command. */
+export function addTransitions(requests: AddTransitionRequest[]): AddTransitionsResult {
+  if (requests.length === 0) return { added: 0, failed: [] }
+
+  return execute(
+    'ADD_TRANSITIONS',
+    () => {
+      const failed: AddTransitionRequest[] = []
+      let added = 0
+      for (const request of requests) {
+        if (addTransitionInCommand(request)) added += 1
+        else failed.push(request)
+      }
+      if (added > 0) useTimelineSettingsStore.getState().markDirty()
+      return { added, failed }
+    },
+    { count: requests.length },
   )
 }
 

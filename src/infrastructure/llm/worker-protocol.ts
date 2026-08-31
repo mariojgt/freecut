@@ -6,6 +6,7 @@
 
 export interface LlmWorkerLoadRequest {
   type: 'load'
+  modelId: BrowserLlmModelId
 }
 
 export interface LlmWorkerGenerateRequest {
@@ -37,6 +38,8 @@ export interface LlmWorkerProgressMessage {
   type: 'progress'
   stage: string
   percent: number
+  loadedBytes?: number
+  totalBytes?: number
 }
 
 export interface LlmWorkerReadyMessage {
@@ -73,3 +76,4 @@ export type LlmWorkerResponse =
   | LlmWorkerResultMessage
   | LlmWorkerErrorMessage
   | LlmWorkerDisposedMessage
+import type { BrowserLlmModelId } from './browser-llm-models'

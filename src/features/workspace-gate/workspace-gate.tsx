@@ -23,12 +23,20 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ensureKnownWorkspaceForCurrent,
+  getOrCreateOpfsWorkspaceHandle,
   getWorkspaceHandleRecord,
+  isDirectoryPickerSupported,
   isFileSystemAccessSupported,
   queryHandlePermission,
   requestHandlePermission,
   saveWorkspaceHandleRecord,
 } from '@/infrastructure/storage/handles-db'
+import {
+  importWorkspaceFolderToOpfs,
+  isFolderInputSupported,
+  WorkspaceFolderImportError,
+  type WorkspaceFolderImportProgress,
+} from '@/infrastructure/storage/folder-workspace-import'
 import { onPermissionLost, setWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root'
 import { createLogger } from '@/shared/logging/logger'
 import { WorkspaceGateSplash } from './workspace-gate-splash'
@@ -48,6 +56,7 @@ const logger = createLogger('WorkspaceGate')
 type GateStatus =
   | { kind: 'initializing' }
   | { kind: 'unavailable' } // Non-Chromium browsers
+  | { kind: 'browser-storage' } // OPFS fallback (Firefox and similar browsers)
   | { kind: 'pick' } // No saved handle
   | { kind: 'reconnect'; handleName: string } // Saved handle, permission revoked
   | { kind: 'ready' }
@@ -55,6 +64,8 @@ type GateStatus =
 export function WorkspaceGate({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<GateStatus>({ kind: 'initializing' })
   const [error, setError] = useState<string | null>(null)
+  const [folderImportProgress, setFolderImportProgress] =
+    useState<WorkspaceFolderImportProgress | null>(null)
   const { t } = useTranslation()
   const pathname = usePathname()
   const needsWorkspace = isStorageProtectedPath(pathname)
@@ -93,7 +104,9 @@ export function WorkspaceGate({ children }: { children: React.ReactNode }) {
       await ensureKnownWorkspaceForCurrent()
       const record = await getWorkspaceHandleRecord()
       if (!record) {
-        if (!cancelled) setStatus({ kind: 'pick' })
+        if (!cancelled) {
+          setStatus(isDirectoryPickerSupported() ? { kind: 'pick' } : { kind: 'browser-storage' })
+        }
         return
       }
       const handle = record.handle as FileSystemDirectoryHandle
@@ -106,7 +119,9 @@ export function WorkspaceGate({ children }: { children: React.ReactNode }) {
       }
     })().catch((error) => {
       logger.error('Gate initialization failed', error)
-      if (!cancelled) setStatus({ kind: 'pick' })
+      if (!cancelled) {
+        setStatus(isDirectoryPickerSupported() ? { kind: 'pick' } : { kind: 'browser-storage' })
+      }
     })
     return () => {
       cancelled = true
@@ -154,6 +169,44 @@ export function WorkspaceGate({ children }: { children: React.ReactNode }) {
     }
   }, [activate, t])
 
+  const handleUseBrowserStorage = useCallback(async () => {
+    setError(null)
+    try {
+      const handle = await getOrCreateOpfsWorkspaceHandle()
+      await saveWorkspaceHandleRecord(handle, 'opfs')
+      await activate(handle)
+    } catch (error) {
+      logger.error('Browser workspace creation failed', error)
+      setError(t('projects.workspaceGate.browserStorageFailed'))
+    }
+  }, [activate, t])
+
+  const handleImportFolder = useCallback(
+    async (files: File[]) => {
+      setError(null)
+      setFolderImportProgress({
+        completedFiles: 0,
+        totalFiles: files.length,
+        completedBytes: 0,
+        totalBytes: files.reduce((sum, file) => sum + file.size, 0),
+      })
+      try {
+        const imported = await importWorkspaceFolderToOpfs(files, setFolderImportProgress)
+        await saveWorkspaceHandleRecord(imported.handle, 'opfs', imported.sourceFolderName)
+        await activate(imported.handle)
+      } catch (error) {
+        logger.error('Browser workspace folder import failed', error)
+        setFolderImportProgress(null)
+        setError(
+          error instanceof WorkspaceFolderImportError && error.code === 'empty-selection'
+            ? t('projects.workspaceGate.folderImportEmpty')
+            : t('projects.workspaceGate.folderImportFailed'),
+        )
+      }
+    },
+    [activate, t],
+  )
+
   const handleReconnect = useCallback(async () => {
     setError(null)
     const record = await getWorkspaceHandleRecord()
@@ -192,6 +245,10 @@ export function WorkspaceGate({ children }: { children: React.ReactNode }) {
       status={status}
       error={error}
       onPickFolder={handlePick}
+      onUseBrowserStorage={handleUseBrowserStorage}
+      canImportFolder={isFolderInputSupported()}
+      folderImportProgress={folderImportProgress}
+      onImportFolder={handleImportFolder}
       onReconnect={handleReconnect}
     />
   )

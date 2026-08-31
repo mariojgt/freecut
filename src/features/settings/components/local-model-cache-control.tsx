@@ -164,7 +164,7 @@ export function LocalModelCacheControl({ className }: LocalModelCacheControlProp
           return (
             <div
               key={summary.id}
-              className="flex items-center justify-between gap-4 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2.5"
+              className="flex items-center justify-between gap-4 rounded-lg border border-border bg-secondary/45 px-3 py-2.5"
             >
               <div className="flex min-w-0 items-center gap-2 text-sm">
                 <span className="truncate font-medium">{summary.label}</span>

@@ -19,7 +19,7 @@ import {
 import { FreeCutLogo } from '@/components/brand/freecut-logo'
 import { DiscordIcon } from '@/components/brand/discord-icon'
 import { Button } from '@/components/ui/button'
-import { DISCORD_INVITE_URL } from '@/config/community'
+import { DISCORD_INVITE_URL, GITHUB_REPOSITORY_URL } from '@/config/community'
 import {
   isGitHubStarsCacheFresh,
   readGitHubStarsCache,
@@ -259,11 +259,7 @@ function LandingPage() {
             </Button>
 
             <Button asChild variant="outline" size="lg" className="gap-2">
-              <a
-                href="https://github.com/walterlow/freecut"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={GITHUB_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">
                 <Star className="h-4 w-4" />
                 {t('projects.landing.starOnGitHub')}
                 <GitHubStarCount count={githubStarCount} />
@@ -408,11 +404,7 @@ function LandingPage() {
             </Button>
 
             <Button asChild variant="outline" size="lg" className="gap-2">
-              <a
-                href="https://github.com/walterlow/freecut"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={GITHUB_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">
                 <Star className="h-4 w-4" />
                 {t('projects.landing.starOnGitHub')}
                 <GitHubStarCount count={githubStarCount} />

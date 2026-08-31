@@ -23,6 +23,7 @@ const HANDLES_DB_VERSION = 1
 const HANDLES_STORE = 'handles'
 
 export type HandleKind = 'workspace' | 'media' | 'project-folder'
+export type WorkspaceStorageKind = 'directory' | 'opfs'
 
 export interface HandleRecord {
   /** Compound id: `${kind}:${id}`. */
@@ -42,6 +43,12 @@ export interface HandleRecord {
    * Lets the UI display the known-workspace list and mark the active one.
    */
   activeWorkspaceId?: string
+  /**
+   * `directory` is a user-visible folder selected with showDirectoryPicker.
+   * `opfs` is the browser-private workspace used when that picker is absent
+   * (notably Firefox). Older records omit this field and are directories.
+   */
+  workspaceStorageKind?: WorkspaceStorageKind
 }
 
 interface HandlesDBSchema extends DBSchema {
@@ -157,7 +164,11 @@ async function findKnownWorkspaceByHandle(
  * point `workspace:current` at it. Picking a folder already in the list
  * just refreshes its `pickedAt` and activates it.
  */
-export async function saveWorkspaceHandleRecord(handle: FileSystemDirectoryHandle): Promise<void> {
+export async function saveWorkspaceHandleRecord(
+  handle: FileSystemDirectoryHandle,
+  workspaceStorageKind: WorkspaceStorageKind = 'directory',
+  displayName: string = handle.name,
+): Promise<void> {
   const existing = await findKnownWorkspaceByHandle(handle)
   const workspaceId = existing?.id ?? crypto.randomUUID()
   const pickedAt = Date.now()
@@ -166,17 +177,19 @@ export async function saveWorkspaceHandleRecord(handle: FileSystemDirectoryHandl
     kind: 'workspace',
     id: workspaceId,
     handle,
-    name: handle.name,
+    name: displayName,
     pickedAt,
+    workspaceStorageKind,
   })
 
   await saveHandle({
     kind: 'workspace',
     id: WORKSPACE_ID,
     handle,
-    name: handle.name,
+    name: displayName,
     pickedAt,
     activeWorkspaceId: workspaceId,
+    workspaceStorageKind,
   })
 }
 
@@ -195,6 +208,7 @@ export async function activateWorkspaceHandle(workspaceId: string): Promise<Hand
     name: record.name,
     pickedAt: Date.now(),
     activeWorkspaceId: workspaceId,
+    workspaceStorageKind: record.workspaceStorageKind,
   })
   return record
 }
@@ -250,7 +264,15 @@ export async function queryHandlePermission(
   mode: 'read' | 'readwrite' = 'readwrite',
 ): Promise<HandlePermissionState> {
   try {
-    const state = await (handle as FileSystemDirectoryHandle).queryPermission({ mode })
+    const queryPermission = (
+      handle as FileSystemDirectoryHandle & {
+        queryPermission?: (options: { mode: 'read' | 'readwrite' }) => Promise<PermissionState>
+      }
+    ).queryPermission
+    // OPFS handles do not need an OS permission grant, and Firefox does not
+    // expose queryPermission/requestPermission on them.
+    if (typeof queryPermission !== 'function') return 'granted'
+    const state = await queryPermission.call(handle, { mode })
     return state as HandlePermissionState
   } catch (error) {
     logger.warn('queryPermission failed', error)
@@ -263,7 +285,13 @@ export async function requestHandlePermission(
   mode: 'read' | 'readwrite' = 'readwrite',
 ): Promise<HandlePermissionState> {
   try {
-    const state = await (handle as FileSystemDirectoryHandle).requestPermission({ mode })
+    const requestPermission = (
+      handle as FileSystemDirectoryHandle & {
+        requestPermission?: (options: { mode: 'read' | 'readwrite' }) => Promise<PermissionState>
+      }
+    ).requestPermission
+    if (typeof requestPermission !== 'function') return 'granted'
+    const state = await requestPermission.call(handle, { mode })
     return state as HandlePermissionState
   } catch (error) {
     logger.warn('requestPermission failed', error)
@@ -272,5 +300,31 @@ export async function requestHandlePermission(
 }
 
 export function isFileSystemAccessSupported(): boolean {
+  return isDirectoryPickerSupported() || isOpfsWorkspaceSupported()
+}
+
+export function isDirectoryPickerSupported(): boolean {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function'
+}
+
+function isOpfsWorkspaceSupported(): boolean {
+  return typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function'
+}
+
+/**
+ * Return a stable browser-private workspace directory. This is the Firefox
+ * fallback: it uses the same FileSystemDirectoryHandle storage stack as a
+ * picked folder, but the files are private to this browser origin.
+ */
+export async function getOrCreateOpfsWorkspaceHandle(): Promise<FileSystemDirectoryHandle> {
+  if (!isOpfsWorkspaceSupported()) {
+    throw new Error('Origin-private file system storage is unavailable in this browser.')
+  }
+
+  // Best effort: persistent storage makes eviction less likely. A browser may
+  // decline without making OPFS unusable, so the result is deliberately not a
+  // hard gate.
+  await navigator.storage.persist?.().catch(() => false)
+  const root = await navigator.storage.getDirectory()
+  return root.getDirectoryHandle('FreeCut Workspace', { create: true })
 }

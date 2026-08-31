@@ -13,7 +13,6 @@ export {
   KEYFRAME_DIAMOND_RENDERED_WIDTH_PX,
   ROW_HEIGHT,
   getAnimatablePropertiesForItem,
-  getEffectPropertyBaseValue,
   getProceduralBands,
   getPropertyAccordionGroups,
   getPropertyDisplayGroups,

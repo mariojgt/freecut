@@ -1,7 +1,8 @@
+import { GITHUB_REPOSITORY_API_URL } from '@/config/community'
+
 export const GITHUB_STARS_CACHE_TTL_MS = 60 * 60 * 1000
 
-const GITHUB_REPOSITORY_API_URL = 'https://api.github.com/repos/walterlow/freecut'
-const GITHUB_STARS_CACHE_KEY = 'freecut.githubStars.v1'
+const GITHUB_STARS_CACHE_KEY = 'freecut.githubStars.mariojgt.v1'
 
 type StarCacheStorage = Pick<Storage, 'getItem' | 'setItem'>
 

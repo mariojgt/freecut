@@ -1,5 +1,73 @@
 {
   "editor": {
+    "agent": {
+      "tabs": { "assistant": "助手", "generate": "生成", "mcp": "MCP" },
+      "mcp": {
+        "openSetup": "MCP 设置",
+        "title": "连接 LLM",
+        "description": "连接 Codex、Claude 或其他兼容 MCP 的客户端，通过无头服务检查和编辑 FreeCut 项目。",
+        "startTitle": "1. 启动编辑服务",
+        "startHint": "请在 FreeCut 检出目录中运行此命令，并先替换工作区路径和令牌。",
+        "configTitle": "2. 将 FreeCut 添加到 LLM",
+        "configHint": "将此 JSON 粘贴到客户端的 MCP 服务器配置中。",
+        "copyConfig": "复制 MCP 配置",
+        "copied": "已复制 MCP 配置",
+        "copyFailed": "无法访问剪贴板。请选中 JSON 并手动复制。",
+        "capabilities": "该连接提供项目、媒体、时间线、检查、帧抓取和渲染工具。编辑预览默认采用试运行。",
+        "dockerNote": "复制的配置会连接名为 freecut-headless 的 Docker 容器。"
+      },
+      "provider": {
+        "label": "模型",
+        "browserModelOption": "{{name}} — {{profile}}（{{size}}）",
+        "browserModelDescription": "{{profile}}浏览器模型。首次下载：{{size}}；之后会保存在本地缓存中。",
+        "localServerOption": "本地服务器 — Ollama / LM Studio",
+        "profiles": {
+          "fast": "最快",
+          "balanced": "均衡",
+          "quality": "最佳质量"
+        },
+        "configure": "配置本地服务器",
+        "localServerTitle": "本地模型服务器",
+        "localServerDescription": "连接 Ollama、LM Studio 或 LocalAI 提供的 OpenAI 兼容端点。服务器必须允许来自此应用源的请求。",
+        "endpoint": "端点",
+        "model": "模型名称"
+      },
+      "plan": {
+        "title": "计划",
+        "handoffNote": "部分步骤会打开需要你确认的检查界面。",
+        "run": "应用编辑",
+        "discard": "放弃",
+        "running": "正在运行…"
+      },
+      "unsupported": {
+        "title": "助手不可用",
+        "body": "浏览器模型需要 WebGPU。请在上方选择本地服务器模型，作为兼容 CPU 的方案。"
+      },
+      "status": {
+        "loadingModel": "正在加载 {{model}}… {{percent}}%",
+        "loadingBytes": "已下载 {{loaded}}，共 {{total}}",
+        "prepare": "准备模型",
+        "ready": "已就绪",
+        "cancel": "取消",
+        "retry": "重试",
+        "thinking": "正在规划编辑…"
+      },
+      "empty": {
+        "infoLabel": "关于此助手",
+        "intro": "使用自然语言提出时间线编辑要求。模型会在浏览器中或你选择的本地服务器上运行。它会先提出计划；你确认后才会进行更改。"
+      },
+      "composer": { "placeholder": "描述编辑要求…" },
+      "suggestions": {
+        "transitions": "为所有视频添加淡化转场",
+        "fades": "为所有视频添加淡入淡出",
+        "silence": "删除静音部分",
+        "fillers": "删除语气词",
+        "title": "添加文字为“你好”的标题",
+        "cut": "剪掉第 5–8 秒",
+        "split": "在播放头位置分割"
+      },
+      "clear": "清除对话"
+    },
     "compose": {
       "title": "合成",
       "newComposition": "新建合成",

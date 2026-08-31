@@ -31,6 +31,7 @@ import http from 'node:http'
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
+import { timingSafeEqual } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import {
   loadProjectById,
@@ -115,6 +116,18 @@ export function resolveHost(args = {}, env = process.env) {
   return host.trim()
 }
 
+/** Validate the optional bearer token without leaking a timing prefix. */
+// Exact bearer handling is covered by the Node contract tests.
+// fallow-ignore-next-line complexity
+export function isBearerAuthorized(header, token) {
+  if (!token) return true
+  const supplied = Array.isArray(header) ? header[0] : header
+  if (typeof supplied !== 'string') return false
+  const actual = Buffer.from(supplied)
+  const expected = Buffer.from(`Bearer ${token}`)
+  return actual.length === expected.length && timingSafeEqual(actual, expected)
+}
+
 const IMAGE_MIME_BY_FORMAT = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -173,6 +186,7 @@ async function main() {
   const editTimeoutMs = positiveInt('edit-timeout-ms', 2 * 60_000)
   const maxQueueDepth = positiveInt('max-queue-depth', 8, { min: 0, max: 10_000 })
   const shutdownTimeoutMs = positiveInt('shutdown-timeout-ms', 30_000)
+  const apiToken = process.env.FREECUT_API_TOKEN?.trim() ?? ''
 
   const { harnessUrl, mediaUrlOf, closeServers } = await startHarness({
     workspace,
@@ -560,6 +574,15 @@ async function main() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const route = `${req.method} ${url.pathname}`
+    if (route !== 'GET /health' && !isBearerAuthorized(req.headers.authorization, apiToken)) {
+      res.setHeader('WWW-Authenticate', 'Bearer realm="FreeCut"')
+      sendJson(res, 401, {
+        ok: false,
+        apiVersion: HEADLESS_API_VERSION,
+        error: { code: 'UNAUTHORIZED', message: 'A valid bearer token is required.' },
+      })
+      return
+    }
     const projectMatch = /^\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})$/.exec(url.pathname)
     const projectEditMatch = /^\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/edit$/.exec(
       url.pathname,
@@ -701,10 +724,13 @@ async function main() {
   })
   setHttpTimeouts(server)
 
-  // The default remains loopback-only because the render service has no auth.
-  // Network exposure must be an explicit CLI/environment configuration choice.
+  // Native runs remain loopback-only unless the host is explicitly overridden.
   await new Promise((resolve) => server.listen(port, host, resolve))
   console.log(`FreeCut render service on http://${host}:${port}  (workspace: ${workspace})`)
+  if (apiToken) console.log('  API bearer authentication enabled (health remains public)')
+  else if (host !== '127.0.0.1' && host !== '::1' && host !== 'localhost') {
+    console.warn('  WARNING: non-loopback API without FREECUT_API_TOKEN')
+  }
   console.log(
     `  GET /health  GET /capabilities  GET /projects  POST /render  POST /edit  POST /frame  POST /layout`,
   )

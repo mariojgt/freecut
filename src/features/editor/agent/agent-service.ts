@@ -9,15 +9,16 @@
  * is what makes Gemma's tool calls usable.
  */
 
-import { getDefaultLlmAdapter, type LlmAdapter, type LlmMessage } from '@/infrastructure/llm'
+import { getSelectedLlmAdapter, type LlmAdapter, type LlmMessage } from '@/infrastructure/llm'
 import { createLogger } from '@/shared/logging/logger'
 import { buildTimelineContext } from './timeline-context'
+import { buildDeterministicEditPlan, isLikelyEditRequest } from './edit-intent'
 import { buildMessages, parsePlan } from './prompt'
 import { getEditorTool } from './tools'
 
 const logger = createLogger('AgentService')
 
-const MAX_TOKENS = 512
+const MAX_TOKENS = 768
 
 export interface PlannedStep {
   tool: string
@@ -43,7 +44,7 @@ interface DroppedStep {
 }
 
 export function getAgentAdapter(): LlmAdapter {
-  return getDefaultLlmAdapter()
+  return getSelectedLlmAdapter()
 }
 
 /** Validate raw model steps against the registry, dropping anything invalid. */
@@ -77,9 +78,16 @@ function validateSteps(rawSteps: { tool: string; args: Record<string, unknown> }
   return { steps, dropped }
 }
 
-function buildCorrection(wasValidJson: boolean, dropped: DroppedStep[]): string {
+function buildCorrection(
+  wasValidJson: boolean,
+  dropped: DroppedStep[],
+  editRequestWithoutSteps: boolean,
+): string {
   if (!wasValidJson) {
     return 'Your last response was not valid JSON. Respond with ONLY the single JSON object described — no prose, no code fences.'
+  }
+  if (editRequestWithoutSteps) {
+    return 'The user asked you to CHANGE the timeline, but you returned no tool steps. You MUST call one or more listed editing tools. Do not explain how to do the edit. Respond with ONLY the corrected JSON object.'
   }
   const issues = dropped.map((entry) => `"${entry.tool}" (${entry.reason})`).join(', ')
   return `These tool calls were invalid: ${issues}. Use only the listed tool names with the exact arg shapes, and target clips by their refs. Respond with ONLY the corrected JSON object.`
@@ -91,6 +99,8 @@ export interface PlanRequestOptions {
   signal?: AbortSignal
 }
 
+// This bounded orchestration keeps model retry, read resolution, and safe fallback in one auditable flow.
+// fallow-ignore-next-line complexity
 export async function planRequest(
   userText: string,
   options: PlanRequestOptions,
@@ -98,6 +108,7 @@ export async function planRequest(
   const adapter = getAgentAdapter()
   const context = buildTimelineContext()
   const baseMessages = buildMessages(options.history, userText, context.text)
+  const editIntent = isLikelyEditRequest(userText)
 
   const raw = await adapter.generate(baseMessages, {
     maxTokens: MAX_TOKENS,
@@ -109,13 +120,21 @@ export async function planRequest(
   let parsed = parsePlan(raw)
   let { steps, dropped } = validateSteps(parsed.steps)
 
-  // One corrective retry when the model emitted no JSON or invalid tool calls.
-  if ((!parsed.valid || dropped.length > 0) && !options.signal?.aborted) {
+  // One corrective retry when the model emitted no JSON, invalid tool calls,
+  // or treated a clear editing request as ordinary chat with no actions.
+  const editRequestWithoutSteps = editIntent && steps.length === 0
+  if (
+    (!parsed.valid || dropped.length > 0 || editRequestWithoutSteps) &&
+    !options.signal?.aborted
+  ) {
     logger.info('Agent plan needs correction', { valid: parsed.valid, dropped: dropped.length })
     const retryMessages: LlmMessage[] = [
       ...baseMessages,
       { role: 'assistant', content: raw },
-      { role: 'user', content: buildCorrection(parsed.valid, dropped) },
+      {
+        role: 'user',
+        content: buildCorrection(parsed.valid, dropped, editRequestWithoutSteps),
+      },
     ]
     const retryRaw = await adapter.generate(retryMessages, {
       maxTokens: MAX_TOKENS,
@@ -124,8 +143,14 @@ export async function planRequest(
     })
     const retryParsed = parsePlan(retryRaw)
     const retryValidated = validateSteps(retryParsed.steps)
-    // Adopt the retry only if it's no worse than the first attempt.
-    if (retryParsed.valid && retryValidated.dropped.length <= dropped.length) {
+    const retryHasUsefulSteps = retryValidated.steps.length > 0
+    // For edit requests, an action-bearing retry is strictly better than a
+    // valid chat-only answer. For ordinary corrections, keep the old no-worse rule.
+    if (
+      retryParsed.valid &&
+      retryValidated.dropped.length <= dropped.length &&
+      (!editIntent || retryHasUsefulSteps)
+    ) {
       parsed = retryParsed
       steps = retryValidated.steps
       dropped = retryValidated.dropped
@@ -165,6 +190,27 @@ export async function planRequest(
       reply = hopParsed.reply || reply
       dropped = hopValidated.dropped
     }
+  }
+
+  // Tiny browser models can still ignore the correction. Keep the model as the
+  // primary planner, then guarantee common high-value edits with a narrow,
+  // validated fallback instead of silently degrading into Q&A.
+  if (actionSteps.length === 0 && editIntent) {
+    const fallback = buildDeterministicEditPlan(userText)
+    if (fallback) {
+      const fallbackValidated = validateSteps(fallback.steps)
+      if (fallbackValidated.dropped.length === 0) {
+        actionSteps = splitReadOnly(fallbackValidated.steps).actions
+        reply = fallback.reply
+      }
+    }
+  }
+
+  // Never present an instructional/chat-only answer as success for an editing
+  // request. If neither the model nor the bounded fallback can identify a safe
+  // mutation, ask for the missing target/range instead.
+  if (actionSteps.length === 0 && editIntent) {
+    reply = 'I need the target clips or exact times before I can make that edit safely.'
   }
 
   const finalReply = reply || (actionSteps.length > 0 ? 'Here is the plan.' : raw.trim())

@@ -39,6 +39,7 @@ import {
 import {
   LocalInferenceUnloadControl,
   LocalModelCacheControl,
+  AppearanceThemeControl,
   useSettingsStore,
   CAPTIONING_INTERVAL_BOUNDS,
   DEFAULT_CAPTIONING_INTERVAL_SECONDS,
@@ -589,7 +590,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </DialogHeader>
         <div className="flex min-h-0">
           {/* Sidebar */}
-          <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-white/6 p-2">
+          <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border p-2">
             {SETTINGS_SECTIONS.map((section) => {
               const Icon = section.icon
               return (
@@ -601,7 +602,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors duration-150 ease-out motion-reduce:transition-none',
                     activeSection === section.id
                       ? 'bg-primary/15 text-primary'
-                      : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
+                      : 'text-muted-foreground hover:bg-accent/70 hover:text-foreground/80',
                   )}
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -635,6 +636,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   >
                     {activeSection === 'general' && (
                       <div className="space-y-3">
+                        <AppearanceThemeControl />
+                        <Separator className="bg-border" />
                         <div className="flex items-center justify-between">
                           <Label className="text-sm">{t('settings.general.autoSave')}</Label>
                           <Switch
@@ -758,7 +761,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                 type="button"
                                 aria-label={t('settings.general.uiSoundPreview')}
                                 onClick={() => previewUiSound(uiSoundVoice)}
-                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                               >
                                 <Play className="h-3.5 w-3.5" />
                               </button>
@@ -963,7 +966,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                   : t('settings.storage.upToDate')}
                           </Button>
                         </div>
-                        <Separator className="bg-white/8" />
+                        <Separator className="bg-border" />
                         <div className="flex items-center justify-between">
                           <div>
                             <Label className="text-sm">
@@ -1091,7 +1094,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                   : t('common.delete')}
                           </Button>
                         </div>
-                        <Separator className="bg-white/8" />
+                        <Separator className="bg-border" />
                         <div className="space-y-3">
                           <div className="space-y-1">
                             <Label className="text-sm">{t('settings.storage.localAi')}</Label>

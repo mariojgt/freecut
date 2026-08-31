@@ -24,6 +24,11 @@ jobs:
           # Full history so the fallow ratchet can diff against the PR base branch.
           fetch-depth: 0
 
+      - name: Check GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
         with:

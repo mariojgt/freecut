@@ -1,5 +1,73 @@
 {
   "editor": {
+    "agent": {
+      "tabs": { "assistant": "Assistente", "generate": "Gerar", "mcp": "MCP" },
+      "mcp": {
+        "openSetup": "Configurar MCP",
+        "title": "Conectar um LLM",
+        "description": "Conecte o Codex, Claude ou outro cliente compatível com MCP para inspecionar e editar projetos do FreeCut pelo serviço headless.",
+        "startTitle": "1. Iniciar o serviço de edição",
+        "startHint": "Execute este comando no checkout do FreeCut. Primeiro, substitua o caminho do espaço de trabalho e o token.",
+        "configTitle": "2. Adicionar o FreeCut ao seu LLM",
+        "configHint": "Cole este JSON na configuração de servidores MCP do cliente.",
+        "copyConfig": "Copiar configuração MCP",
+        "copied": "Configuração MCP copiada",
+        "copyFailed": "Não foi possível acessar a área de transferência. Selecione e copie o JSON manualmente.",
+        "capabilities": "A conexão oferece ferramentas de projeto, mídia, timeline, inspeção, captura de quadros e renderização. As prévias de edição são simulações por padrão.",
+        "dockerNote": "A configuração copiada se conecta ao contêiner Docker freecut-headless."
+      },
+      "provider": {
+        "label": "Modelo",
+        "browserModelOption": "{{name}} — {{profile}} ({{size}})",
+        "browserModelDescription": "Modelo de navegador: {{profile}}. Primeiro download: {{size}}; depois ele fica no cache local.",
+        "localServerOption": "Servidor local — Ollama / LM Studio",
+        "profiles": {
+          "fast": "Mais rápido",
+          "balanced": "Equilibrado",
+          "quality": "Melhor qualidade"
+        },
+        "configure": "Configurar servidor local",
+        "localServerTitle": "Servidor de modelos local",
+        "localServerDescription": "Conecte-se a um endpoint compatível com OpenAI do Ollama, LM Studio ou LocalAI. O servidor deve permitir solicitações da origem deste aplicativo.",
+        "endpoint": "Endpoint",
+        "model": "Nome do modelo"
+      },
+      "plan": {
+        "title": "Plano",
+        "handoffNote": "Algumas etapas abrem uma revisão para você confirmar.",
+        "run": "Aplicar edição",
+        "discard": "Descartar",
+        "running": "Executando…"
+      },
+      "unsupported": {
+        "title": "Assistente indisponível",
+        "body": "O modelo do navegador precisa de WebGPU. Escolha acima um modelo de servidor local compatível com CPU."
+      },
+      "status": {
+        "loadingModel": "Carregando {{model}}… {{percent}}%",
+        "loadingBytes": "{{loaded}} de {{total}}",
+        "prepare": "Preparar",
+        "ready": "Pronto",
+        "cancel": "Cancelar",
+        "retry": "Tentar novamente",
+        "thinking": "Planejando a edição…"
+      },
+      "empty": {
+        "infoLabel": "Sobre este assistente",
+        "intro": "Peça edições na timeline em linguagem natural. O modelo roda localmente no navegador ou no servidor local escolhido. Primeiro ele propõe um plano; você confirma antes de qualquer alteração."
+      },
+      "composer": { "placeholder": "Descreva uma edição…" },
+      "suggestions": {
+        "transitions": "Adicionar transições suaves a todos os vídeos",
+        "fades": "Aplicar fade de entrada e saída em todos os vídeos",
+        "silence": "Remover os silêncios",
+        "fillers": "Remover palavras de preenchimento",
+        "title": "Adicionar um título com Olá",
+        "cut": "Cortar de 5 a 8 segundos",
+        "split": "Dividir no indicador de reprodução"
+      },
+      "clear": "Limpar conversa"
+    },
     "compose": {
       "title": "Composições",
       "newComposition": "Nova composição",

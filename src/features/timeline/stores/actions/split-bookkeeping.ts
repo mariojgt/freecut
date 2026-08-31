@@ -11,6 +11,22 @@ export interface SplitResultEntry {
   }
 }
 
+export function splitTimelineItemsAtFrame(
+  items: TimelineItem[],
+  frame: number,
+): SplitResultEntry[] | null {
+  const itemsStore = useItemsStore.getState()
+  const splitResults = items
+    .map((item) => ({
+      originalId: item.id,
+      originalLinkedGroupId: item.linkedGroupId,
+      result: itemsStore._splitItem(item.id, frame),
+    }))
+    .filter((entry): entry is SplitResultEntry => entry.result !== null)
+
+  return splitResults.length === items.length ? splitResults : null
+}
+
 function remapTransitionsAfterSplit(splitResults: SplitResultEntry[]): void {
   if (splitResults.length === 0) {
     return

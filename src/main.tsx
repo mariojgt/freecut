@@ -9,10 +9,16 @@ import {
   getEditorProjectReloadPathWithCacheBust,
   rememberLastEditorProjectId,
 } from '@/shared/projects/last-editor-project'
+import {
+  consumeDockerUpdateAutoApply,
+  DOCKER_UPDATE_REQUESTED_EVENT,
+  isDockerUpdateAutoApplyArmed,
+} from '@/shared/deployment/docker-update-session'
 import './index.css'
 
 const log = createLogger('App')
 const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000
+const DOCKER_UPDATE_RECHECK_INTERVAL_MS = 5 * 1000
 const ACCEPTED_APP_UPDATE_SIGNATURE_KEY = 'freecut-accepted-app-update-signature'
 
 let updateToastVisible = false
@@ -69,6 +75,8 @@ function reloadCurrentLocationWithUpdateCacheBust() {
   window.location.assign(getEditorProjectReloadPathWithCacheBust())
 }
 
+// The toast owns the save, auto-apply, retry, and reload branches as one update interaction.
+// fallow-ignore-next-line complexity
 async function showUpdateAvailableToast(
   applyUpdate: () => void = () => window.location.reload(),
   updateSignature?: string,
@@ -78,6 +86,15 @@ async function showUpdateAvailableToast(
   }
 
   updateToastVisible = true
+  if (consumeDockerUpdateAutoApply()) {
+    if (await saveCurrentProjectBeforeReload()) {
+      rememberAcceptedAppUpdate(updateSignature)
+      applyUpdate()
+      return
+    }
+    await showSaveBeforeReloadFailedToast()
+  }
+
   window.dispatchEvent(new Event('freecut:ensure-toaster'))
   let toast: typeof import('sonner').toast
   try {
@@ -188,6 +205,29 @@ async function checkForAppShellUpdate() {
     appShellUpdateRecheckQueued = false
     await checkForAppShellUpdate()
   }
+}
+
+let dockerUpdateRecheckTimer: number | undefined
+function stopDockerUpdateRechecks(): void {
+  if (dockerUpdateRecheckTimer === undefined) return
+  window.clearInterval(dockerUpdateRecheckTimer)
+  dockerUpdateRecheckTimer = undefined
+}
+
+function startDockerUpdateRechecks(): void {
+  void checkForAppShellUpdate()
+  if (dockerUpdateRecheckTimer !== undefined) return
+  dockerUpdateRecheckTimer = window.setInterval(() => {
+    if (!isDockerUpdateAutoApplyArmed()) {
+      stopDockerUpdateRechecks()
+      return
+    }
+    void checkForAppShellUpdate()
+  }, DOCKER_UPDATE_RECHECK_INTERVAL_MS)
+}
+
+if (import.meta.env.PROD) {
+  window.addEventListener(DOCKER_UPDATE_REQUESTED_EVENT, startDockerUpdateRechecks)
 }
 
 function activateWaitingServiceWorker(registration: ServiceWorkerRegistration) {

@@ -4,7 +4,11 @@ import { loadMediaLibraryService } from './media-library-service-access'
 import { proxyService } from '../services/proxy-service'
 import { getMimeType } from '../utils/validation'
 import { getSharedProxyKey } from '../utils/proxy-key'
-import { hasMediaFilePickerSupport, showMediaFilePicker } from '../utils/media-file-picker'
+import {
+  hasMediaFilePickerSupport,
+  hasNativeMediaFilePickerSupport,
+  showMediaFilePicker,
+} from '../utils/media-file-picker'
 import { createLogger, createOperationId } from '@/shared/logging/logger'
 import { useMediaPreparationStore } from './media-preparation-store'
 
@@ -427,6 +431,15 @@ export function createImportActions(
 
       if (!currentProjectId) {
         set({ error: 'No project selected' })
+        return []
+      }
+
+      if (options?.storageMode === 'link' && !hasNativeMediaFilePickerSupport()) {
+        set({
+          error:
+            'Linking to an original file is not supported in this browser. Import a workspace copy instead.',
+          errorLink: null,
+        })
         return []
       }
 

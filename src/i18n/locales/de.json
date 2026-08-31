@@ -4,6 +4,16 @@
     "saveAndReload": "Speichern und neu laden",
     "reloadWithoutSaving": "Ohne Speichern neu laden",
     "dockPanel": "Panel andocken",
+    "dockerUpdate": {
+      "button": "Aktualisieren",
+      "ariaLabel": "Nach einem Docker-Update suchen",
+      "checking": "Wird geprüft…",
+      "requestedShort": "Angefordert",
+      "requested": "Update-Prüfung gestartet",
+      "requestedDescription": "Wenn eine neuere stabile Version verfügbar ist, installiert FreeCut sie, speichert deine Arbeit und lädt automatisch neu.",
+      "failed": "Update konnte nicht gestartet werden",
+      "failedDescription": "Der Updater des Docker-Hosts hat die Anfrage nicht angenommen. Versuche es erneut oder prüfe den Updater-Dienst."
+    },
     "installPrompt": {
       "label": "FreeCut installieren",
       "title": "FreeCut installieren",
@@ -86,7 +96,13 @@
       "uiSounds": "Interface-Sounds",
       "uiSoundVolume": "Lautstärke",
       "uiSoundVoice": "Sound-Thema",
-      "uiSoundPreview": "Vorschau"
+      "uiSoundPreview": "Vorschau",
+      "appearance": "Darstellung",
+      "appearanceDescription": "Wähle das App-Design. System folgt der Geräteeinstellung.",
+      "themeSystem": "System",
+      "themeFreeCutDark": "FreeCut Dunkel",
+      "themeMidnight": "Mitternacht",
+      "themeLight": "Hell"
     },
     "ai": {
       "captionSampleInterval": "Untertitel-Abtastintervall",

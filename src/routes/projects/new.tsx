@@ -10,7 +10,7 @@ import { FreeCutLogo } from '@/components/brand/freecut-logo'
 import { Button } from '@/components/ui/button'
 import { Github } from 'lucide-react'
 import { DiscordIcon } from '@/components/brand/discord-icon'
-import { DISCORD_INVITE_URL } from '@/config/community'
+import { DISCORD_INVITE_URL, GITHUB_REPOSITORY_URL } from '@/config/community'
 import type { ProjectFormData } from '@/features/projects/utils/validation'
 
 const logger = createLogger('NewProject')
@@ -73,7 +73,7 @@ function NewProject() {
             </Button>
             <Button variant="outline" size="icon" className="h-10 w-10" asChild>
               <a
-                href="https://github.com/walterlow/freecut"
+                href={GITHUB_REPOSITORY_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 data-tooltip={t('projects.viewOnGitHub')}

@@ -14,12 +14,12 @@ const page = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'FreeCut is a **local-first** video editor that runs entirely in your browser — there is no account, upload, or server render. Editing, effects, color, AI tools, and export all run on your own machine using your GPU and CPU.',
+          text: 'FreeCut is a **local-first** video editor. By default there is no account, upload, or server render: editing, effects, color, AI tools, and export run on your own machine using your GPU and CPU. Optional local model and headless automation services can also run on your computer.',
         },
         {
           kind: 'note',
           tone: 'tip',
-          text: 'Your media stays on your device. FreeCut links to the original files and writes projects, caches, and exports to a **workspace folder** you choose — nothing is sent to the cloud.',
+          text: 'Your media stays on your device. Chromium can use a **workspace folder** you choose; Firefox uses a private browser workspace. Nothing is sent to the cloud.',
         },
       ],
     },
@@ -28,7 +28,7 @@ const page = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'FreeCut relies on modern web APIs, so a recent Chromium browser is the supported path.',
+          text: 'FreeCut relies on modern web APIs. Chrome and Edge provide the broadest feature set, while Firefox uses browser-private storage and enables features according to its WebGPU and codec support.',
         },
         {
           kind: 'table',
@@ -36,7 +36,8 @@ const page = {
           rows: [
             ['Chrome / Edge 113+', 'Fully supported'],
             ['Brave', 'Works after enabling the File System Access API flag'],
-            ['Safari / Firefox', 'Not yet supported for the full workflow'],
+            ['Firefox', 'Supported with a browser-private OPFS workspace'],
+            ['Safari', 'Feature-dependent; test the required codecs and WebGPU tools'],
           ],
         },
         {
@@ -57,7 +58,7 @@ const page = {
         {
           kind: 'steps',
           items: [
-            'Open FreeCut in a supported browser and, when prompted, pick a **workspace folder** you can read and write.',
+            'Open FreeCut in a supported browser. Pick a **workspace folder** in Chromium. In Firefox, start an empty browser workspace or import a copy of an existing FreeCut workspace folder.',
             'On the Projects page, choose **New Project** and set the resolution and frame rate for the edit.',
             'Open the **Media** tab and use **Import** to add files, or drag media straight into the library.',
             'Drag a clip from the Media panel onto a timeline track.',
@@ -73,7 +74,7 @@ const page = {
         {
           kind: 'list',
           items: [
-            'The workspace picker opens and accepts a normal folder (not a protected system location).',
+            'Chromium accepts a normal writable workspace folder. Firefox opens a browser-private workspace and can import a selected folder as a private copy.',
             'Imported media appears as cards in the Media panel with thumbnails.',
             'Playback starts from the timeline when you press `Space`.',
             'Export opens and the preflight check reports no blocking problems.',

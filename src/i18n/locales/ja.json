@@ -4,6 +4,16 @@
     "saveAndReload": "保存して再読み込み",
     "reloadWithoutSaving": "保存せずに再読み込み",
     "dockPanel": "パネルをドック",
+    "dockerUpdate": {
+      "button": "更新",
+      "ariaLabel": "Docker の更新を確認",
+      "checking": "確認中…",
+      "requestedShort": "依頼済み",
+      "requested": "更新確認を開始しました",
+      "requestedDescription": "新しい安定版がある場合、FreeCut がインストールし、作業を保存して自動的に再読み込みします。",
+      "failed": "更新を開始できませんでした",
+      "failedDescription": "Docker ホストのアップデーターが要求を受け付けませんでした。再試行するか、アップデーターサービスを確認してください。"
+    },
     "installPrompt": {
       "label": "FreeCut をインストール",
       "title": "FreeCut をインストール",
@@ -86,7 +96,13 @@
       "uiSounds": "インターフェースサウンド",
       "uiSoundVolume": "サウンド音量",
       "uiSoundVoice": "サウンドテーマ",
-      "uiSoundPreview": "プレビュー"
+      "uiSoundPreview": "プレビュー",
+      "appearance": "外観",
+      "appearanceDescription": "アプリのテーマを選択します。システムはデバイス設定に合わせます。",
+      "themeSystem": "システム",
+      "themeFreeCutDark": "FreeCut ダーク",
+      "themeMidnight": "ミッドナイト",
+      "themeLight": "ライト"
     },
     "ai": {
       "captionSampleInterval": "字幕のサンプリング間隔",

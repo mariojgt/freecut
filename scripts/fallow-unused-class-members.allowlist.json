@@ -367,18 +367,7 @@
         },
         {
           "parentName": "Clock",
-          "memberName": "playbackRate",
-          "kind": "class_method",
-          "count": 2
-        },
-        {
-          "parentName": "Clock",
           "memberName": "seekToTime",
-          "kind": "class_method"
-        },
-        {
-          "parentName": "Clock",
-          "memberName": "setAudioContext",
           "kind": "class_method"
         },
         {

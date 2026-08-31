@@ -6,7 +6,11 @@ import { useSelectionStore } from '@/shared/state/selection'
 import { execute, applyTransitionRepairs } from '../shared'
 import { getLinkedItemsForEdit } from '../linked-edit'
 import { getUniqueLinkedItemAnchorIds } from '../../../utils/linked-items'
-import { applySplitBookkeeping, type SplitResultEntry } from '../split-bookkeeping'
+import {
+  applySplitBookkeeping,
+  splitTimelineItemsAtFrame,
+  type SplitResultEntry,
+} from '../split-bookkeeping'
 import { isLinkedSelectionEnabled, isInTransitionOverlap } from './shared'
 import { emitUiSound } from '@/shared/ui/ui-sound'
 
@@ -196,17 +200,8 @@ export function splitItemAtFrames(id: string, splitFrames: number[]): number {
         })
         if (!allSplittable) continue
 
-        const frameSplitResults = itemsToSplit
-          .map((item) => ({
-            originalId: item.id,
-            originalLinkedGroupId: item.linkedGroupId,
-            result: useItemsStore.getState()._splitItem(item.id, frame),
-          }))
-          .filter((entry): entry is SplitResultEntry => entry.result !== null)
-
-        if (frameSplitResults.length !== itemsToSplit.length) {
-          continue
-        }
+        const frameSplitResults = splitTimelineItemsAtFrame(itemsToSplit, frame)
+        if (!frameSplitResults) continue
 
         applySplitBookkeeping(frameSplitResults)
 

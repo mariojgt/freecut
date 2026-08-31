@@ -17,7 +17,7 @@ interface MouseDragIntentOptions {
  * Runs a callback only after the pointer moves far enough to represent a drag.
  * A click or mouse-up without movement remains passive.
  */
-export function notifyOnMouseDragIntent(
+function notifyOnMouseDragIntent(
   start: MouseDragIntentStart,
   onDragIntent: () => void,
   options: MouseDragIntentOptions = {},

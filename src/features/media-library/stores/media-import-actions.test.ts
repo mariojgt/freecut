@@ -524,28 +524,41 @@ describe('createImportActions', () => {
     })
   })
 
-  it('sets a browser support error when the picker API is unavailable', async () => {
-    const originalWindow = globalThis.window
-    const originalNavigator = globalThis.navigator
-    const mockWindow = {} as Window & typeof globalThis
-    const mockNavigator = {} as Navigator
-
-    vi.stubGlobal('window', mockWindow)
-    vi.stubGlobal('navigator', mockNavigator)
+  it('imports a workspace copy through the file-input fallback', async () => {
+    const pickerDescriptor = Object.getOwnPropertyDescriptor(window, 'showOpenFilePicker')
+    Object.defineProperty(window, 'showOpenFilePicker', {
+      configurable: true,
+      value: undefined,
+    })
+    const file = new File(['video'], 'firefox-clip.mp4', { type: 'video/mp4' })
+    const imported = makeMedia({ id: 'firefox-1', fileName: file.name, storageType: 'workspace' })
+    mediaLibraryServiceMocks.importMediaWithHandle.mockResolvedValue(imported)
+    const click = vi
+      .spyOn(HTMLInputElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLInputElement) {
+        Object.defineProperty(this, 'files', { configurable: true, value: [file] })
+        this.dispatchEvent(new Event('change'))
+      })
 
     try {
       const harness = createImportActionsHarness()
       const { actions } = harness
       const result = await actions.importMedia()
 
-      expect(result).toEqual([])
-      expect(harness.currentState.error).toBe(
-        'File picker not supported in this browser. Use Chrome or Edge.',
+      expect(result).toEqual([imported])
+      expect(mediaLibraryServiceMocks.importMediaWithHandle).toHaveBeenCalledWith(
+        expect.objectContaining({ name: file.name }),
+        'project-1',
+        { storageMode: 'copy' },
       )
-      expect(harness.currentState.errorLink).toBeNull()
+      expect(harness.currentState.error).toBeNull()
     } finally {
-      vi.stubGlobal('window', originalWindow)
-      vi.stubGlobal('navigator', originalNavigator)
+      click.mockRestore()
+      if (pickerDescriptor) {
+        Object.defineProperty(window, 'showOpenFilePicker', pickerDescriptor)
+      } else {
+        Reflect.deleteProperty(window, 'showOpenFilePicker')
+      }
     }
   })
 })

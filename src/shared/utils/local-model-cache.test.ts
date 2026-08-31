@@ -119,6 +119,10 @@ describe('local-model-cache', () => {
             new Response(new Uint8Array(9), {
               headers: { 'content-length': '9' },
             }),
+          'https://huggingface.co/onnx-community/Qwen3.5-0.8B-ONNX-OPT/resolve/main/onnx/model_q4f16.onnx':
+            new Response(new Uint8Array(11), {
+              headers: { 'content-length': '11' },
+            }),
           'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model.onnx':
             new Response(new Uint8Array(21), {
               headers: { 'content-length': '21' },
@@ -139,10 +143,11 @@ describe('local-model-cache', () => {
   it('inspects configured local model caches without creating missing caches', async () => {
     const summaries = await inspectAllLocalModelCaches()
 
-    expect(summaries).toHaveLength(8)
+    expect(summaries).toHaveLength(9)
     expect(summaries.map((summary) => summary.id)).toEqual([
       'whisper',
       ...SCENE_VERIFICATION_MODEL_IDS,
+      'assistant-qwen',
       ...MUSICGEN_MODEL_IDS,
       'kokoro-tts',
       'parakeet',
@@ -173,6 +178,15 @@ describe('local-model-cache', () => {
         totalBytes: 9,
         sizeStatus: 'exact',
         inspectionState: 'ready',
+      }),
+    )
+    expect(summaries).toContainEqual(
+      expect.objectContaining({
+        id: 'assistant-qwen',
+        label: 'Qwen Assistant',
+        downloaded: true,
+        entryCount: 1,
+        totalBytes: 11,
       }),
     )
     expect(summaries).toContainEqual(

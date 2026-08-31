@@ -97,7 +97,10 @@ import { upscaleService } from '../services/upscale-service'
 import { importMediaLibraryService } from '../services/media-library-service-loader'
 import { cancelMediaTranscriptionJob } from '../services/media-transcription-runner'
 import { importMediaAnalysisService } from '../services/media-analysis-service-loader'
-import { getSupportedMediaFormatLabels } from '../utils/media-file-picker'
+import {
+  getSupportedMediaFormatLabels,
+  hasNativeMediaFilePickerSupport,
+} from '../utils/media-file-picker'
 import { getSharedProxyKey } from '../utils/proxy-key'
 import { getMediaType } from '../utils/validation'
 import { getProjectBrokenMediaIds } from '@/features/media-library/utils/broken-media'
@@ -673,10 +676,12 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
                     <FolderOpen className="w-4 h-4 mr-2" />
                     {t('media.library.importCopyToWorkspace')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={handleLinkImport}>
-                    <Link className="w-4 h-4 mr-2" />
-                    {t('media.library.importLinkOriginal')}
-                  </DropdownMenuItem>
+                  {hasNativeMediaFilePickerSupport() && (
+                    <DropdownMenuItem onSelect={handleLinkImport}>
+                      <Link className="w-4 h-4 mr-2" />
+                      {t('media.library.importLinkOriginal')}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

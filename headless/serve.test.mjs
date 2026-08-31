@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { resolveHost } from './serve.mjs'
+import { isBearerAuthorized, resolveHost } from './serve.mjs'
 
 test('resolveHost defaults to the loopback address', () => {
   assert.equal(resolveHost({}, {}), '127.0.0.1')
@@ -23,4 +23,12 @@ test('resolveHost rejects empty and missing option values', () => {
   assert.throws(() => resolveHost({ host: '   ' }, {}), /non-empty string/)
   assert.throws(() => resolveHost({ host: true }, {}), /non-empty string/)
   assert.throws(() => resolveHost({}, { FREECUT_HOST: '' }), /non-empty string/)
+})
+
+test('bearer authentication is optional and uses an exact token', () => {
+  assert.equal(isBearerAuthorized(undefined, ''), true)
+  assert.equal(isBearerAuthorized('Bearer secret', 'secret'), true)
+  assert.equal(isBearerAuthorized('Bearer secret-wrong', 'secret'), false)
+  assert.equal(isBearerAuthorized('secret', 'secret'), false)
+  assert.equal(isBearerAuthorized(undefined, 'secret'), false)
 })

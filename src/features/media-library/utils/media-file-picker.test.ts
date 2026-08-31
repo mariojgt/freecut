@@ -2,20 +2,23 @@ import { describe, expect, it, vi } from 'vite-plus/test'
 import {
   getSupportedMediaFormatLabels,
   hasMediaFilePickerSupport,
+  hasNativeMediaFilePickerSupport,
   MEDIA_FILE_PICKER_TYPES,
   showMediaFilePicker,
 } from './media-file-picker'
 
 describe('media-file-picker', () => {
-  it('detects file picker support from window.showOpenFilePicker', () => {
+  it('uses an input fallback when the native picker is unavailable', () => {
     const originalWindow = globalThis.window
 
     vi.stubGlobal('window', {} as Window & typeof globalThis)
-    expect(hasMediaFilePickerSupport()).toBe(false)
+    expect(hasNativeMediaFilePickerSupport()).toBe(false)
+    expect(hasMediaFilePickerSupport()).toBe(true)
 
     vi.stubGlobal('window', {
       showOpenFilePicker: vi.fn(),
     } as unknown as Window & typeof globalThis)
+    expect(hasNativeMediaFilePickerSupport()).toBe(true)
     expect(hasMediaFilePickerSupport()).toBe(true)
 
     vi.stubGlobal('window', originalWindow)

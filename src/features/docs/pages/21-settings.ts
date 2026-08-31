@@ -18,7 +18,7 @@ const page = {
           rows: [
             [
               'General',
-              'Auto-save on/off and interval (5–30 min); undo history depth (10–200 steps); interface sounds (on/off, volume, sound theme).',
+              'Appearance theme; auto-save on/off and interval (5–30 min); undo history depth (10–200 steps); interface sounds (on/off, volume, sound theme).',
             ],
             [
               'Timeline',
@@ -35,6 +35,20 @@ const page = {
           kind: 'note',
           tone: 'info',
           text: 'Clearing the project cache removes regenerated data (waveforms, filmstrips, GIF frames, decoded audio); it never deletes source media. Use **Reset** in the dialog header to restore defaults.',
+        },
+      ],
+    },
+    {
+      title: 'Appearance themes',
+      blocks: [
+        {
+          kind: 'paragraph',
+          text: 'Choose **System**, **FreeCut Dark**, **Midnight**, or **Light** in **Settings → General**. The selection is saved in this browser and applies immediately across projects, dialogs, and editor panels.',
+        },
+        {
+          kind: 'note',
+          tone: 'info',
+          text: '**System** follows your device light/dark setting and updates automatically when it changes. Media previews and precision color overlays remain neutral dark surfaces so the theme never changes how footage is judged.',
         },
       ],
     },
@@ -83,11 +97,6 @@ const page = {
           items: [
             'Interface **language** is a separate control in the toolbar, not part of this dialog; FreeCut ships in 9 languages.',
           ],
-        },
-        {
-          kind: 'note',
-          tone: 'info',
-          text: 'FreeCut currently uses a single dark theme; there is no theme selector.',
         },
       ],
     },

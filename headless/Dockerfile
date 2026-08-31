@@ -11,6 +11,8 @@
 # Run (the lifecycle service requires a writable workspace for locks/atomic writes):
 #   docker run --rm -p 8787:8787 -v /path/to/FreeCutProjects:/workspace freecut-headless
 #   curl localhost:8787/health    # -> {"ok":true,"gpu":true,...}
+# MCP clients can start the stdio bridge inside a running container:
+#   docker exec -i freecut-headless node mcp/server.mjs
 FROM node:24-bookworm
 
 # Google Chrome (proprietary codecs) + software Vulkan (lavapipe) for WebGPU + fonts.
@@ -50,6 +52,7 @@ ENV FREECUT_CHROME_ARGS="--no-sandbox"
 # The container port must accept traffic from the published Docker interface.
 # Native serve.mjs runs remain loopback-only unless explicitly overridden.
 ENV FREECUT_HOST=0.0.0.0
+ENV FREECUT_MCP_OUTPUT_DIR=/output
 
 EXPOSE 8787
 # Exec form keeps Node as PID 1 so Docker's SIGTERM reaches the graceful

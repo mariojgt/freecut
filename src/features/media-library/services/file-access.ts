@@ -24,14 +24,28 @@ export async function ensureFileHandlePermission(handle: FileSystemFileHandle): 
   const event = logger.startEvent('file.permission.check', opId)
 
   try {
-    const permission = await handle.queryPermission({ mode: 'read' })
+    const permissionApi = handle as FileSystemFileHandle & {
+      queryPermission?: (options: { mode: 'read' }) => Promise<PermissionState>
+      requestPermission?: (options: { mode: 'read' }) => Promise<PermissionState>
+    }
+    // Plain File objects selected through Firefox's input picker are wrapped
+    // in a transient handle and require no additional permission prompt.
+    if (
+      typeof permissionApi.queryPermission !== 'function' ||
+      typeof permissionApi.requestPermission !== 'function'
+    ) {
+      event.success({ permission: 'granted', source: 'transient-file' })
+      return true
+    }
+
+    const permission = await permissionApi.queryPermission({ mode: 'read' })
     event.set('queryPermission', permission)
     if (permission === 'granted') {
       event.success({ permission })
       return true
     }
 
-    const newPermission = await handle.requestPermission({ mode: 'read' })
+    const newPermission = await permissionApi.requestPermission({ mode: 'read' })
     event.set('requestPermission', newPermission)
     const granted = newPermission === 'granted'
     event.success({ permission: newPermission })

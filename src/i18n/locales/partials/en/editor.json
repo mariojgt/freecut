@@ -1,5 +1,73 @@
 {
   "editor": {
+    "agent": {
+      "tabs": { "assistant": "Assistant", "generate": "Generate", "mcp": "MCP" },
+      "mcp": {
+        "openSetup": "MCP setup",
+        "title": "Connect an LLM",
+        "description": "Connect Codex, Claude, or another MCP-compatible client to inspect and edit FreeCut projects through the headless service.",
+        "startTitle": "1. Start the editing service",
+        "startHint": "Run this command from the FreeCut checkout. Replace the workspace path and token first.",
+        "configTitle": "2. Add FreeCut to your LLM",
+        "configHint": "Paste this JSON into the client's MCP server configuration.",
+        "copyConfig": "Copy MCP config",
+        "copied": "MCP config copied",
+        "copyFailed": "Could not access the clipboard. Select and copy the JSON manually.",
+        "capabilities": "The connection exposes project, media, timeline, inspection, frame-grab, and rendering tools. Edit previews are dry-run by default.",
+        "dockerNote": "The copied configuration connects to the Docker container named freecut-headless."
+      },
+      "provider": {
+        "label": "Model",
+        "browserModelOption": "{{name}} — {{profile}} ({{size}})",
+        "browserModelDescription": "{{profile}} browser model. First download: {{size}}; then it stays cached locally.",
+        "localServerOption": "Local server — Ollama / LM Studio",
+        "profiles": {
+          "fast": "Fastest",
+          "balanced": "Balanced",
+          "quality": "Best quality"
+        },
+        "configure": "Configure local server",
+        "localServerTitle": "Local model server",
+        "localServerDescription": "Connect to an OpenAI-compatible endpoint from Ollama, LM Studio, or LocalAI. The server must allow requests from this app's origin.",
+        "endpoint": "Endpoint",
+        "model": "Model name"
+      },
+      "plan": {
+        "title": "Plan",
+        "handoffNote": "Some steps open a review you confirm.",
+        "run": "Apply edit",
+        "discard": "Discard",
+        "running": "Running…"
+      },
+      "unsupported": {
+        "title": "Assistant unavailable",
+        "body": "The browser model needs WebGPU. Choose a local server model above for a CPU-compatible option."
+      },
+      "status": {
+        "loadingModel": "Loading {{model}}… {{percent}}%",
+        "loadingBytes": "{{loaded}} of {{total}}",
+        "prepare": "Prepare",
+        "ready": "Ready",
+        "cancel": "Cancel",
+        "retry": "Retry",
+        "thinking": "Planning your edit…"
+      },
+      "empty": {
+        "infoLabel": "About this assistant",
+        "intro": "Ask for timeline edits in plain language. The model runs locally in your browser or on the local server you choose. It proposes a plan first; you confirm before anything changes."
+      },
+      "composer": { "placeholder": "Describe an edit…" },
+      "suggestions": {
+        "transitions": "Add fade transitions to all videos",
+        "fades": "Fade every video in and out",
+        "silence": "Remove the silences",
+        "fillers": "Remove filler words",
+        "title": "Add a title that says Hello",
+        "cut": "Cut out 5–8 seconds",
+        "split": "Split at the playhead"
+      },
+      "clear": "Clear conversation"
+    },
     "compose": {
       "title": "Compositions",
       "newComposition": "New composition",

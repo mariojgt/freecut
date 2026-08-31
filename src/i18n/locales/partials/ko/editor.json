@@ -1,5 +1,73 @@
 {
   "editor": {
+    "agent": {
+      "tabs": { "assistant": "어시스턴트", "generate": "생성", "mcp": "MCP" },
+      "mcp": {
+        "openSetup": "MCP 설정",
+        "title": "LLM 연결",
+        "description": "Codex, Claude 또는 다른 MCP 호환 클라이언트를 헤드리스 서비스에 연결하여 FreeCut 프로젝트를 검사하고 편집합니다.",
+        "startTitle": "1. 편집 서비스 시작",
+        "startHint": "FreeCut 체크아웃에서 이 명령을 실행하세요. 먼저 작업 공간 경로와 토큰을 바꾸세요.",
+        "configTitle": "2. LLM에 FreeCut 추가",
+        "configHint": "이 JSON을 클라이언트의 MCP 서버 설정에 붙여넣으세요.",
+        "copyConfig": "MCP 설정 복사",
+        "copied": "MCP 설정을 복사했습니다",
+        "copyFailed": "클립보드에 접근할 수 없습니다. JSON을 선택하여 직접 복사하세요.",
+        "capabilities": "프로젝트, 미디어, 타임라인, 검사, 프레임 캡처 및 렌더링 도구를 제공합니다. 편집 미리보기는 기본적으로 시험 실행입니다.",
+        "dockerNote": "복사한 설정은 freecut-headless라는 Docker 컨테이너에 연결됩니다."
+      },
+      "provider": {
+        "label": "모델",
+        "browserModelOption": "{{name}} — {{profile}} ({{size}})",
+        "browserModelDescription": "{{profile}} 브라우저 모델입니다. 최초 다운로드는 {{size}}이며 이후 로컬에 캐시됩니다.",
+        "localServerOption": "로컬 서버 — Ollama / LM Studio",
+        "profiles": {
+          "fast": "가장 빠름",
+          "balanced": "균형",
+          "quality": "최고 품질"
+        },
+        "configure": "로컬 서버 설정",
+        "localServerTitle": "로컬 모델 서버",
+        "localServerDescription": "Ollama, LM Studio 또는 LocalAI의 OpenAI 호환 엔드포인트에 연결합니다. 서버에서 이 앱의 출처 요청을 허용해야 합니다.",
+        "endpoint": "엔드포인트",
+        "model": "모델 이름"
+      },
+      "plan": {
+        "title": "계획",
+        "handoffNote": "일부 단계는 확인할 검토 화면을 엽니다.",
+        "run": "편집 적용",
+        "discard": "취소",
+        "running": "실행 중…"
+      },
+      "unsupported": {
+        "title": "어시스턴트를 사용할 수 없음",
+        "body": "브라우저 모델에는 WebGPU가 필요합니다. CPU에서도 사용할 수 있는 로컬 서버 모델을 위에서 선택하세요."
+      },
+      "status": {
+        "loadingModel": "{{model}} 불러오는 중… {{percent}}%",
+        "loadingBytes": "{{total}} 중 {{loaded}}",
+        "prepare": "준비",
+        "ready": "준비됨",
+        "cancel": "취소",
+        "retry": "다시 시도",
+        "thinking": "편집 계획 세우는 중…"
+      },
+      "empty": {
+        "infoLabel": "이 어시스턴트 정보",
+        "intro": "일상 언어로 타임라인 편집을 요청하세요. 모델은 브라우저 또는 선택한 로컬 서버에서 로컬로 실행됩니다. 먼저 계획을 제안하며 변경 전 사용자가 확인합니다."
+      },
+      "composer": { "placeholder": "편집 내용 설명…" },
+      "suggestions": {
+        "transitions": "모든 비디오에 페이드 전환 추가",
+        "fades": "모든 비디오에 페이드 인·아웃 적용",
+        "silence": "무음 구간 제거",
+        "fillers": "불필요한 추임새 제거",
+        "title": "안녕하세요라는 제목 추가",
+        "cut": "5~8초 구간 잘라내기",
+        "split": "재생 헤드에서 분할"
+      },
+      "clear": "대화 지우기"
+    },
     "compose": {
       "title": "컴포지션",
       "newComposition": "새 컴포지션",

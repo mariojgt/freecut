@@ -20,6 +20,7 @@ export type LocalModelCacheId =
   | 'whisper'
   | SceneVerificationModelId
   | MusicgenModelId
+  | 'assistant-qwen'
   | 'kokoro-tts'
   | 'parakeet'
   | 'supertonic-tts'
@@ -75,6 +76,13 @@ export const LOCAL_MODEL_CACHE_DEFINITIONS: LocalModelCacheDefinition[] = [
     matchPathFragments: WHISPER_CACHE_MATCH_FRAGMENTS,
   },
   ...SCENE_VERIFICATION_MODEL_CACHE_DEFINITIONS,
+  {
+    id: 'assistant-qwen',
+    label: 'Qwen Assistant',
+    description: 'Qwen browser-assistant ONNX model files and tokenizer assets.',
+    cacheName: TRANSFORMERS_CACHE_NAME,
+    matchPathFragments: ['/onnx-community/qwen3.5-0.8b-onnx-opt/'],
+  },
   ...MUSICGEN_MODEL_CACHE_DEFINITIONS,
   {
     id: 'kokoro-tts',

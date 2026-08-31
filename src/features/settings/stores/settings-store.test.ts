@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
   showFilmstrips: true,
   enableFilmstripExtraction: true,
   editorDensity: 'compact' as const,
+  appTheme: 'system' as const,
   maxUndoHistory: 50,
   autoSaveInterval: 5,
   defaultWhisperModel: 'parakeet-tdt-v3' as const,
@@ -36,6 +37,14 @@ describe('settings-store', () => {
       useSettingsStore.getState().setSetting('editorDensity', 'default' as never)
 
       expect(useSettingsStore.getState().editorDensity).toBe('compact')
+    })
+
+    it('updates valid themes and normalizes unknown themes', () => {
+      useSettingsStore.getState().setSetting('appTheme', 'midnight')
+      expect(useSettingsStore.getState().appTheme).toBe('midnight')
+
+      useSettingsStore.getState().setSetting('appTheme', 'sepia' as never)
+      expect(useSettingsStore.getState().appTheme).toBe('system')
     })
 
     it('updates whisper defaults', () => {
@@ -78,6 +87,7 @@ describe('settings-store', () => {
       const state = useSettingsStore.getState()
       expect(state.snapEnabled).toBe(DEFAULT_SETTINGS.snapEnabled)
       expect(state.editorDensity).toBe(DEFAULT_SETTINGS.editorDensity)
+      expect(state.appTheme).toBe(DEFAULT_SETTINGS.appTheme)
       expect(state.autoSaveInterval).toBe(DEFAULT_SETTINGS.autoSaveInterval)
       expect(state.defaultWhisperModel).toBe(DEFAULT_SETTINGS.defaultWhisperModel)
       expect(state.defaultWhisperLanguage).toBe(DEFAULT_SETTINGS.defaultWhisperLanguage)

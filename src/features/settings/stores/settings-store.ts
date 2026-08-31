@@ -17,6 +17,12 @@ import {
   type HotkeyOverrideMap,
 } from '@/config/hotkeys'
 import { CAPTION_STYLE_PRESETS } from '@/shared/typography/caption-style-presets'
+import {
+  APP_SETTINGS_STORAGE_KEY,
+  DEFAULT_APP_THEME,
+  normalizeAppThemePreference,
+  type AppThemePreference,
+} from '@/config/app-theme'
 
 /**
  * App-wide settings stored in localStorage
@@ -35,6 +41,7 @@ interface AppSettings {
 
   // Interface
   editorDensity: EditorDensityPresetName
+  appTheme: AppThemePreference
 
   // Performance
   maxUndoHistory: number
@@ -146,6 +153,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 
   // Interface
   editorDensity: DEFAULT_EDITOR_DENSITY_PRESET,
+  appTheme: DEFAULT_APP_THEME,
 
   // Performance
   maxUndoHistory: 50,
@@ -208,6 +216,9 @@ export const useSettingsStore = create<SettingsStore>()(
           }
           if (key === 'editorDensity') {
             return { editorDensity: normalizeEditorDensityPreset(value) }
+          }
+          if (key === 'appTheme') {
+            return { appTheme: normalizeAppThemePreference(value) }
           }
           if (key === 'defaultCaptionStylePresetId') {
             return { defaultCaptionStylePresetId: normalizeCaptionStylePresetId(value) }
@@ -288,8 +299,8 @@ export const useSettingsStore = create<SettingsStore>()(
       resetToDefaults: () => set(DEFAULT_SETTINGS),
     }),
     {
-      name: 'freecut-settings',
-      version: 2,
+      name: APP_SETTINGS_STORAGE_KEY,
+      version: 3,
       // v1: auto-save now defaults on. Enable it for anyone persisted under the old
       // default (0 = disabled) so a crashed or closed tab can't lose a long edit.
       // After this one-time bump the user's choice is sticky again (toggle in
@@ -298,6 +309,8 @@ export const useSettingsStore = create<SettingsStore>()(
       // with native punctuation). Upgrade anyone still on the previous default
       // ('whisper-base') so the speed win applies without manual opt-in; deliberate
       // tiny/small/large choices are preserved.
+      // v3: add a persistent app appearance preference. Existing installs follow
+      // their operating-system theme until the user chooses an explicit palette.
       migrate: (persistedState, version) => {
         let state = (persistedState as Partial<AppSettings> | undefined) ?? {}
         if (version < 1 && (state.autoSaveInterval == null || state.autoSaveInterval <= 0)) {
@@ -305,6 +318,9 @@ export const useSettingsStore = create<SettingsStore>()(
         }
         if (version < 2 && state.defaultWhisperModel === 'whisper-base') {
           state = { ...state, defaultWhisperModel: 'parakeet-tdt-v3' }
+        }
+        if (version < 3) {
+          state = { ...state, appTheme: normalizeAppThemePreference(state.appTheme) }
         }
         return state
       },
@@ -320,6 +336,7 @@ export const useSettingsStore = create<SettingsStore>()(
           defaultWhisperModel: normalizeSelectableWhisperModel(typedState.defaultWhisperModel),
           hotkeyOverrides: sanitizeHotkeyOverrides(typedState.hotkeyOverrides),
           editorDensity: normalizeEditorDensityPreset(typedState.editorDensity),
+          appTheme: normalizeAppThemePreference(typedState.appTheme),
           captioningIntervalUnit,
           captioningIntervalValue: clampCaptioningIntervalValue(
             typedState.captioningIntervalValue,

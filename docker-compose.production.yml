@@ -1,0 +1,57 @@
+name: freecut
+
+# This compose file consumes immutable images published by
+# .github/workflows/release-docker.yml. docker/deploy-release.sh writes the
+# release tag to .freecut-release.env before applying the stack.
+services:
+  web:
+    image: "${FREECUT_WEB_IMAGE:-ghcr.io/mariojgt/freecut}:${FREECUT_IMAGE_TAG:-latest}"
+    pull_policy: always
+    environment:
+      FREECUT_RELEASE_TAG: "${FREECUT_IMAGE_TAG:-latest}"
+      FREECUT_UPDATE_REQUEST_FILE: /var/run/freecut-update/update-request
+    ports:
+      - "127.0.0.1:${FREECUT_WEB_PORT:-8080}:8080"
+    volumes:
+      - ./run:/var/run/freecut-update
+    restart: unless-stopped
+
+  headless:
+    profiles: [automation]
+    platform: linux/amd64
+    image: "${FREECUT_HEADLESS_IMAGE:-ghcr.io/mariojgt/freecut-headless}:${FREECUT_IMAGE_TAG:-latest}"
+    pull_policy: always
+    container_name: freecut-headless
+    environment:
+      FREECUT_API_TOKEN: ${FREECUT_API_TOKEN:-}
+    ports:
+      - "127.0.0.1:${FREECUT_API_PORT:-8787}:8787"
+    volumes:
+      - "${FREECUT_WORKSPACE:-./freecut-workspace}:/workspace"
+      - "${FREECUT_MCP_OUTPUT:-./freecut-output}:/output"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 3s
+      start_period: 20s
+      retries: 6
+
+  ollama:
+    profiles: [local-ai]
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_ORIGINS: "http://localhost:${FREECUT_WEB_PORT:-8080},http://127.0.0.1:${FREECUT_WEB_PORT:-8080}"
+    ports:
+      - "127.0.0.1:${FREECUT_LLM_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

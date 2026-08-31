@@ -47,6 +47,27 @@ export interface LoadTimelineOptions {
   allowProjectUpgrade?: boolean
 }
 
+export interface AddTransitionRequest {
+  leftClipId: string
+  rightClipId: string
+  type?: TransitionType
+  durationInFrames?: number
+  presentation?: TransitionPresentation
+  direction?: WipeDirection | SlideDirection | FlipDirection
+  alignment?: number
+}
+
+export interface AddTransitionsResult {
+  added: number
+  failed: AddTransitionRequest[]
+}
+
+export interface RemoveTimelineRangeResult {
+  targetedItemCount: number
+  removedItemCount: number
+  splitCount: number
+}
+
 export interface TimelineState {
   tracks: TimelineTrack[]
   items: TimelineItem[]
@@ -179,6 +200,7 @@ export interface TimelineActions {
     direction?: WipeDirection | SlideDirection | FlipDirection,
     alignment?: number,
   ) => boolean
+  addTransitions: (requests: AddTransitionRequest[]) => AddTransitionsResult
   updateTransition: (
     id: string,
     updates: Partial<
@@ -212,6 +234,11 @@ export interface TimelineActions {
     }>,
   ) => void
   removeTransition: (id: string) => void
+  removeTimelineRangeFromItems: (
+    itemIds: string[],
+    startFrame: number,
+    endFrame: number,
+  ) => RemoveTimelineRangeResult
   // Keyframe actions
   addKeyframe: (
     itemId: string,

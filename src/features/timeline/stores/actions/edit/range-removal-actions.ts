@@ -1,4 +1,5 @@
 import type { TimelineItem } from '@/types/timeline'
+import type { RemoveTimelineRangeResult } from '@/features/timeline/types'
 import { useItemsStore } from '../../items-store'
 import { useTransitionsStore } from '../../transitions-store'
 import { useKeyframesStore } from '../../keyframes-store'
@@ -12,7 +13,7 @@ import {
 import { getUniqueLinkedItemAnchorIds } from '../../../utils/linked-items'
 import { isTrackSyncLockEnabled } from '../../../utils/track-sync-lock'
 import { propagateRemovedIntervalsToSyncLockedTracks } from '../sync-lock-ripple'
-import { applySplitBookkeeping, type SplitResultEntry } from '../split-bookkeeping'
+import { applySplitBookkeeping, splitTimelineItemsAtFrame } from '../split-bookkeeping'
 import {
   isLinkedSelectionEnabled,
   isInTransitionOverlap,
@@ -190,6 +191,125 @@ export function removeFillerWordsFromItems(
 }
 
 /**
+ * Remove an absolute timeline range from the chosen media items. The boundary
+ * splits and ripple removal share one command snapshot, so a complete AI cut is
+ * restored with a single Undo.
+ */
+export function removeTimelineRangeFromItems(
+  itemIds: string[],
+  startFrame: number,
+  endFrame: number,
+): RemoveTimelineRangeResult {
+  const rangeStart = Math.max(0, Math.round(Math.min(startFrame, endFrame)))
+  const rangeEnd = Math.max(0, Math.round(Math.max(startFrame, endFrame)))
+  if (itemIds.length === 0 || rangeEnd <= rangeStart) {
+    return { targetedItemCount: 0, removedItemCount: 0, splitCount: 0 }
+  }
+
+  return execute(
+    'REMOVE_TIMELINE_RANGE',
+    // Boundary splitting and ripple deletion must remain inside one command snapshot for Undo.
+    // fallow-ignore-next-line complexity
+    () => {
+      const initialItems = useItemsStore.getState().items
+      const anchorIds = getUniqueLinkedItemAnchorIds(initialItems, itemIds)
+      const anchors = anchorIds
+        .map((id) => initialItems.find((item) => item.id === id))
+        .filter(
+          (item): item is TimelineItem =>
+            item !== undefined &&
+            (item.type === 'video' || item.type === 'audio') &&
+            rangeStart < item.from + item.durationInFrames &&
+            rangeEnd > item.from,
+        )
+      const descriptors = anchors.map((item) => ({
+        originId: item.originId ?? item.id,
+        type: item.type,
+      }))
+
+      let splitCount = 0
+      for (const anchor of anchors) {
+        const splitFrames = [rangeEnd, rangeStart].filter(
+          (frame) => frame > anchor.from && frame < anchor.from + anchor.durationInFrames,
+        )
+        if (splitFrames.length === 0) continue
+
+        const itemsToSplit = getLinkedItemsForEdit(
+          useItemsStore.getState().items,
+          anchor.id,
+          isLinkedSelectionEnabled(),
+        )
+        if (itemsToSplit.length === 0) continue
+
+        for (const frame of splitFrames) {
+          const currentItemsById = useItemsStore.getState().itemById
+          const canSplitFrame = itemsToSplit.every((item) => {
+            const currentItem = currentItemsById[item.id]
+            if (
+              !currentItem ||
+              frame <= currentItem.from ||
+              frame >= currentItem.from + currentItem.durationInFrames
+            ) {
+              return false
+            }
+            return !isInTransitionOverlap(
+              currentItem.id,
+              frame - currentItem.from,
+              currentItem.durationInFrames,
+            )
+          })
+          if (!canSplitFrame) continue
+
+          const splitResults = splitTimelineItemsAtFrame(itemsToSplit, frame)
+          if (!splitResults) continue
+
+          applySplitBookkeeping(splitResults)
+          splitCount += 1
+          for (const entry of splitResults) {
+            applyTransitionRepairs([entry.result.leftItem.id, entry.result.rightItem.id])
+          }
+        }
+      }
+
+      const idsToRemove = useItemsStore
+        .getState()
+        .items.filter((candidate) => {
+          if (candidate.type !== 'video' && candidate.type !== 'audio') return false
+          if (
+            !descriptors.some(
+              (descriptor) =>
+                descriptor.type === candidate.type &&
+                descriptor.originId === (candidate.originId ?? candidate.id),
+            )
+          ) {
+            return false
+          }
+          return (
+            candidate.from >= rangeStart && candidate.from + candidate.durationInFrames <= rangeEnd
+          )
+        })
+        .map((item) => item.id)
+
+      if (idsToRemove.length === 0) {
+        return { targetedItemCount: anchors.length, removedItemCount: 0, splitCount }
+      }
+
+      const removalResult = applyRippleRemoval(idsToRemove)
+      requestPostEditWarmForItems(
+        Array.from(new Set([...idsToRemove, ...removalResult.affectedIds])),
+      )
+      useTimelineSettingsStore.getState().markDirty()
+      return {
+        targetedItemCount: anchors.length,
+        removedItemCount: removalResult.removedIds.length,
+        splitCount,
+      }
+    },
+    { itemIds, startFrame: rangeStart, endFrame: rangeEnd },
+  )
+}
+
+/**
  * Remove the source-time ranges a user selected in the transcript editor.
  * Ranges are in source-native seconds, keyed by mediaId — the same shape the
  * silence/filler removers use — so this reuses the split-then-ripple machinery
@@ -284,15 +404,8 @@ function removeTimelineRangesFromItems(
 
           if (!canSplitFrame) continue
 
-          const frameSplitResults = itemsToSplit
-            .map((item) => ({
-              originalId: item.id,
-              originalLinkedGroupId: item.linkedGroupId,
-              result: useItemsStore.getState()._splitItem(item.id, frame),
-            }))
-            .filter((entry): entry is SplitResultEntry => entry.result !== null)
-
-          if (frameSplitResults.length !== itemsToSplit.length) continue
+          const frameSplitResults = splitTimelineItemsAtFrame(itemsToSplit, frame)
+          if (!frameSplitResults) continue
 
           applySplitBookkeeping(frameSplitResults)
           splitCount += 1

@@ -1,5 +1,73 @@
 {
   "editor": {
+    "agent": {
+      "tabs": { "assistant": "Asistan", "generate": "Üret", "mcp": "MCP" },
+      "mcp": {
+        "openSetup": "MCP kurulumu",
+        "title": "Bir LLM bağla",
+        "description": "FreeCut projelerini headless hizmet üzerinden incelemek ve düzenlemek için Codex, Claude veya MCP uyumlu başka bir istemci bağlayın.",
+        "startTitle": "1. Düzenleme hizmetini başlat",
+        "startHint": "Bu komutu FreeCut çalışma kopyasında çalıştırın. Önce çalışma alanı yolunu ve belirteci değiştirin.",
+        "configTitle": "2. FreeCut'ı LLM'nize ekleyin",
+        "configHint": "Bu JSON'u istemcinin MCP sunucu yapılandırmasına yapıştırın.",
+        "copyConfig": "MCP yapılandırmasını kopyala",
+        "copied": "MCP yapılandırması kopyalandı",
+        "copyFailed": "Panoya erişilemedi. JSON'u seçip elle kopyalayın.",
+        "capabilities": "Bağlantı; proje, medya, zaman çizelgesi, inceleme, kare yakalama ve işleme araçlarını sunar. Düzenleme önizlemeleri varsayılan olarak deneme çalışmasıdır.",
+        "dockerNote": "Kopyalanan yapılandırma freecut-headless adlı Docker konteynerine bağlanır."
+      },
+      "provider": {
+        "label": "Model",
+        "browserModelOption": "{{name}} — {{profile}} ({{size}})",
+        "browserModelDescription": "{{profile}} tarayıcı modeli. İlk indirme: {{size}}; ardından yerel önbellekte kalır.",
+        "localServerOption": "Yerel sunucu — Ollama / LM Studio",
+        "profiles": {
+          "fast": "En hızlı",
+          "balanced": "Dengeli",
+          "quality": "En iyi kalite"
+        },
+        "configure": "Yerel sunucuyu yapılandır",
+        "localServerTitle": "Yerel model sunucusu",
+        "localServerDescription": "Ollama, LM Studio veya LocalAI üzerinden OpenAI uyumlu bir uç noktaya bağlanın. Sunucu bu uygulamanın kaynağından gelen isteklere izin vermelidir.",
+        "endpoint": "Uç nokta",
+        "model": "Model adı"
+      },
+      "plan": {
+        "title": "Plan",
+        "handoffNote": "Bazı adımlar onaylamanız için bir inceleme açar.",
+        "run": "Düzenlemeyi uygula",
+        "discard": "Vazgeç",
+        "running": "Çalışıyor…"
+      },
+      "unsupported": {
+        "title": "Asistan kullanılamıyor",
+        "body": "Tarayıcı modeli WebGPU gerektirir. CPU uyumlu seçenek için yukarıdan yerel sunucu modeli seçin."
+      },
+      "status": {
+        "loadingModel": "{{model}} yükleniyor… %{{percent}}",
+        "loadingBytes": "{{total}} içinden {{loaded}}",
+        "prepare": "Hazırla",
+        "ready": "Hazır",
+        "cancel": "İptal",
+        "retry": "Yeniden dene",
+        "thinking": "Düzenleme planlanıyor…"
+      },
+      "empty": {
+        "infoLabel": "Bu asistan hakkında",
+        "intro": "Zaman çizelgesi düzenlemelerini günlük dille isteyin. Model tarayıcınızda veya seçtiğiniz yerel sunucuda çalışır. Önce bir plan önerir; herhangi bir değişiklikten önce siz onaylarsınız."
+      },
+      "composer": { "placeholder": "Bir düzenleme tarif edin…" },
+      "suggestions": {
+        "transitions": "Tüm videolara yumuşak geçiş ekle",
+        "fades": "Tüm videoları yumuşakça açıp kapat",
+        "silence": "Sessizlikleri kaldır",
+        "fillers": "Dolgu sözcüklerini kaldır",
+        "title": "Merhaba yazan bir başlık ekle",
+        "cut": "5–8 saniye arasını kes",
+        "split": "Oynatma kafasında böl"
+      },
+      "clear": "Konuşmayı temizle"
+    },
     "compose": {
       "title": "Kompozisyonlar",
       "newComposition": "Yeni kompozisyon",

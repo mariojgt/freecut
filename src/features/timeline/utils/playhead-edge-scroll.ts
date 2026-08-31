@@ -26,10 +26,6 @@ export function getPlayheadEdgeScrollVelocity(clientX: number, bounds: Horizonta
   return 0
 }
 
-export function getVisiblePlayheadClientX(clientX: number, bounds: HorizontalBounds): number {
-  return Math.max(bounds.left, Math.min(Math.max(bounds.left, bounds.right - 1), clientX))
-}
-
 export function getEdgeScrollDelta(velocity: number, timestamp: number, previousTimestamp: number) {
   const elapsedSeconds = Math.min(32, Math.max(0, timestamp - previousTimestamp)) / 1000
   return velocity * elapsedSeconds

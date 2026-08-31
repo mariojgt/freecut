@@ -55,6 +55,9 @@ Trace-*.json
 
 .vercel
 .env*.local
+/.freecut-release.env
+/.agent-config.json
+/.vespera/
 CLAUDE.md
 crates/*/target/
 crates/*/Cargo.lock

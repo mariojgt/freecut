@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for an in-app FreeCut update request
+
+[Path]
+PathExists=/opt/freecut/run/update-request
+Unit=freecut-update.service
+
+[Install]
+WantedBy=paths.target

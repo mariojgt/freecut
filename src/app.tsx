@@ -5,6 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ErrorBoundary } from '@/app/error-boundary'
 import { PwaInstallPrompt } from '@/app/pwa-install-prompt'
 import { RouteErrorScreen } from '@/app/route-error'
+import { AppThemeController } from '@/app/app-theme-controller'
 import { WorkspaceGate } from '@/features/workspace-gate/workspace-gate'
 import { routeTree } from './routeTree.gen'
 
@@ -75,19 +76,22 @@ export function App() {
   // Mounted HERE (not inside __root.tsx) so route loaders — which run before
   // children components mount — never see an uninitialized workspace root.
   return (
-    <ErrorBoundary level="app">
-      <TooltipProvider delayDuration={300}>
-        <WorkspaceGate>
-          <RouterProvider router={router} />
-        </WorkspaceGate>
-        <GlobalTooltip />
-        <PwaInstallPrompt />
-        {showToaster && (
-          <Suspense fallback={null}>
-            <LazyToaster />
-          </Suspense>
-        )}
-      </TooltipProvider>
-    </ErrorBoundary>
+    <>
+      <AppThemeController />
+      <ErrorBoundary level="app">
+        <TooltipProvider delayDuration={300}>
+          <WorkspaceGate>
+            <RouterProvider router={router} />
+          </WorkspaceGate>
+          <GlobalTooltip />
+          <PwaInstallPrompt />
+          {showToaster && (
+            <Suspense fallback={null}>
+              <LazyToaster />
+            </Suspense>
+          )}
+        </TooltipProvider>
+      </ErrorBoundary>
+    </>
   )
 }

@@ -4,6 +4,16 @@
     "saveAndReload": "Kaydet ve Yeniden Yükle",
     "reloadWithoutSaving": "Kaydetmeden Yeniden Yükle",
     "dockPanel": "Paneli sabitle",
+    "dockerUpdate": {
+      "button": "Güncelle",
+      "ariaLabel": "Docker güncellemesini denetle",
+      "checking": "Denetleniyor…",
+      "requestedShort": "İstendi",
+      "requested": "Güncelleme denetimi başlatıldı",
+      "requestedDescription": "Daha yeni bir kararlı sürüm varsa FreeCut sürümü yükler, çalışmanızı kaydeder ve otomatik olarak yeniden yüklenir.",
+      "failed": "Güncelleme başlatılamadı",
+      "failedDescription": "Docker ana makinesi güncelleyicisi isteği kabul etmedi. Yeniden deneyin veya güncelleyici hizmetini denetleyin."
+    },
     "installPrompt": {
       "label": "FreeCut’ı yükle",
       "title": "FreeCut’ı yükle",
@@ -86,7 +96,13 @@
       "uiSounds": "Arayüz sesleri",
       "uiSoundVolume": "Ses düzeyi",
       "uiSoundVoice": "Ses teması",
-      "uiSoundPreview": "Önizleme"
+      "uiSoundPreview": "Önizleme",
+      "appearance": "Görünüm",
+      "appearanceDescription": "Uygulama temasını seçin. Sistem, cihaz ayarını izler.",
+      "themeSystem": "Sistem",
+      "themeFreeCutDark": "FreeCut Koyu",
+      "themeMidnight": "Gece Yarısı",
+      "themeLight": "Açık"
     },
     "ai": {
       "captionSampleInterval": "Altyazı örnekleme aralığı",

@@ -38,8 +38,12 @@ describe('GitHub stars cache', () => {
     ) as unknown as typeof fetch
 
     await expect(refreshGitHubStarCount(storage, fetchImpl, 25_000)).resolves.toBe(987)
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.github.com/repos/mariojgt/freecut',
+      expect.any(Object),
+    )
     expect(storage.setItem).toHaveBeenCalledWith(
-      'freecut.githubStars.v1',
+      'freecut.githubStars.mariojgt.v1',
       JSON.stringify({ stars: 987, fetchedAt: 25_000 }),
     )
   })

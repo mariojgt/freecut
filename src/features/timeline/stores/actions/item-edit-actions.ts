@@ -8,6 +8,7 @@ export type { RemoveSilenceResult } from './edit/range-removal-actions'
 export {
   removeSilenceFromItems,
   removeFillerWordsFromItems,
+  removeTimelineRangeFromItems,
   removeTranscriptRangesFromItems,
 } from './edit/range-removal-actions'
 export {

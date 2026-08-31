@@ -21,6 +21,10 @@ export interface LlmLoadProgress {
   stage: string
   /** 0–100. */
   percent: number
+  /** Aggregate bytes received when the model host exposes file metadata. */
+  loadedBytes?: number
+  /** Aggregate bytes required by the selected model. */
+  totalBytes?: number
 }
 
 export interface LlmGenerateOptions {

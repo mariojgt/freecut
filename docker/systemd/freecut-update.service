@@ -1,0 +1,14 @@
+[Unit]
+Description=Check for and deploy the latest stable FreeCut release
+Documentation=https://github.com/mariojgt/freecut
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/freecut
+Environment=FREECUT_INSTALL_DIR=/opt/freecut
+Environment=FREECUT_UPDATE_REQUEST_FILE=/opt/freecut/run/update-request
+ExecStart=/opt/freecut/docker/check-for-update.sh
+UMask=0077

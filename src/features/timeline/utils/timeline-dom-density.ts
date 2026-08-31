@@ -12,8 +12,8 @@ export const DENSE_TIMELINE_OVERVIEW_ITEM_THRESHOLD = DENSE_TIMELINE_TRACK_ITEM_
 export const DENSE_TIMELINE_MAX_OVERVIEW_BUCKETS_PER_TRACK = 1024
 
 export const DEFAULT_TIMELINE_ITEM_CULL_BUFFER_PX = 2000
-export const DENSE_TIMELINE_ITEM_CULL_BUFFER_PX = 600
-export const COMPACT_TIMELINE_ITEM_MAX_WIDTH_PX = 36
+const DENSE_TIMELINE_ITEM_CULL_BUFFER_PX = 600
+const COMPACT_TIMELINE_ITEM_MAX_WIDTH_PX = 36
 const MIXED_TIMELINE_COMPACT_ZOOM_STEP = 1.12
 
 export interface TimelineItemDurationBounds {
@@ -98,13 +98,7 @@ export function countCompactTimelineItemsAtZoom(
   let high = sortedDurationsInFrames.length
   while (low < high) {
     const middle = (low + high) >> 1
-    if (
-      isTimelineItemCompactAtZoom(
-        sortedDurationsInFrames[middle]!,
-        fps,
-        pixelsPerSecond,
-      )
-    ) {
+    if (isTimelineItemCompactAtZoom(sortedDurationsInFrames[middle]!, fps, pixelsPerSecond)) {
       low = middle + 1
     } else {
       high = middle
