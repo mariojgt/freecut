@@ -14,6 +14,11 @@ const logger = createLogger('MediaResolver')
  */
 const pendingRequests = new Map<string, Promise<string>>()
 
+/** Register a range-streamed deployment URL without replacing a local source. */
+export function registerExternalMediaUrl(mediaId: string, url: string): string {
+  return blobUrlManager.get(mediaId) ?? blobUrlManager.registerUrl(mediaId, url)
+}
+
 /**
  * Resolves a mediaId to a blob URL for use in Composition Player
  *

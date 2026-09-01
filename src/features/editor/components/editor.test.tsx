@@ -144,6 +144,10 @@ vi.mock('@/features/editor/hooks/use-editor-hotkeys', () => ({
   useEditorHotkeys: vi.fn(),
 }))
 
+vi.mock('@/features/editor/hooks/use-mcp-project-sync', () => ({
+  useMcpProjectSync: () => ({ notePushedRevision: vi.fn() }),
+}))
+
 vi.mock('../hooks/use-auto-save', () => ({
   useAutoSave: vi.fn(),
 }))

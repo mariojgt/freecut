@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
 import {
+  collectHeadlessProjectMediaIds,
   getHeadlessProject,
+  headlessMediaSourceUrl,
   HeadlessApiError,
+  listHeadlessMedia,
   listHeadlessProjects,
 } from '@/shared/deployment/headless-api'
 import { migrateProject } from '@/shared/projects/migrations'
 import { usePlaybackStore } from '@/shared/state/playback'
 import { ensureFontsLoaded } from '@/shared/typography/fonts'
 import type { Project } from '@/types/project'
+import { registerExternalMediaUrl } from '../deps/media-contract'
 import { hydrateTimelineStoresFromProject, useItemsStore } from '../deps/timeline-contract'
 
 const POLL_INTERVAL_MS = 1500
@@ -36,8 +40,25 @@ async function preloadProjectFonts(project: Project): Promise<void> {
   await ensureFontsLoaded([...new Set(families)])
 }
 
-async function hydrateFromServer(raw: Project): Promise<LiveFollowProjectMeta> {
+async function registerServerMedia(project: Project, signal: AbortSignal): Promise<void> {
+  const available = new Set(
+    (await listHeadlessMedia(signal))
+      .filter((resource) => resource.sourceAvailable)
+      .map((resource) => resource.id),
+  )
+  for (const mediaId of collectHeadlessProjectMediaIds(project)) {
+    if (available.has(mediaId)) {
+      registerExternalMediaUrl(mediaId, headlessMediaSourceUrl(mediaId))
+    }
+  }
+}
+
+async function hydrateFromServer(
+  raw: Project,
+  signal: AbortSignal,
+): Promise<LiveFollowProjectMeta> {
   const { project } = migrateProject(raw)
+  await registerServerMedia(project, signal)
   await preloadProjectFonts(project)
 
   // Hydration resets the playhead to the project's saved frame; a follower
@@ -75,10 +96,14 @@ export function useLiveProjectFollow(projectId: string): LiveFollowState {
 
     const load = async () => {
       const resource = await getHeadlessProject(projectId, controller.signal)
-      const meta = await hydrateFromServer(resource.project)
+      const meta = await hydrateFromServer(resource.project, controller.signal)
       currentRevision = resource.revision
       if (!controller.signal.aborted) {
-        setState({ status: 'live', revision: resource.revision, project: meta })
+        setState({
+          status: 'live',
+          revision: resource.revision,
+          project: meta,
+        })
       }
     }
 

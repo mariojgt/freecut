@@ -130,6 +130,50 @@ export interface HeadlessProjectResource {
   revision: string
 }
 
+export interface HeadlessMediaResource {
+  id: string
+  sourceAvailable: boolean
+}
+
+function isHeadlessMediaResource(value: unknown): value is HeadlessMediaResource {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  return typeof candidate.id === 'string' && typeof candidate.sourceAvailable === 'boolean'
+}
+
+export async function listHeadlessMedia(signal?: AbortSignal): Promise<HeadlessMediaResource[]> {
+  const payload = await requestJson('/v1/media', { signal })
+  const media = (payload as { media?: unknown } | null)?.media
+  if (!Array.isArray(media)) return []
+  return media.filter(isHeadlessMediaResource)
+}
+
+/** Same-origin URL for source bytes stored in the server workspace. */
+export function headlessMediaSourceUrl(mediaId: string): string {
+  if (!PORTABLE_ID_PATTERN.test(mediaId)) {
+    throw new HeadlessApiError(`Media id "${mediaId}" is not portable`, 400)
+  }
+  return `${HEADLESS_API_BASE}/v1/media/${encodeURIComponent(mediaId)}/source`
+}
+
+/** Media ids referenced anywhere in a portable project's timeline. */
+export function collectHeadlessProjectMediaIds(project: Project): string[] {
+  const ids = new Set<string>()
+  const add = (items: readonly unknown[]) => {
+    for (const raw of items) {
+      const item = raw as { mediaId?: unknown }
+      if (typeof item.mediaId === 'string' && PORTABLE_ID_PATTERN.test(item.mediaId)) {
+        ids.add(item.mediaId)
+      }
+    }
+  }
+  add((project.timeline?.items ?? []) as unknown[])
+  for (const composition of project.timeline?.compositions ?? []) {
+    add((composition.items ?? []) as unknown[])
+  }
+  return [...ids]
+}
+
 export async function getHeadlessProject(
   id: string,
   signal?: AbortSignal,
@@ -148,44 +192,67 @@ export async function getHeadlessProject(
  * PUT never creates, so a missing id falls back to POST (which demands an
  * Idempotency-Key) followed by the same PUT. Returns the saved revision.
  */
-export async function pushProjectToHeadlessWorkspace(project: Project): Promise<string | null> {
+function isMissingProjectError(error: unknown): boolean {
+  return (
+    error instanceof HeadlessApiError &&
+    (error.status === 404 || error.code === 'PROJECT_NOT_FOUND')
+  )
+}
+
+function requireRevision(payload: unknown, context: string): string {
+  const revision = (payload as { revision?: unknown } | null)?.revision
+  if (typeof revision !== 'string') {
+    throw new HeadlessApiError(`Headless API did not return ${context} revision`, 502)
+  }
+  return revision
+}
+
+async function createPortableProject(project: PortableProject): Promise<string> {
+  const { width, height, fps, backgroundColor } = project.metadata
+  const payload = await requestJson('/v1/projects', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      id: project.id,
+      name: project.name,
+      width,
+      height,
+      fps,
+      ...(backgroundColor && BACKGROUND_COLOR_PATTERN.test(backgroundColor)
+        ? { backgroundColor }
+        : {}),
+    }),
+  })
+  return requireRevision(payload, 'the created')
+}
+
+async function resolveExpectedRevision(
+  project: PortableProject,
+  knownRevision: string | undefined,
+): Promise<string> {
+  if (knownRevision !== undefined) return knownRevision
+  try {
+    return (await getHeadlessProject(project.id)).revision
+  } catch (error) {
+    if (!isMissingProjectError(error)) throw error
+    return createPortableProject(project)
+  }
+}
+
+export async function pushProjectToHeadlessWorkspace(
+  project: Project,
+  knownRevision?: string,
+): Promise<string | null> {
   const portable = toPortableProject(project)
   if (!PORTABLE_ID_PATTERN.test(portable.id)) {
     throw new HeadlessApiError(`Project id "${portable.id}" is not portable`, 400)
   }
 
-  const save = async () =>
-    requestJson(`/v1/projects/${encodeURIComponent(portable.id)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ project: portable, force: true }),
-    })
-
-  let payload: unknown
-  try {
-    payload = await save()
-  } catch (error) {
-    const missing =
-      error instanceof HeadlessApiError &&
-      (error.status === 404 || error.code === 'PROJECT_NOT_FOUND')
-    if (!missing) throw error
-    const { width, height, fps, backgroundColor } = portable.metadata
-    await requestJson('/v1/projects', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-      body: JSON.stringify({
-        id: portable.id,
-        name: portable.name,
-        width,
-        height,
-        fps,
-        ...(backgroundColor && BACKGROUND_COLOR_PATTERN.test(backgroundColor)
-          ? { backgroundColor }
-          : {}),
-      }),
-    })
-    payload = await save()
-  }
-
+  const expectedRevision = await resolveExpectedRevision(portable, knownRevision)
+  const payload = await requestJson(`/v1/projects/${encodeURIComponent(portable.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ project: portable, expectedRevision, force: false }),
+  })
   const revision = (payload as { revision?: unknown } | null)?.revision
   return typeof revision === 'string' ? revision : null
 }

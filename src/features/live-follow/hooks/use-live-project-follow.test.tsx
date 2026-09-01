@@ -18,13 +18,20 @@ const remote = {
 }
 
 const getHeadlessProject = vi.fn()
+const listHeadlessMedia = vi.fn()
 const listHeadlessProjects = vi.fn()
+const registerExternalMediaUrl = vi.fn()
 const hydrateTimelineStoresFromProject = vi.fn()
 
 vi.mock('@/shared/deployment/headless-api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/shared/deployment/headless-api')>()),
   getHeadlessProject: (...args: unknown[]) => getHeadlessProject(...args) as never,
+  listHeadlessMedia: (...args: unknown[]) => listHeadlessMedia(...args) as never,
   listHeadlessProjects: (...args: unknown[]) => listHeadlessProjects(...args) as never,
+}))
+
+vi.mock('../deps/media-contract', () => ({
+  registerExternalMediaUrl: (...args: unknown[]) => registerExternalMediaUrl(...args),
 }))
 
 vi.mock('../deps/timeline-contract', () => ({
@@ -41,8 +48,38 @@ describe('useLiveProjectFollow', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     getHeadlessProject.mockResolvedValue(remote)
+    listHeadlessMedia.mockResolvedValue([])
     listHeadlessProjects.mockResolvedValue([{ id: 'proj1', revision: remote.revision }])
     hydrateTimelineStoresFromProject.mockResolvedValue(undefined)
+  })
+
+  it('registers server source URLs before hydrating referenced media', async () => {
+    const withMedia = {
+      ...remote,
+      project: {
+        ...remote.project,
+        timeline: {
+          tracks: [],
+          items: [{ id: 'image-1', type: 'image', mediaId: 'card-1' }],
+        },
+      },
+    }
+    getHeadlessProject.mockResolvedValue(withMedia)
+    listHeadlessMedia.mockResolvedValue([{ id: 'card-1', sourceAvailable: true }])
+
+    const { unmount } = renderHook(() => useLiveProjectFollow('proj1'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(registerExternalMediaUrl).toHaveBeenCalledWith(
+      'card-1',
+      '/api/headless/v1/media/card-1/source',
+    )
+    expect(registerExternalMediaUrl.mock.invocationCallOrder[0]).toBeLessThan(
+      hydrateTimelineStoresFromProject.mock.invocationCallOrder[0] ?? Infinity,
+    )
+    unmount()
   })
 
   afterEach(() => {

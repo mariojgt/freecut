@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '@/types/project'
 import {
+  collectHeadlessProjectMediaIds,
   detectHeadlessApi,
+  headlessMediaSourceUrl,
+  listHeadlessMedia,
   pushProjectToHeadlessWorkspace,
   toPortableProject,
 } from './headless-api'
@@ -77,45 +80,66 @@ describe('detectHeadlessApi', () => {
 
 describe('pushProjectToHeadlessWorkspace', () => {
   it('saves in place when the server copy already exists', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true, revision: 'sha256:aa' }))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ project: storedProject, revision: 'sha256:before' }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, revision: 'sha256:aa' }))
     vi.stubGlobal('fetch', fetchMock)
 
     expect(await pushProjectToHeadlessWorkspace(storedProject)).toBe('sha256:aa')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit]
     expect(url).toBe('/api/headless/v1/projects/proj1')
     expect(init.method).toBe('PUT')
     const body = JSON.parse(String(init.body)) as {
+      expectedRevision: string
       force: boolean
       project: Record<string, unknown>
     }
-    expect(body.force).toBe(true)
+    expect(body.expectedRevision).toBe('sha256:before')
+    expect(body.force).toBe(false)
     expect(body.project.blocks).toBeUndefined()
     expect(body.project.rootFolderHandle).toBeUndefined()
   })
 
-  it('creates the project first when the PUT reports it missing', async () => {
+  it('creates the project first when the initial read reports it missing', async () => {
     const calls: { url: string; init: RequestInit }[] = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init: RequestInit) => {
         calls.push({ url, init })
-        if (init.method === 'PUT' && calls.length === 1) {
+        if (init.method === undefined && calls.length === 1) {
           return jsonResponse({ ok: false, error: { code: 'PROJECT_NOT_FOUND' } }, 404)
         }
-        if (init.method === 'POST') return jsonResponse({ ok: true }, 201)
+        if (init.method === 'POST') {
+          return jsonResponse({ ok: true, revision: 'sha256:created' }, 201)
+        }
         return jsonResponse({ ok: true, revision: 'sha256:bb' })
       }),
     )
 
     expect(await pushProjectToHeadlessWorkspace(storedProject)).toBe('sha256:bb')
-    expect(calls.map((call) => call.init.method)).toEqual(['PUT', 'POST', 'PUT'])
+    expect(calls.map((call) => call.init.method)).toEqual([undefined, 'POST', 'PUT'])
     const createCall = calls.at(1)
     expect(createCall?.url).toBe('/api/headless/v1/projects')
     const headers = (createCall?.init.headers ?? {}) as Record<string, string>
     expect(headers['Idempotency-Key']).toMatch(/\S/)
     const created = JSON.parse(String(createCall?.init.body)) as Record<string, unknown>
     expect(created).toMatchObject({ id: 'proj1', width: 1280, height: 720, fps: 30 })
+    const saved = JSON.parse(String(calls.at(2)?.init.body)) as Record<string, unknown>
+    expect(saved).toMatchObject({ expectedRevision: 'sha256:created', force: false })
+  })
+
+  it('uses a caller-known revision without an extra read', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ revision: 'sha256:after' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(pushProjectToHeadlessWorkspace(storedProject, 'sha256:known')).resolves.toBe(
+      'sha256:after',
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
+    expect(body).toMatchObject({ expectedRevision: 'sha256:known', force: false })
   })
 
   it('rejects ids the server would refuse instead of dialing out', async () => {
@@ -125,5 +149,49 @@ describe('pushProjectToHeadlessWorkspace', () => {
       pushProjectToHeadlessWorkspace({ ...storedProject, id: '-leading-dash' }),
     ).rejects.toThrow(/not portable/)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('headless media helpers', () => {
+  it('filters the media listing and builds a same-origin source URL', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          media: [
+            { id: 'card-1', sourceAvailable: true },
+            { id: 42, sourceAvailable: true },
+          ],
+        }),
+      ),
+    )
+
+    await expect(listHeadlessMedia()).resolves.toEqual([{ id: 'card-1', sourceAvailable: true }])
+    expect(headlessMediaSourceUrl('card-1')).toBe('/api/headless/v1/media/card-1/source')
+    expect(() => headlessMediaSourceUrl('../escape')).toThrow(/not portable/)
+  })
+
+  it('collects and de-duplicates root and composition media ids', () => {
+    const project = {
+      ...storedProject,
+      timeline: {
+        tracks: [],
+        items: [
+          { id: 'a', mediaId: 'card-1' },
+          { id: 'b', mediaId: '../bad' },
+        ],
+        compositions: [
+          {
+            id: 'nested',
+            items: [
+              { id: 'c', mediaId: 'card-1' },
+              { id: 'd', mediaId: 'moon-1' },
+            ],
+          },
+        ],
+      },
+    } as unknown as Project
+
+    expect(collectHeadlessProjectMediaIds(project)).toEqual(['card-1', 'moon-1'])
   })
 })

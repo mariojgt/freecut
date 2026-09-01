@@ -27,6 +27,7 @@ import {
 import { toast } from 'sonner'
 import { useEditorHotkeys } from '@/features/editor/hooks/use-editor-hotkeys'
 import { useMcpWorkspaceAvailable } from '@/features/editor/hooks/use-mcp-workspace-available'
+import { useMcpProjectSync } from '@/features/editor/hooks/use-mcp-project-sync'
 import { sendProjectToMcpWorkspace } from '@/features/editor/utils/send-to-mcp'
 import { useAutoSave } from '../hooks/use-auto-save'
 import {
@@ -409,8 +410,13 @@ export const LoadedEditor = memo(function LoadedEditor({
   const timelinePanelRef = useRef<ImperativePanelHandle>(null)
   const previousWorkspaceRef = useRef(workspace)
 
-  // Guard against concurrent saves (e.g., spamming Ctrl+S)
-  const isSavingRef = useRef(false)
+  // Serialize saves and server-revision hydration against the shared timeline stores.
+  const editorMutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
+  const runEditorMutation = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
+    const pending = editorMutationTailRef.current.then(operation, operation)
+    editorMutationTailRef.current = pending.catch(() => undefined)
+    return pending
+  }, [])
 
   useEffect(() => {
     hasRefreshedMigrationStateRef.current = false
@@ -587,28 +593,29 @@ export const LoadedEditor = memo(function LoadedEditor({
     }
   }, [isMaskEditingActive])
 
-  // Save timeline to project (with guard against concurrent saves)
-  const handleSave = useCallback(async () => {
-    // Prevent concurrent saves (e.g., spamming Ctrl+S)
-    if (isSavingRef.current) {
-      return
-    }
+  // Save timeline to project in the same queue used by MCP hydration.
+  const handleSave = useCallback(
+    () =>
+      runEditorMutation(async () => {
+        const { saveTimeline } = useTimelineStore.getState()
+        try {
+          await saveTimeline(projectId)
+          logger.debug('Project saved successfully')
+          toast.success(i18n.t('editor.editor.projectSaved'))
+        } catch (error) {
+          logger.error('Failed to save project:', error)
+          toast.error(i18n.t('editor.editor.projectSaveFailed'))
+          throw error
+        }
+      }),
+    [projectId, runEditorMutation],
+  )
 
-    isSavingRef.current = true
-    const { saveTimeline } = useTimelineStore.getState()
-
-    try {
-      await saveTimeline(projectId)
-      logger.debug('Project saved successfully')
-      toast.success(i18n.t('editor.editor.projectSaved'))
-    } catch (error) {
-      logger.error('Failed to save project:', error)
-      toast.error(i18n.t('editor.editor.projectSaveFailed'))
-      throw error // Re-throw so callers know save failed
-    } finally {
-      isSavingRef.current = false
-    }
-  }, [projectId])
+  const { notePushedRevision } = useMcpProjectSync({
+    projectId,
+    enabled: mcpWorkspaceAvailable,
+    runExclusive: runEditorMutation,
+  })
 
   const handleExport = useCallback(() => {
     // Pause playback when opening export dialog
@@ -654,10 +661,10 @@ export const LoadedEditor = memo(function LoadedEditor({
     setBundleExportDialogOpen(true)
   }, [project.name])
 
-  const handleSendToMcp = useCallback(
-    () => sendProjectToMcpWorkspace(projectId, handleSave),
-    [handleSave, projectId],
-  )
+  const handleSendToMcp = useCallback(async () => {
+    const revision = await sendProjectToMcpWorkspace(projectId, handleSave)
+    notePushedRevision(revision)
+  }, [handleSave, notePushedRevision, projectId])
 
   // Enable keyboard shortcuts
   useEditorHotkeys({

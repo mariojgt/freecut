@@ -13,13 +13,13 @@ const logger = createLogger('SendToMcp')
 export async function sendProjectToMcpWorkspace(
   projectId: string,
   save: () => Promise<void>,
-): Promise<void> {
+): Promise<string | null> {
   try {
     await save()
     const { getProject } = await import('@/infrastructure/storage')
     const stored = await getProject(projectId)
     if (!stored) throw new Error(`Project ${projectId} is missing from the workspace`)
-    await pushProjectToHeadlessWorkspace(stored)
+    const revision = await pushProjectToHeadlessWorkspace(stored)
     const liveUrl = `${window.location.origin}/live/${projectId}`
     toast.success(i18n.t('toolbar.sendToMcpSuccess'), {
       action: {
@@ -27,8 +27,10 @@ export async function sendProjectToMcpWorkspace(
         onClick: () => void navigator.clipboard.writeText(liveUrl),
       },
     })
+    return revision
   } catch (error) {
     logger.error('Failed to send project to the MCP workspace:', error)
     toast.error(i18n.t('toolbar.sendToMcpFailed'))
+    return null
   }
 }

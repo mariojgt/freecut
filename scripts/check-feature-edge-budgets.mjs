@@ -12,9 +12,9 @@ const EDGE_BUDGETS = [
   // Re-baselined for the editor's intentionally split timeline adapter surface:
   // store, hooks, UI, panels, motion, subscriptions, cache and test helpers all
   // cross the feature boundary through dedicated deps/* contracts.
-  // 74: the rigged-blocks library panel reaches item insertion and the
-  // generated-layer duration through those same contracts (block editing UI).
-  { edge: 'editor -> timeline', maxImports: 74, maxFiles: 11 },
+  // 75/12: the normal editor's MCP follower hydrates clean server revisions
+  // through one narrowly-scoped persistence adapter.
+  { edge: 'editor -> timeline', maxImports: 75, maxFiles: 12 },
   // The editor preview contract added one supported preview export. Keep the
   // file budget tight so this remains consolidated behind the existing adapter.
   { edge: 'editor -> preview', maxImports: 16, maxFiles: 2 },
