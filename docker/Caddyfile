@@ -1,0 +1,25 @@
+# HTTPS front door for self-hosted FreeCut.
+#
+# The workspace gate accepts two storage backends — the File System Access API
+# and OPFS — and browsers expose both only in a secure context. `localhost`
+# counts as one; a LAN address over plain HTTP does not. Opening
+# http://192.168.x.x:8080 from a second machine therefore hides both APIs and
+# the gate reports an unsupported browser, which reads as a browser problem
+# rather than a transport one. Terminating TLS here restores the secure
+# context and the gate proceeds normally.
+#
+# FREECUT_PUBLIC_HOST has to match what is typed in the address bar, because
+# the certificate is issued for exactly that name.
+
+{
+	# A client connecting to a bare IP sends no SNI, because RFC 6066 reserves
+	# SNI for hostnames. Without a default the handshake fails outright and the
+	# browser shows a connection error instead of a certificate warning, so
+	# this line is what makes https://<lan-ip> work at all.
+	default_sni {$FREECUT_PUBLIC_HOST:localhost}
+}
+
+{$FREECUT_PUBLIC_HOST:localhost} {
+	tls internal
+	reverse_proxy web:8080
+}

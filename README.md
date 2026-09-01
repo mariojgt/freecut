@@ -269,6 +269,43 @@ Chrome build for another architecture.
 Ports bind to loopback by default. The health endpoint is public; all other API
 routes require `Authorization: Bearer ...` when `FREECUT_API_TOKEN` is set.
 
+### Opening FreeCut from another machine
+
+FreeCut keeps projects in a workspace folder through the File System Access
+API, falling back to OPFS. Browsers expose both only in a secure context, and
+`http://<lan-ip>:8080` is not one: Chrome hides the APIs and the workspace gate
+reports an unsupported browser even though the browser is perfectly capable.
+Only `https://` and `localhost` qualify, which is why the same build works on
+the Docker host but not from a second machine.
+
+The `https` profile starts a Caddy front door that terminates TLS using its own
+local certificate authority:
+
+```bash
+COMPOSE_PROFILES=https FREECUT_PUBLIC_HOST=192.168.1.50 docker compose up -d
+# open https://192.168.1.50
+```
+
+Setting those two in `.env` makes it the default for every `up`.
+`FREECUT_PUBLIC_HOST` has to match the address typed in the address bar,
+because the certificate is issued for exactly that name. `FREECUT_HTTPS_PORT`
+moves the listener off 443. The `web` container keeps its loopback-only HTTP
+binding; the proxy reaches it over the Compose network.
+
+The certificate is signed by Caddy's own CA, so the first visit warns. Clicking
+through still produces a secure context and FreeCut works. To remove the
+warning, copy the root certificate out and trust it on the client machine:
+
+```bash
+docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt freecut-root.crt
+```
+
+On macOS, open it in Keychain Access under **System** and set it to **Always
+Trust**; on Windows, import it into **Trusted Root Certification Authorities**.
+
+Without the profile nothing changes: `docker compose up -d` starts no proxy and
+binds no privileged port.
+
 ### Automatic updates from public releases
 
 Publishing a stable GitHub Release with a semantic tag such as `v1.2.3` runs

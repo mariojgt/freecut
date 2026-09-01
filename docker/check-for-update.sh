@@ -31,6 +31,10 @@ cleanup() {
       "${INSTALL_DIRECTORY}/docker/deploy-release.sh"
     cp -p -- "${temporary_directory}/previous-check.sh" \
       "${INSTALL_DIRECTORY}/docker/check-for-update.sh"
+    if [[ -f "${temporary_directory}/previous-caddyfile" ]]; then
+      cp -p -- "${temporary_directory}/previous-caddyfile" \
+        "${INSTALL_DIRECTORY}/docker/Caddyfile"
+    fi
     set -e
   fi
   if [[ -n "$temporary_directory" && -d "$temporary_directory" ]]; then
@@ -123,6 +127,9 @@ refresh_release_assets() {
   curl "${curl_arguments[@]}" \
     --output "${temporary_directory}/check-for-update.sh" \
     "${raw_base_url}/docker/check-for-update.sh"
+  curl "${curl_arguments[@]}" \
+    --output "${temporary_directory}/Caddyfile" \
+    "${raw_base_url}/docker/Caddyfile"
 
   bash -n "${temporary_directory}/deploy-release.sh"
   bash -n "${temporary_directory}/check-for-update.sh"
@@ -133,12 +140,17 @@ refresh_release_assets() {
   chmod 644 "${temporary_directory}/docker-compose.production.yml"
   chmod 755 "${temporary_directory}/deploy-release.sh"
   chmod 755 "${temporary_directory}/check-for-update.sh"
+  chmod 644 "${temporary_directory}/Caddyfile"
   cp -p -- "${INSTALL_DIRECTORY}/docker-compose.production.yml" \
     "${temporary_directory}/previous-compose.yml"
   cp -p -- "${INSTALL_DIRECTORY}/docker/deploy-release.sh" \
     "${temporary_directory}/previous-deploy.sh"
   cp -p -- "${INSTALL_DIRECTORY}/docker/check-for-update.sh" \
     "${temporary_directory}/previous-check.sh"
+  if [[ -f "${INSTALL_DIRECTORY}/docker/Caddyfile" ]]; then
+    cp -p -- "${INSTALL_DIRECTORY}/docker/Caddyfile" \
+      "${temporary_directory}/previous-caddyfile"
+  fi
   restore_assets_on_exit=true
   mv "${temporary_directory}/docker-compose.production.yml" \
     "${INSTALL_DIRECTORY}/docker-compose.production.yml"
@@ -146,6 +158,8 @@ refresh_release_assets() {
     "${INSTALL_DIRECTORY}/docker/deploy-release.sh"
   mv "${temporary_directory}/check-for-update.sh" \
     "${INSTALL_DIRECTORY}/docker/check-for-update.sh"
+  mv "${temporary_directory}/Caddyfile" \
+    "${INSTALL_DIRECTORY}/docker/Caddyfile"
 }
 
 if [[ "$latest_tag" != "$current_tag" ]]; then

@@ -16,6 +16,25 @@ services:
       - ./run:/var/run/freecut-update
     restart: unless-stopped
 
+  # HTTPS front door for opening FreeCut from another machine. Held behind the
+  # `https` profile so a default `up` is unchanged and nothing new binds a
+  # privileged port. docker/Caddyfile explains why LAN access needs TLS.
+  proxy:
+    profiles: [https]
+    image: caddy:2.11.4-alpine
+    environment:
+      FREECUT_PUBLIC_HOST: ${FREECUT_PUBLIC_HOST:-localhost}
+    ports:
+      - "${FREECUT_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persists the internal CA so the certificate survives a restart and is
+      # accepted once rather than re-approved on every `up`.
+      - caddy-data:/data
+    depends_on:
+      - web
+    restart: unless-stopped
+
   headless:
     platform: linux/amd64
     image: "${FREECUT_HEADLESS_IMAGE:-ghcr.io/mariojgt/freecut-headless}:${FREECUT_IMAGE_TAG:-latest}"
@@ -88,4 +107,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  caddy-data:
   ollama-models:

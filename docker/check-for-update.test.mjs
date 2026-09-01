@@ -97,6 +97,10 @@ if [[ "$url" == *"check-for-update.sh" ]]; then
   printf '%s\\n' '#!/usr/bin/env bash' '# downloaded update checker' > "$output"
   exit 0
 fi
+if [[ "$url" == *"Caddyfile" ]]; then
+  printf '%s\\n' '# downloaded caddyfile' > "$output"
+  exit 0
+fi
 exit 1
 `,
   )
