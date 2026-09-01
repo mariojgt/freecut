@@ -1335,11 +1335,13 @@ async function sampleAudio(
   const prepared = await prepareLayout(input)
   const endFrame = lastActiveFrame(prepared.view)
   const frames = planSampleFrames({ ...input, defaultTo: endFrame })
-  // Unlike the transform gates, this one needs the bytes: without registering
-  // the media URLs the mixdown has nothing to decode and reports silence.
+  // Unlike the transform gates, this one needs the bytes. Registering the URLs
+  // is not enough: extractAudioSegments skips any item whose src is still
+  // empty, so the tracks have to be resolved the way the render path does.
   registerMediaUrls(input.media)
   const composition = buildComposition(prepared.view)
-  const mix = await processAudio(composition)
+  const tracks = await resolveMediaUrls(composition.tracks, { useProxy: false })
+  const mix = await processAudio({ ...composition, tracks })
   const report = summarizeAudio(mix, frames, prepared.canvas.fps, endFrame)
   return { ...report, warnings: prepared.warnings }
 }
