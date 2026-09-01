@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
@@ -65,7 +66,12 @@ export class FreeCutApiClient {
   async requestJson(pathname, { method = 'GET', body } = {}) {
     const response = await this.fetchImpl(`${this.baseUrl}${pathname}`, {
       method,
-      headers: this.headers(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      headers: this.headers({
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        // The API refuses ledgered writes without one; each tool call is its
+        // own operation, so a fresh key per request is the correct identity.
+        ...(method === 'GET' ? {} : { 'Idempotency-Key': crypto.randomUUID() }),
+      }),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     const payload = await response.json().catch(() => null)
@@ -88,7 +94,10 @@ export class FreeCutApiClient {
   async requestFile(pathname, { body, fallbackName }) {
     const response = await this.fetchImpl(`${this.baseUrl}${pathname}`, {
       method: 'POST',
-      headers: this.headers({ 'Content-Type': 'application/json' }),
+      headers: this.headers({
+        'Content-Type': 'application/json',
+        'Idempotency-Key': crypto.randomUUID(),
+      }),
       body: JSON.stringify(body),
     })
     if (!response.ok) {

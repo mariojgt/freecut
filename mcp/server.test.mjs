@@ -147,3 +147,29 @@ test('API client sends bearer auth and surfaces structured API errors', async ()
   )
   assert.equal(requests[0].init.headers.Authorization, 'Bearer secret-token')
 })
+
+test('API client sends an Idempotency-Key on mutating requests only', async () => {
+  const requests = []
+  const client = new FreeCutApiClient({
+    baseUrl: 'http://127.0.0.1:8787',
+    fetchImpl: async (url, init) => {
+      requests.push({ url, init })
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    },
+  })
+
+  await client.requestJson('/v1/projects')
+  await client.requestJson('/v1/projects', { method: 'POST', body: { name: 'Project' } })
+  await client.requestJson('/v1/projects', { method: 'POST', body: { name: 'Project' } })
+
+  assert.equal(requests[0].init.headers['Idempotency-Key'], undefined)
+  const [first, second] = [requests[1], requests[2]].map(
+    (entry) => entry.init.headers['Idempotency-Key'],
+  )
+  assert.match(first, /^[\x20-\x7e]{1,128}$/)
+  assert.match(second, /^[\x20-\x7e]{1,128}$/)
+  assert.notEqual(first, second)
+})
