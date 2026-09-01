@@ -30,6 +30,7 @@ const samples = {
   updateItem: { op: 'updateItem', id: 'i', updates: { text: 'new' } },
   moveItem: { op: 'moveItem', id: 'i', from: 2, trackId: 'v' },
   removeItems: { op: 'removeItems', ids: ['i'] },
+  setInOutPoints: { op: 'setInOutPoints', inPoint: 0, outPoint: 60 },
   split: { op: 'split', id: 'i', frame: 1 },
   trimStart: { op: 'trimStart', id: 'i', amount: 1 },
   trimEnd: { op: 'trimEnd', id: 'i', amount: 1 },

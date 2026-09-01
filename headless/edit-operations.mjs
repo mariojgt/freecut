@@ -186,6 +186,13 @@ const cases = [
     failure: { op: 'removeItems', ids: ['missing'] },
   },
   {
+    name: 'setInOutPoints',
+    op: { op: 'setInOutPoints', inPoint: 0, outPoint: 60 },
+    assert: (project) =>
+      assert.deepEqual([project.timeline.inPoint, project.timeline.outPoint], [0, 60]),
+    failure: { op: 'setInOutPoints', inPoint: 50, outPoint: 10 },
+  },
+  {
     name: 'split',
     op: { op: 'split', id: 'clip-left', frame: 15 },
     assert: (project) => {

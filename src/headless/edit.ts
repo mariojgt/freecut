@@ -31,6 +31,7 @@ import {
 import { useItemsStore } from '@/features/timeline/stores/items-store'
 import { useTransitionsStore } from '@/features/timeline/stores/transitions-store'
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
+import { useMarkersStore } from '@/features/timeline/stores/markers-store'
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { createClassicTrack } from '@/features/timeline/utils/classic-tracks'
 import { BLOCKS, getBlock, getGesture, getPose } from '@/shared/graphics/blocks/registry'
@@ -91,6 +92,7 @@ import {
   addEffect,
   removeEffect,
   updateItemTransform,
+  setInOutPointsWithoutHistory,
 } from '@/features/timeline/stores/timeline-actions'
 import { getGpuEffect } from '@/infrastructure/gpu-effects'
 
@@ -102,6 +104,7 @@ export type EditOperationName =
   | 'updateItem'
   | 'moveItem'
   | 'removeItems'
+  | 'setInOutPoints'
   | 'split'
   | 'trimStart'
   | 'trimEnd'
@@ -221,6 +224,15 @@ const asString = (value: unknown, fallback?: string): string | undefined =>
   typeof value === 'string' ? value : fallback
 const asNumber = (value: unknown, fallback?: number): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback
+
+function asNullableFrame(value: unknown, field: string): number | null {
+  if (value === null) return null
+  const frame = asNumber(value)
+  if (frame === undefined || !Number.isInteger(frame) || frame < 0) {
+    throw new Error(`${field} must be a non-negative integer or null`)
+  }
+  return frame
+}
 
 function tracks(): TimelineTrack[] {
   return useItemsStore.getState().tracks
@@ -845,6 +857,16 @@ function applyOp(op: EditOp): unknown {
       for (const id of ids) requireItem(id, 'ids')
       removeItems(ids)
       return { removed: ids }
+    }
+    case 'setInOutPoints': {
+      const inPoint = asNullableFrame(op.inPoint, 'inPoint')
+      const outPoint = asNullableFrame(op.outPoint, 'outPoint')
+      if (inPoint !== null && outPoint !== null && outPoint <= inPoint) {
+        throw new Error('outPoint must be greater than inPoint')
+      }
+      setInOutPointsWithoutHistory(inPoint, outPoint)
+      const markers = useMarkersStore.getState()
+      return { inPoint: markers.inPoint, outPoint: markers.outPoint }
     }
     case 'split': {
       const id = asString(op.id)

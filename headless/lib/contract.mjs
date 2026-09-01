@@ -394,6 +394,13 @@ const opSchemas = [
     .strict(),
   z.object({ op: z.literal('moveItem'), id, from: frame, trackId: id.optional() }).strict(),
   z.object({ op: z.literal('removeItems'), ids: z.array(id).min(1) }).strict(),
+  z
+    .object({
+      op: z.literal('setInOutPoints'),
+      inPoint: frame.nullable(),
+      outPoint: frame.nullable(),
+    })
+    .strict(),
   z.object({ op: z.literal('split'), id, frame }).strict(),
   z.object({ op: z.literal('trimStart'), id, amount: positiveFrames }).strict(),
   z.object({ op: z.literal('trimEnd'), id, amount: positiveFrames }).strict(),
@@ -818,6 +825,7 @@ export const EDIT_OPERATION_NAMES = [
   'updateItem',
   'moveItem',
   'removeItems',
+  'setInOutPoints',
   'split',
   'trimStart',
   'trimEnd',
@@ -858,6 +866,7 @@ function samplesDescription(name) {
     updateItem: 'Update an existing item',
     moveItem: 'Move an existing item',
     removeItems: 'Remove existing items atomically',
+    setInOutPoints: 'Set or clear the timeline playback range',
     split: 'Split an item at a frame',
     trimStart: 'Trim frames from an item start',
     trimEnd: 'Trim frames from an item end',

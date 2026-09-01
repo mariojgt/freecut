@@ -147,6 +147,19 @@ describe('editProject', () => {
     expect(result.project.timeline!.items).toHaveLength(0)
   })
 
+  it('sets the playback range after earlier operations extend the timeline', async () => {
+    const result = await editProject({
+      project: baseProject(),
+      ops: [
+        { op: 'addText', text: 'new ending', durationInFrames: 240 } as EditOp,
+        { op: 'setInOutPoints', inPoint: 0, outPoint: 240 } as EditOp,
+      ],
+    })
+
+    expect(result.project.timeline).toMatchObject({ inPoint: 0, outPoint: 240 })
+    expect(result.results[1]?.detail).toEqual({ inPoint: 0, outPoint: 240 })
+  })
+
   it('rejects duplicate callerIds', async () => {
     await expect(
       editProject({

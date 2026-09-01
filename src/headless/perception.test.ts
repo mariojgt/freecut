@@ -173,6 +173,24 @@ describe('checkScene', () => {
     expect(codes(result)).not.toContain('title-unsafe')
   })
 
+  it('does not mistake fractional text-metric arithmetic for clipping', () => {
+    const result = checkScene(
+      frames([
+        box({
+          type: 'text',
+          text: 'THE DEV REALM',
+          x: 260,
+          y: 751.4020408163265,
+          width: 1400,
+          height: 130.39999999999998,
+        }),
+      ]),
+      canvas,
+      { titleSafe: 0.92 },
+    )
+    expect(codes(result)).not.toContain('title-unsafe')
+  })
+
   it('does not hold non-text to the title-safe area', () => {
     const result = checkScene(frames([box({ x: 20, y: 500, width: 400, height: 80 })]), canvas)
     expect(codes(result)).not.toContain('title-unsafe')

@@ -239,6 +239,8 @@ const DEFAULTS: Required<CheckSceneOptions> = {
   offCanvasTolerance: 0.25,
 }
 
+const FULLY_INSIDE_EPSILON = 1e-9
+
 interface Rect {
   x: number
   y: number
@@ -480,7 +482,10 @@ function gateFramingOverRange(
   }
 
   for (const [itemId, best] of framing.titleSafe) {
-    if (best >= 1) continue
+    // Fractional text metrics can turn a geometrically exact fit into
+    // 0.9999999999999999. Treat only that arithmetic dust as fully inside;
+    // genuine sub-pixel clipping remains reportable.
+    if (best >= 1 - FULLY_INSIDE_EPSILON) continue
     ledger.add({
       code: 'title-unsafe',
       severity: 'warning',
