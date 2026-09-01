@@ -76,6 +76,8 @@
     "sendToMcpFailed": "Couldn't send the project to the MCP workspace",
     "sendToMcpUnseenServerCopy": "The MCP workspace has changes this editor hasn't loaded. Overwrite them?",
     "sendToMcpOverwrite": "Overwrite",
+    "mcpLive": "MCP live",
+    "mcpApplied": "Scene updated by MCP",
     "copyLiveLink": "Copy live link"
   },
   "unsavedChanges": {

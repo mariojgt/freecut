@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   collectHeadlessProjectMediaIds,
   getHeadlessProject,
@@ -7,9 +7,12 @@ import {
   listHeadlessMedia,
   listHeadlessProjects,
   publishActiveMcpSession,
+  uploadMediaToHeadlessWorkspace,
   type HeadlessMediaResource,
   type HeadlessProjectResource,
 } from '@/shared/deployment/headless-api'
+import { toast } from 'sonner'
+import { i18n } from '@/i18n'
 import { createLogger } from '@/shared/logging/logger'
 import { migrateProject } from '@/shared/projects/migrations'
 import { usePlaybackStore } from '@/shared/state/playback'
@@ -54,6 +57,8 @@ interface UseMcpProjectSyncOptions {
 interface McpProjectSyncControl {
   notePushedRevision: (revision: string | null) => void
   getPushExpectedRevision: () => string | null
+  /** When an agent edit last landed, so the UI can show the link is working. */
+  lastRemoteAppliedAt: number | null
 }
 
 type ServerMediaBridge = Awaited<ReturnType<typeof importServerMediaBridge>>
@@ -194,6 +199,38 @@ async function materializeSequentially<T>(
   return materialized
 }
 
+/**
+ * Push local-only media up so the workspace can render the user's scene.
+ *
+ * The follower pulls server media down; without the reverse an agent renders
+ * the timeline with the user's own imports missing. Best effort and sequential:
+ * a failed upload must never block the project edit the user is waiting on.
+ */
+async function uploadLocalOnlyMedia(
+  projectId: string,
+  referencedIds: readonly string[],
+  resourcesById: ReadonlyMap<string, HeadlessMediaResource>,
+  signal: AbortSignal,
+  bridge: ServerMediaBridge,
+): Promise<void> {
+  for (const mediaId of referencedIds) {
+    if (resourcesById.get(mediaId)?.sourceAvailable) continue
+    signal.throwIfAborted()
+    const local = await bridge.mediaLibraryService.getMedia(mediaId)
+    if (!local) continue
+    const file = await bridge.mediaLibraryService.getMediaFile(local)
+    if (!file) continue
+    const uploaded = await uploadMediaToHeadlessWorkspace(
+      mediaId,
+      projectId,
+      local.fileName,
+      file,
+      signal,
+    )
+    if (!uploaded) logger.warn(`Could not hand media ${mediaId} to the MCP workspace`)
+  }
+}
+
 async function syncMaterializedMediaStore(
   projectId: string,
   materialized: MediaMetadata[],
@@ -220,6 +257,9 @@ async function materializeServerMedia(
   const resourcesById = new Map(resources.map((resource) => [resource.id, resource]))
   const bridge = await importServerMediaBridge()
 
+  // Hand local-only media over first, so the workspace can render this scene.
+  await uploadLocalOnlyMedia(projectId, referencedIds, resourcesById, signal, bridge)
+
   const required = await materializeSequentially(referencedIds, signal, (mediaId) =>
     materializeReferencedMedia(mediaId, projectId, resourcesById.get(mediaId), signal, bridge),
   )
@@ -229,6 +269,20 @@ async function materializeServerMedia(
     (resource) => materializeLinkedMedia(resource, projectId, signal, bridge),
   )
   await syncMaterializedMediaStore(projectId, [...required, ...linked], bridge)
+}
+
+/**
+ * After local work reaches the workspace, make sure its media did too —
+ * otherwise an agent renders the user's scene with their own imports missing.
+ */
+async function handOverLocalMedia(projectId: string, signal: AbortSignal): Promise<void> {
+  const referencedIds = useItemsStore.getState().mediaDependencyIds
+  if (referencedIds.length === 0) return
+  const resources = await listHeadlessMedia(signal)
+  const resourcesById = new Map(resources.map((resource) => [resource.id, resource]))
+  if (referencedIds.every((id) => resourcesById.get(id)?.sourceAvailable)) return
+  const bridge = await importServerMediaBridge()
+  await uploadLocalOnlyMedia(projectId, referencedIds, resourcesById, signal, bridge)
 }
 
 async function persistAndHydrateRemoteProject(
@@ -287,6 +341,7 @@ export function useMcpProjectSync({
 }: UseMcpProjectSyncOptions): McpProjectSyncControl {
   const publishLocalRef = useRef(publishLocal)
   publishLocalRef.current = publishLocal
+  const [lastRemoteAppliedAt, setLastRemoteAppliedAt] = useState<number | null>(null)
   const observedRevisionRef = useRef<string | null>(null)
   const appliedRevisionRef = useRef<string | null>(null)
   const localDivergedRef = useRef(false)
@@ -348,6 +403,10 @@ export function useMcpProjectSync({
         observedRevisionRef.current = resource.revision
         appliedRevisionRef.current = resource.revision
         persistAppliedRevision(projectId, resource.revision)
+        // Silent edits are untrustworthy: say so when the scene changes under
+        // the user's cursor.
+        setLastRemoteAppliedAt(Date.now())
+        toast.info(i18n.t('toolbar.mcpApplied'))
       }
     }
 
@@ -388,6 +447,7 @@ export function useMcpProjectSync({
       }
       const revision = await publish(appliedRevisionRef.current)
       if (!revision) return false
+      await handOverLocalMedia(projectId, controller.signal)
       observedRevisionRef.current = revision
       appliedRevisionRef.current = revision
       persistAppliedRevision(projectId, revision)
@@ -415,6 +475,7 @@ export function useMcpProjectSync({
       lastSeedAt = Date.now()
       const revision = await publish(null)
       if (!revision) return
+      await handOverLocalMedia(projectId, controller.signal)
       observedRevisionRef.current = revision
       appliedRevisionRef.current = revision
       persistAppliedRevision(projectId, revision)
@@ -451,5 +512,5 @@ export function useMcpProjectSync({
     }
   }, [enabled, projectId, runExclusive])
 
-  return { notePushedRevision, getPushExpectedRevision }
+  return { notePushedRevision, getPushExpectedRevision, lastRemoteAppliedAt }
 }

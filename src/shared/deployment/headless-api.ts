@@ -280,6 +280,37 @@ async function resolveExpectedRevision(
 }
 
 /**
+ * Hand a browser-owned media file to the server workspace.
+ *
+ * Media the user imported locally has no server copy, so agent renders of
+ * their scene came out missing those clips. Uploading preserves the immutable
+ * media id, which is what lets both sides keep referring to the same asset.
+ */
+export async function uploadMediaToHeadlessWorkspace(
+  mediaId: string,
+  projectId: string,
+  fileName: string,
+  blob: Blob,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (!PORTABLE_ID_PATTERN.test(mediaId)) return false
+  const query = new URLSearchParams({ fileName, project: projectId, mediaId })
+  try {
+    const response = await fetch(`${HEADLESS_API_BASE}/v1/media?${query.toString()}`, {
+      method: 'POST',
+      body: blob,
+      signal,
+      headers: { Accept: 'application/json' },
+    })
+    // A duplicate id means the workspace already has these bytes: nothing to do.
+    if (response.status === 409) return true
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+/**
  * Tell the workspace which project a human currently has open.
  *
  * Agents read this to act on the open scene rather than an id the user had to

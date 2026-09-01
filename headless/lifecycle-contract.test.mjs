@@ -83,7 +83,10 @@ test('lifecycle edits require unique caller ids and accept id references', () =>
 
 test('capabilities publish lifecycle constraints', () => {
   const result = capabilities()
-  assert.equal(result.lifecycle.httpMediaUpload, false)
+  // Media now arrives over HTTP, so clients no longer need filesystem access
+  // to add an asset — the route is advertised alongside the capability.
+  assert.equal(result.lifecycle.httpMediaUpload, true)
+  assert.ok(result.lifecycle.routes.includes('POST /v1/media'))
   assert.equal(result.lifecycle.deleteProject, false)
   assert.equal(result.lifecycle.writerMode, 'exclusive')
   assert.ok(result.lifecycle.routes.includes('POST /v1/projects/:id/edit'))

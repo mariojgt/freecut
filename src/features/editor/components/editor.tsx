@@ -622,7 +622,7 @@ export const LoadedEditor = memo(function LoadedEditor({
     [handleSave, projectId],
   )
 
-  const { notePushedRevision, getPushExpectedRevision } = useMcpProjectSync({
+  const { notePushedRevision, getPushExpectedRevision, lastRemoteAppliedAt } = useMcpProjectSync({
     projectId,
     enabled: mcpWorkspaceAvailable,
     runExclusive: runEditorMutation,
@@ -721,6 +721,7 @@ export const LoadedEditor = memo(function LoadedEditor({
           onSendToMcp={mcpWorkspaceAvailable ? handleSendToMcp : undefined}
           onOpenRenderQueue={handleOpenRenderQueue}
           renderQueueCount={renderQueueActiveCount}
+          mcpLastAppliedAt={lastRemoteAppliedAt}
         />
       </InteractionLockRegion>
 

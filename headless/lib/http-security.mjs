@@ -227,6 +227,83 @@ export function readJsonBodyWithBytes(
   })
 }
 
+function assertDeclaredLength(req, maxBytes) {
+  const declaredLength = Number(req.headers['content-length'])
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new HttpError(413, 'BODY_TOO_LARGE', 'Upload exceeds size limits')
+  }
+}
+
+/** Pump the request into an open stream, honouring the cap and the deadline. */
+function pipeRequestToStream(req, stream, { maxBytes, timeoutMs }) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let bytes = 0
+    const finish = (fn, value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      req.off('data', onData)
+      req.off('end', onEnd)
+      req.off('error', onError)
+      req.off('aborted', onAborted)
+      stream.end(() => fn(value))
+    }
+    const onData = (chunk) => {
+      bytes += chunk.length
+      if (bytes > maxBytes) {
+        req.pause()
+        finish(reject, new HttpError(413, 'BODY_TOO_LARGE', 'Upload exceeds size limits'))
+        return
+      }
+      if (!stream.write(chunk)) req.pause()
+    }
+    const onEnd = () => finish(resolve, bytes)
+    const onError = (error) => finish(reject, error)
+    const onAborted = () => finish(reject, new HttpError(400, 'REQUEST_ABORTED', 'Upload aborted'))
+    const timer = setTimeout(() => {
+      req.pause()
+      finish(reject, new HttpError(408, 'BODY_TIMEOUT', 'Upload timed out'))
+    }, timeoutMs)
+    stream.on('drain', () => req.resume())
+    stream.on('error', (error) => finish(reject, error))
+    req.on('data', onData)
+    req.on('end', onEnd)
+    req.on('error', onError)
+    req.on('aborted', onAborted)
+  })
+}
+
+/**
+ * Stream a request body straight to disk.
+ *
+ * Media uploads are far too large to buffer the way JSON bodies are, so the
+ * bytes never accumulate in memory — but the size cap, declared-length check
+ * and timeout still apply, and a rejected upload leaves no partial file.
+ */
+export async function streamBodyToFile(
+  req,
+  target,
+  { maxBytes = 2 * 1024 ** 3, timeoutMs = 300_000 } = {},
+) {
+  assertDeclaredLength(req, maxBytes)
+  const handle = await fs.promises.open(target, 'wx', 0o600)
+  let bytes
+  try {
+    bytes = await pipeRequestToStream(req, handle.createWriteStream(), { maxBytes, timeoutMs })
+  } catch (error) {
+    await handle.close().catch(() => {})
+    await fs.promises.rm(target, { force: true })
+    throw error
+  }
+  await handle.close()
+  if (bytes === 0) {
+    await fs.promises.rm(target, { force: true })
+    throw new HttpError(400, 'EMPTY_UPLOAD', 'Upload contained no bytes')
+  }
+  return bytes
+}
+
 export function setHttpTimeouts(
   server,
   { headersTimeoutMs = 10_000, requestTimeoutMs = 30_000 } = {},

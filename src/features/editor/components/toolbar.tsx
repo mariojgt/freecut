@@ -77,6 +77,8 @@ interface ToolbarProps {
   onOpenRenderQueue?: () => void
   /** Number of queued + rendering jobs, shown as a badge on the queue button. */
   renderQueueCount?: number
+  /** When an agent edit last landed, so the indicator can acknowledge it. */
+  mcpLastAppliedAt?: number | null
 }
 
 export const Toolbar = memo(function Toolbar({
@@ -88,9 +90,17 @@ export const Toolbar = memo(function Toolbar({
   onSendToMcp,
   onOpenRenderQueue,
   renderQueueCount = 0,
+  mcpLastAppliedAt = null,
 }: ToolbarProps) {
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const [mcpRecentlyApplied, setMcpRecentlyApplied] = useState(false)
+  useEffect(() => {
+    if (!mcpLastAppliedAt) return
+    setMcpRecentlyApplied(true)
+    const timer = setTimeout(() => setMcpRecentlyApplied(false), 2500)
+    return () => clearTimeout(timer)
+  }, [mcpLastAppliedAt])
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
@@ -206,7 +216,22 @@ export const Toolbar = memo(function Toolbar({
           <h1 className="text-sm font-medium leading-none">
             {project?.name || t('common.untitledProject')}
           </h1>
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+            {onSendToMcp ? (
+              <span
+                className="flex items-center gap-1 text-emerald-500"
+                title={t('toolbar.mcpLive')}
+              >
+                <span
+                  className={
+                    mcpRecentlyApplied
+                      ? 'size-1.5 animate-ping rounded-full bg-emerald-500'
+                      : 'size-1.5 rounded-full bg-emerald-500'
+                  }
+                />
+                {t('toolbar.mcpLive')}
+              </span>
+            ) : null}
             {t('toolbar.specsDetailed', {
               width: project?.width,
               height: project?.height,

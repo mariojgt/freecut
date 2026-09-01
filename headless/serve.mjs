@@ -31,7 +31,7 @@ import http from 'node:http'
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import { timingSafeEqual } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import {
   loadProjectById,
@@ -57,6 +57,7 @@ import {
   readJsonBody,
   readJsonBodyWithBytes,
   serveFile,
+  streamBodyToFile,
   setHttpTimeouts,
 } from './lib/http-security.mjs'
 import {
@@ -81,6 +82,7 @@ import {
   acquireWriterLock,
   assertAtomicReplace,
   assertPortableId,
+  commitStagedMedia,
   createProjectResource,
   getActiveSession,
   getMediaResource,
@@ -88,6 +90,8 @@ import {
   listMediaResources,
   publishActiveSession,
   listProjectResources,
+  rollbackStagedMedia,
+  stageLocalMedia,
   saveProjectResource,
   updateMediaMetadata,
 } from './lib/lifecycle-store.mjs'
@@ -496,6 +500,61 @@ async function main() {
     sendJson(res, result.status, result.response)
   }
 
+  const optionalPortableId = (value, label) =>
+    value ? assertPortableId(value, label) : undefined
+
+  /** Reject anything that is not already a bare name: no paths, no traversal. */
+  const requireBareFileName = (raw) => {
+    const fileName = path.basename(String(raw))
+    if (!fileName || fileName !== raw) {
+      throw new HttpError(400, 'INVALID_MEDIA_NAME', 'fileName must be a bare file name')
+    }
+    return fileName
+  }
+
+  /** Upload targets come from the query string; validate them in one place. */
+  const parseMediaUploadTarget = (url) => ({
+    fileName: requireBareFileName(url.searchParams.get('fileName')),
+    projectId: optionalPortableId(url.searchParams.get('project'), 'project id'),
+    mediaId: optionalPortableId(url.searchParams.get('mediaId'), 'media id') ?? randomUUID(),
+  })
+
+  /**
+   * Accept media over HTTP so assets no longer require filesystem access.
+   *
+   * Without this an agent had to stop the server and run the CLI to add a
+   * single image, and the browser had no way to hand its local media to the
+   * workspace at all — so anything the user imported could not be rendered
+   * server-side. Bytes stream to a scratch file first because staging derives
+   * the media type from the file extension.
+   */
+  const handleV1MediaUpload = async (req, res, url) => {
+    const { fileName, projectId, mediaId } = parseMediaUploadTarget(url)
+    const scratchDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'freecut-upload-'))
+    let staged
+    try {
+      const scratch = path.join(scratchDir, fileName)
+      await streamBodyToFile(req, scratch)
+      staged = await stageLocalMedia(workspace, scratch, mediaId)
+      const probe = await queue.enqueue(
+        () =>
+          session.page.evaluate((payload) => window.freecut.probeMedia(payload), {
+            url: mediaUrlOf(staged.id),
+            fileName: path.basename(staged.target),
+            mimeType: staged.mimeType,
+          }),
+        { timeoutMs: editTimeoutMs, kind: 'media-upload-probe' },
+      )
+      const media = await commitStagedMedia(staged, probe, { workspace, projectId })
+      sendJson(res, 201, { ok: true, apiVersion: HEADLESS_API_VERSION, media })
+    } catch (error) {
+      if (staged) await rollbackStagedMedia(staged)
+      throw error
+    } finally {
+      await fs.promises.rm(scratchDir, { recursive: true, force: true })
+    }
+  }
+
   const handleV1MediaProbe = async (req, res, id) => {
     const body = validate(
       mediaProbeRequestSchema,
@@ -783,6 +842,8 @@ async function main() {
                                 res,
                                 assertPortableId(projectMatch[1], 'project id'),
                               )
+                          : route === 'POST /v1/media'
+                            ? () => handleV1MediaUpload(req, res, url)
                           : route === 'PUT /v1/session/active'
                             ? () => handleV1SessionPublish(req, res)
                             : route === 'GET /v1/session/active'

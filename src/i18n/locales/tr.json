@@ -76,6 +76,8 @@
     "sendToMcpFailed": "Proje MCP çalışma alanına gönderilemedi",
     "sendToMcpUnseenServerCopy": "MCP çalışma alanında bu düzenleyicinin yüklemediği değişiklikler var. Üzerine yazılsın mı?",
     "sendToMcpOverwrite": "Üzerine yaz",
+    "mcpLive": "MCP etkin",
+    "mcpApplied": "Sahne MCP tarafından güncellendi",
     "copyLiveLink": "Canlı bağlantıyı kopyala"
   },
   "unsavedChanges": {

@@ -1312,6 +1312,7 @@ export function capabilities() {
         'POST /v1/projects/:id/edit',
         'PUT /v1/session/active',
         'GET /v1/session/active',
+        'POST /v1/media',
         'GET /v1/media',
         'GET /v1/media/:id',
         'POST /v1/media/:id/probe',
@@ -1320,7 +1321,7 @@ export function capabilities() {
         'POST /v1/check',
         'POST /v1/contact-sheet',
       ],
-      httpMediaUpload: false,
+      httpMediaUpload: true,
       deleteProject: false,
       writerMode: 'exclusive',
       limits: {

@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => ({
   materializeMediaFromUrl: vi.fn(),
   getMedia: vi.fn(),
   getMediaFile: vi.fn(),
+  uploadMedia: vi.fn(),
   loadMediaItems: vi.fn(),
   prependMediaItem: vi.fn(),
   updateProject: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock('@/shared/deployment/headless-api', async (importOriginal) => ({
   listHeadlessMedia: (...args: unknown[]) => mocks.listHeadlessMedia(...args) as never,
   listHeadlessProjects: (...args: unknown[]) => mocks.listHeadlessProjects(...args) as never,
   publishActiveMcpSession: (...args: unknown[]) => mocks.publishActiveMcpSession(...args) as never,
+  uploadMediaToHeadlessWorkspace: (...args: unknown[]) => mocks.uploadMedia(...args) as never,
 }))
 
 vi.mock('@/shared/projects/migrations', () => ({
@@ -103,7 +105,7 @@ vi.mock('../deps/projects', () => ({
 }))
 
 vi.mock('../deps/timeline-store', () => ({
-  useItemsStore: { getState: () => ({ maxItemEndFrame: 120 }) },
+  useItemsStore: { getState: () => ({ maxItemEndFrame: 120, mediaDependencyIds: ['card-1'] }) },
   useTimelineSettingsStore: {
     getState: () => mocks.settings,
     subscribe: (
@@ -159,6 +161,7 @@ describe('useMcpProjectSync', () => {
     mocks.refreshMediaValidation.mockResolvedValue(undefined)
     mocks.updateProject.mockResolvedValue(remoteProject)
     mocks.publishActiveMcpSession.mockResolvedValue(true)
+    mocks.uploadMedia.mockResolvedValue(true)
     mocks.hydrate.mockResolvedValue(true)
   })
 
@@ -412,6 +415,56 @@ describe('useMcpProjectSync', () => {
     expect(publishLocal).toHaveBeenCalledWith(null)
     expect(result.current.getPushExpectedRevision()).toBe('sha256:seeded')
     expect(mocks.publishActiveMcpSession).toHaveBeenCalled()
+    unmount()
+  })
+
+  it('hands local-only media to the workspace so an agent can render the scene', async () => {
+    // The server knows the project's media id but holds no bytes for it.
+    mocks.listHeadlessMedia.mockResolvedValue([{ id: 'card-1', sourceAvailable: false }])
+    mocks.getMedia.mockResolvedValue({ id: 'card-1', fileName: 'card.svg' })
+    const blob = new Blob(['<svg/>'], { type: 'image/svg+xml' })
+    mocks.getMediaFile.mockResolvedValue(blob)
+    const publishLocal = vi.fn().mockImplementation(async () => {
+      setDirty(false)
+      return 'sha256:local'
+    })
+
+    const { unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive, publishLocal }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+    act(() => setDirty(true))
+    await act(async () => vi.advanceTimersByTimeAsync(3600))
+
+    expect(publishLocal).toHaveBeenCalled()
+    expect(mocks.uploadMedia).toHaveBeenCalledWith(
+      'card-1',
+      'proj1',
+      'card.svg',
+      blob,
+      expect.any(AbortSignal),
+    )
+    unmount()
+  })
+
+  it('does not re-upload media the workspace already holds', async () => {
+    mocks.listHeadlessMedia.mockResolvedValue([
+      { id: 'card-1', sourceAvailable: true, metadata: remoteMedia },
+    ])
+    const publishLocal = vi.fn().mockImplementation(async () => {
+      setDirty(false)
+      return 'sha256:local'
+    })
+
+    const { unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive, publishLocal }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+    act(() => setDirty(true))
+    await act(async () => vi.advanceTimersByTimeAsync(3600))
+
+    expect(publishLocal).toHaveBeenCalled()
+    expect(mocks.uploadMedia).not.toHaveBeenCalled()
     unmount()
   })
 

@@ -76,6 +76,8 @@
     "sendToMcpFailed": "No se pudo enviar el proyecto al espacio de trabajo MCP",
     "sendToMcpUnseenServerCopy": "El espacio de trabajo MCP tiene cambios que este editor no ha cargado. ¿Sobrescribirlos?",
     "sendToMcpOverwrite": "Sobrescribir",
+    "mcpLive": "MCP activo",
+    "mcpApplied": "Escena actualizada por MCP",
     "copyLiveLink": "Copiar enlace en vivo"
   },
   "unsavedChanges": {
