@@ -521,6 +521,99 @@ const cases = [
     failure: { op: 'attachToSlot', idPrefix: 'not-placed', slotId: 'hand', itemId: 'text-1' },
   },
   {
+    name: 'directAction',
+    op: {
+      op: 'directAction',
+      idPrefix: 'hero',
+      action: 'enter',
+      direction: 'left',
+      from: 0,
+      durationInFrames: 24,
+    },
+    ops: [
+      {
+        op: 'addBlock',
+        blockId: 'infra-token-card',
+        durationInFrames: 60,
+        scale: 0.5,
+        idPrefix: 'hero',
+      },
+      {
+        op: 'directAction',
+        idPrefix: 'hero',
+        action: 'enter',
+        direction: 'left',
+        from: 0,
+        durationInFrames: 24,
+      },
+    ],
+    assert: (project) => {
+      const lane = (itemId, property) =>
+        project.timeline.keyframes
+          .find((entry) => entry.itemId === itemId)
+          ?.properties.find((entry) => entry.property === property)
+          ?.keyframes.map((entry) => entry.value)
+
+      // The root travels in and lands exactly at rest.
+      const xs = lane('hero-card', 'x')
+      assert.ok(xs[0] < 0, `expected an off-screen start, got ${xs[0]}`)
+      assert.equal(xs.at(-1), 0)
+      // Every part fades, because opacity is not inherited down the chain.
+      assert.equal(lane('hero-stripe', 'opacity')[0], 0)
+      // Only the root translates, or the rig would come apart.
+      assert.equal(lane('hero-stripe', 'x'), undefined)
+    },
+    failure: { op: 'directAction', idPrefix: 'not-placed', action: 'enter' },
+  },
+  {
+    name: 'setCamera',
+    op: { op: 'setCamera', itemId: 'text-1', intent: 'push', from: 0, durationInFrames: 30 },
+    ops: [
+      {
+        op: 'addBlock',
+        blockId: 'infra-token-card',
+        durationInFrames: 60,
+        scale: 0.5,
+        x: -200,
+        idPrefix: 'near',
+      },
+      {
+        op: 'addBlock',
+        blockId: 'infra-token-card',
+        durationInFrames: 60,
+        scale: 0.5,
+        x: 200,
+        idPrefix: 'far',
+      },
+      {
+        op: 'setCamera',
+        itemIds: ['near-card', 'far-card'],
+        intent: 'pan-left',
+        from: 0,
+        durationInFrames: 30,
+        planes: [
+          { idPrefix: 'near', plane: 0 },
+          { idPrefix: 'far', plane: 5 },
+        ],
+      },
+    ],
+    assert: (project) => {
+      const shift = (itemId, rest) => {
+        const values = project.timeline.keyframes
+          .find((entry) => entry.itemId === itemId)
+          .properties.find((entry) => entry.property === 'x')
+          .keyframes.map((entry) => entry.value)
+        return Math.abs(values.at(-1) - rest)
+      }
+      // Depth, not a flat slide: the foreground has to travel further.
+      assert.ok(
+        shift('near-card', -200) > shift('far-card', 200) * 2,
+        'expected the near plane to pan further than the far plane',
+      )
+    },
+    failure: { op: 'setCamera', itemId: 'missing-item', intent: 'push' },
+  },
+  {
     name: 'importSvg',
     op: {
       op: 'importSvg',

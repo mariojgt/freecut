@@ -41,6 +41,15 @@ import { poseToGesture, posesToGesture } from '@/shared/graphics/blocks/poses'
 import type { PoseStep } from '@/shared/graphics/blocks/poses'
 import { resolveRigProperty, rigChannelProperties } from '@/shared/graphics/blocks/rig-channels'
 import type { GestureDefinition, PoseDefinition } from '@/shared/graphics/blocks/types'
+import { compileDirectedAction } from '@/shared/graphics/scene/direction'
+import type {
+  DirectedKeyframe,
+  DirectedTarget,
+  MotionAction,
+  MotionDirection,
+} from '@/shared/graphics/scene/direction'
+import { compileCameraMove } from '@/shared/graphics/scene/camera'
+import type { CameraIntent } from '@/shared/graphics/scene/camera'
 import { SCENE_PALETTES, DEFAULT_SCENE_PALETTE } from '@/shared/graphics/blocks/scene-palette'
 import { importSvgSource } from '@/shared/graphics/shapes/svg-document-import'
 import { parseSvgPathToVertices } from '@/shared/graphics/shapes/svg-path-parse'
@@ -95,6 +104,8 @@ export type EditOperationName =
   | 'applyGesture'
   | 'applyPose'
   | 'attachToSlot'
+  | 'directAction'
+  | 'setCamera'
   | 'importSvg'
   | 'morphPath'
 
@@ -288,6 +299,122 @@ function rigTrackPayloads(
     }
   }
   return payloads
+}
+
+/**
+ * Resolve a directed action's targets, marking which ones carry the group.
+ *
+ * A recipe needs to know roots from children because the two inheritance rules
+ * disagree: geometry passes down the transform-parent chain and opacity does not.
+ * Move every part and a rig is displaced twice; fade only the roots and half of
+ * it stays on screen.
+ *
+ * "Root" is relative to the selection, not to the project: a block instance's
+ * top parts are roots even though the project may parent them to something else,
+ * which is what lets a camera move a scene that is already rigged.
+ */
+interface SpannedTarget extends DirectedTarget {
+  /** Composition frame the item starts at. */
+  from: number
+  durationInFrames: number
+}
+
+function directedTargets(op: Record<string, unknown>): SpannedTarget[] {
+  const explicit = Array.isArray(op.itemIds) ? op.itemIds.map((id) => asString(id)) : []
+  const idPrefix = asString(op.idPrefix)
+  const single = asString(op.itemId)
+
+  const items = allItems()
+  const selected = idPrefix
+    ? items.filter((item) => item.id.startsWith(`${idPrefix}-`))
+    : items.filter((item) => item.id === single || explicit.includes(item.id))
+
+  if (selected.length === 0) {
+    throw new Error(
+      `${String(op.op)}: no items matched (idPrefix=${idPrefix ?? '-'}, itemId=${single ?? '-'})`,
+    )
+  }
+
+  const selectedIds = new Set(selected.map((item) => item.id))
+  return selected.map((item) => toSpannedTarget(item, selectedIds))
+}
+
+/**
+ * One item as a recipe target.
+ *
+ * A flat field mapping whose whole complexity score is the per-field defaults: a
+ * stored transform is partial, and every recipe needs concrete numbers.
+ */
+// Browser-harness driver; exercised end-to-end by the headless chrome contract suite
+// fallow-ignore-next-line complexity
+function toSpannedTarget(item: TimelineItem, selectedIds: Set<string>): SpannedTarget {
+  const parentId = item.transformParent?.parentItemId
+  const transform = item.transform ?? {}
+  return {
+    itemId: item.id,
+    isRoot: !parentId || !selectedIds.has(parentId),
+    from: item.from,
+    durationInFrames: item.durationInFrames,
+    rest: {
+      x: transform.x ?? 0,
+      y: transform.y ?? 0,
+      width: transform.width ?? 0,
+      height: transform.height ?? 0,
+      rotation: transform.rotation ?? 0,
+      opacity: transform.opacity ?? 1,
+    },
+  }
+}
+
+/**
+ * Convert a beat authored in composition frames onto each item's own timeline.
+ *
+ * Keyframe frames are item-relative — 0 is the item's first frame — while a scene
+ * beat is naturally stated in composition time, and the two only coincide for
+ * items that start at 0. Authoring absolutely and converting here is what lets
+ * one beat drive targets that enter at different times.
+ *
+ * A beat that misses a target entirely is refused rather than silently dropped:
+ * keyframes written outside an item's life resolve to nothing, which looks
+ * exactly like a recipe that did not work.
+ */
+function toItemRelative(
+  keyframes: readonly DirectedKeyframe[],
+  targets: readonly SpannedTarget[],
+  opName: string,
+): DirectedKeyframe[] {
+  const spans = new Map(targets.map((target) => [target.itemId, target]))
+  const kept: DirectedKeyframe[] = []
+  const reached = new Set<string>()
+
+  for (const keyframe of keyframes) {
+    const span = spans.get(keyframe.itemId)
+    if (!span) continue
+    const relative = keyframe.frame - span.from
+    // Clamped, not dropped: an exit that runs past an item's last frame is
+    // legitimate, and its final pose belongs on that last frame.
+    if (relative < 0 || relative > span.durationInFrames) continue
+    reached.add(keyframe.itemId)
+    kept.push({ ...keyframe, frame: relative })
+  }
+
+  const missed = targets.filter((target) => !reached.has(target.itemId))
+  // Only roots are driven for geometry, so a child with no keyframes is normal;
+  // a target where NOTHING landed means the beat sits outside its life.
+  if (reached.size === 0 && missed.length > 0) {
+    const example = missed[0]!
+    throw new Error(
+      `${opName}: the beat does not overlap any target (e.g. "${example.itemId}" spans frames ` +
+        `${example.from}..${example.from + example.durationInFrames} in composition time)`,
+    )
+  }
+
+  // Deduplicate again: clamping can land two curve points on one frame.
+  const byKey = new Map<string, DirectedKeyframe>()
+  for (const keyframe of kept) {
+    byKey.set(`${keyframe.itemId}:${keyframe.property}:${keyframe.frame}`, keyframe)
+  }
+  return [...byKey.values()]
 }
 
 function requireItem(id: string, field = 'id'): TimelineItem {
@@ -937,7 +1064,31 @@ function applyOp(op: EditOp): unknown {
         (slot.at[0] - block.width / 2) * scale + asNumber(op.x, 0)! + asNumber(op.offsetX, 0)!
       const y =
         (slot.at[1] - block.height / 2) * scale + asNumber(op.y, 0)! + asNumber(op.offsetY, 0)!
-      updateItem(itemId, { transform: { ...(target.transform ?? {}), x, y } })
+
+      // Contain-fit, because "attached to the viewport" and "larger than the
+      // viewport" is the most likely composition error and nothing else catches
+      // it: the frame still renders, the child just overflows its container.
+      // Geometry is inherited, so resizing the attached item carries its parts.
+      const fitted = { ...(target.transform ?? {}), x, y }
+      if (asString(op.fit) === 'contain' && slot.partId) {
+        const container = all.find((item) => item.id === `${idPrefix}-${slot.partId}`)
+        const margin = asNumber(op.margin, 0.1)!
+        const room = {
+          width: (container?.transform?.width ?? 0) * (1 - margin),
+          height: (container?.transform?.height ?? 0) * (1 - margin),
+        }
+        const own = { width: fitted.width ?? 0, height: fitted.height ?? 0 }
+        if (room.width > 0 && room.height > 0 && own.width > 0 && own.height > 0) {
+          const factor = Math.min(room.width / own.width, room.height / own.height)
+          // Only ever shrinks: growing a block past its authored size to fill a
+          // container would soften artwork that was drawn for a specific scale.
+          if (factor < 1) {
+            fitted.width = own.width * factor
+            fitted.height = own.height * factor
+          }
+        }
+      }
+      updateItem(itemId, { transform: fitted })
 
       // Parenting is what makes the attachment hold: without it the prop sits at
       // a fixed canvas position while the rig walks away from it. A slot with no
@@ -957,6 +1108,78 @@ function applyOp(op: EditOp): unknown {
         }
       }
       return { itemId, slotId, blockId: block.id, x, y, parentItemId }
+    }
+    case 'directAction': {
+      const targets = directedTargets(op)
+      const action = asString(op.action)
+      if (!action) throw new Error('directAction requires `action`')
+      const keyframes = compileDirectedAction(targets, {
+        action: action as MotionAction,
+        ...(asString(op.direction) && { direction: asString(op.direction) as MotionDirection }),
+        from: asNumber(op.from, 0)!,
+        durationInFrames: asNumber(op.durationInFrames, editCanvas.fps)!,
+        ...(asNumber(op.distance) !== undefined && { distance: asNumber(op.distance)! }),
+        ...(op.to && typeof op.to === 'object' ? { to: op.to as { x?: number; y?: number } } : {}),
+        ...(asNumber(op.arc) !== undefined && { arc: asNumber(op.arc)! }),
+        ...(asNumber(op.intensity) !== undefined && { intensity: asNumber(op.intensity)! }),
+        ...(asString(op.easing) && { easing: asString(op.easing) as EasingType }),
+        ...(asNumber(op.step) !== undefined && { step: asNumber(op.step)! }),
+      })
+      const relative = toItemRelative(keyframes, targets, 'directAction')
+      addKeyframes(
+        relative.map((keyframe) => ({
+          itemId: keyframe.itemId,
+          property: keyframe.property as AnimatableProperty,
+          frame: keyframe.frame,
+          value: keyframe.value,
+          easing: keyframe.easing,
+        })),
+      )
+      return { action, targets: targets.length, keyframes: relative.length }
+    }
+    case 'setCamera': {
+      const intent = asString(op.intent)
+      if (!intent) throw new Error('setCamera requires `intent`')
+      // Planes are stated per target rather than read from the artwork, because
+      // a lowered block keeps no record of which parallax plane its parts came
+      // from; the catalog publishes them so a caller can look them up.
+      const planes = new Map<string, number>()
+      for (const entry of Array.isArray(op.planes) ? op.planes : []) {
+        const record = (entry ?? {}) as Record<string, unknown>
+        const key = asString(record.idPrefix) ?? asString(record.itemId)
+        const plane = asNumber(record.plane)
+        if (key && plane !== undefined) planes.set(key, plane)
+      }
+      const planeFor = (itemId: string): number => {
+        if (planes.has(itemId)) return planes.get(itemId)!
+        for (const [key, plane] of planes) {
+          if (itemId.startsWith(`${key}-`)) return plane
+        }
+        return 0
+      }
+
+      const targets = directedTargets(op).map((target) => ({
+        ...target,
+        plane: planeFor(target.itemId),
+      }))
+      const keyframes = compileCameraMove(targets, {
+        intent: intent as CameraIntent,
+        from: asNumber(op.from, 0)!,
+        durationInFrames: asNumber(op.durationInFrames, editCanvas.fps)!,
+        ...(asNumber(op.amount) !== undefined && { amount: asNumber(op.amount)! }),
+        ...(asString(op.easing) && { easing: asString(op.easing) as EasingType }),
+      })
+      const relative = toItemRelative(keyframes, targets, 'setCamera')
+      addKeyframes(
+        relative.map((keyframe) => ({
+          itemId: keyframe.itemId,
+          property: keyframe.property as AnimatableProperty,
+          frame: keyframe.frame,
+          value: keyframe.value,
+          easing: keyframe.easing,
+        })),
+      )
+      return { intent, targets: targets.length, keyframes: relative.length }
     }
     case 'importSvg': {
       const source = asString(op.source)

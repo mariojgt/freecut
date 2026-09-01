@@ -737,3 +737,297 @@ describe('a login-page explainer, composed end to end', () => {
     }
   })
 })
+
+describe('directed actions and camera moves', () => {
+  const place = async (extra: EditOp[] = []) =>
+    editProject({
+      project: baseProject(),
+      ops: [
+        {
+          op: 'addBlock',
+          blockId: 'infra-token-card',
+          durationInFrames: 90,
+          scale: 1,
+          idPrefix: 'tok',
+        },
+        ...extra,
+      ],
+    })
+
+  const lane = (project: Project, itemId: string, property: string) =>
+    project.timeline?.keyframes
+      ?.find((entry) => entry.itemId === itemId)
+      ?.properties.find((entry) => entry.property === property)
+      ?.keyframes.map((entry) => entry.value)
+
+  it('moves a block instance as a whole from a single intent', async () => {
+    const { project } = await editProject({
+      project: (await place()).project,
+      ops: [
+        {
+          op: 'directAction',
+          idPrefix: 'tok',
+          action: 'enter',
+          direction: 'left',
+          from: 0,
+          durationInFrames: 30,
+        },
+      ],
+    })
+    // The root travels...
+    const xs = lane(project, 'tok-card', 'x')
+    expect(xs?.[0]).toBeLessThan(0)
+    expect(xs?.at(-1)).toBe(0)
+    // ...and every part fades, because opacity is not inherited.
+    expect(lane(project, 'tok-stripe', 'opacity')?.[0]).toBe(0)
+    // ...but only the root translates, or the rig would tear apart.
+    expect(lane(project, 'tok-stripe', 'x')).toBeUndefined()
+  })
+
+  it('needs no numbers beyond the beat', async () => {
+    // The whole point: distance, overshoot and easing are engine decisions.
+    const { results } = await editProject({
+      project: (await place()).project,
+      ops: [{ op: 'directAction', idPrefix: 'tok', action: 'enter', durationInFrames: 30 }],
+    })
+    expect((results[0] as { detail: { keyframes: number } }).detail.keyframes).toBeGreaterThan(0)
+  })
+
+  it('arcs a move rather than sliding it in a straight line', async () => {
+    const { project } = await editProject({
+      project: (await place()).project,
+      ops: [
+        {
+          op: 'directAction',
+          idPrefix: 'tok',
+          action: 'moveTo',
+          to: { x: 600, y: 0 },
+          arc: 200,
+          from: 0,
+          durationInFrames: 30,
+        },
+      ],
+    })
+    const ys = lane(project, 'tok-card', 'y') ?? []
+    expect(Math.max(...ys.map(Math.abs))).toBeGreaterThan(50)
+  })
+
+  it('reveals a set of items as a cascade', async () => {
+    // A block's parts, which is the realistic case: they already sit on their own
+    // tracks, so nothing is displaced by track-overlap repair.
+    const ids = ['tok-card', 'tok-stripe', 'tok-payload-1', 'tok-payload-2', 'tok-payload-3']
+    const { project } = await editProject({
+      project: (await place()).project,
+      ops: [{ op: 'directAction', itemIds: ids, action: 'reveal', from: 0, durationInFrames: 40 }],
+    })
+    const starts = ids.map(
+      (id) =>
+        project.timeline?.keyframes
+          ?.find((entry) => entry.itemId === id)
+          ?.properties.find((entry) => entry.property === 'opacity')?.keyframes[0]?.frame ?? -1,
+    )
+    // Strictly increasing: each part waits for the one before it.
+    for (let index = 1; index < starts.length; index++) {
+      expect(starts[index]).toBeGreaterThan(starts[index - 1]!)
+    }
+    // And the whole cascade still finishes inside the beat.
+    const last = project.timeline?.keyframes
+      ?.flatMap((entry) => entry.properties.flatMap((p) => p.keyframes.map((k) => k.frame)))
+      .reduce((a, b) => Math.max(a, b), 0)
+    expect(last).toBeLessThanOrEqual(40)
+  })
+
+  it('scales a camera move by parallax plane', async () => {
+    const two = await editProject({
+      project: baseProject(),
+      ops: [
+        {
+          op: 'addBlock',
+          blockId: 'infra-token-card',
+          durationInFrames: 90,
+          idPrefix: 'near',
+          x: -300,
+        },
+        {
+          op: 'addBlock',
+          blockId: 'infra-token-card',
+          durationInFrames: 90,
+          idPrefix: 'far',
+          x: 300,
+        },
+      ],
+    })
+    const { project } = await editProject({
+      project: two.project,
+      ops: [
+        {
+          op: 'setCamera',
+          itemIds: ['near-card', 'far-card'],
+          intent: 'pan-left',
+          from: 0,
+          durationInFrames: 40,
+          planes: [
+            { idPrefix: 'near', plane: 0 },
+            { idPrefix: 'far', plane: 5 },
+          ],
+        },
+      ],
+    })
+    const nearShift = Math.abs((lane(project, 'near-card', 'x')?.at(-1) ?? 0) + 300)
+    const farShift = Math.abs((lane(project, 'far-card', 'x')?.at(-1) ?? 0) - 300)
+    // The whole point of a camera: the foreground travels further.
+    expect(nearShift).toBeGreaterThan(farShift * 2)
+  })
+
+  it('converts a beat in composition time onto the item own timeline', async () => {
+    // The bug this guards: keyframe frames are item-relative, so a beat authored
+    // at composition frame 228 for an item starting at 214 must land at 14 — not
+    // at 228, which is past the item's last frame and resolves to nothing.
+    const scene = await editProject({
+      project: baseProject(),
+      ops: [
+        {
+          op: 'addBlock',
+          blockId: 'infra-token-card',
+          from: 200,
+          durationInFrames: 60,
+          scale: 0.5,
+          x: 600,
+          idPrefix: 'late',
+        },
+        {
+          op: 'directAction',
+          idPrefix: 'late',
+          action: 'moveTo',
+          to: { x: -600 },
+          from: 210,
+          durationInFrames: 30,
+        },
+      ],
+    })
+    const xs = lane(scene.project, 'late-card', 'x')
+    const frames = scene.project.timeline?.keyframes
+      ?.find((entry) => entry.itemId === 'late-card')
+      ?.properties.find((entry) => entry.property === 'x')
+      ?.keyframes.map((entry) => entry.frame)
+    // 210..240 in composition time is 10..40 on an item that starts at 200.
+    expect(frames).toEqual([10, 40])
+    expect(xs?.[0]).toBe(600)
+    expect(xs?.at(-1)).toBe(-600)
+  })
+
+  it('refuses a beat that misses its target entirely', async () => {
+    // Silently dropping these is what made the bug above invisible.
+    await expect(
+      editProject({
+        project: (await place()).project,
+        ops: [
+          {
+            op: 'directAction',
+            idPrefix: 'tok',
+            action: 'enter',
+            from: 5000,
+            durationInFrames: 30,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/does not overlap any target/)
+  })
+
+  it('refuses a target that matches nothing', async () => {
+    await expect(
+      editProject({
+        project: (await place()).project,
+        ops: [{ op: 'directAction', idPrefix: 'nobody', action: 'enter' }],
+      }),
+    ).rejects.toThrow(/no items matched/)
+  })
+
+  it('contain-fits an attached item inside its slot', async () => {
+    const scene = await editProject({
+      project: baseProject(),
+      ops: [
+        {
+          op: 'addBlock',
+          blockId: 'ui-browser-window',
+          durationInFrames: 90,
+          scale: 0.6,
+          idPrefix: 'win',
+        },
+        {
+          op: 'addBlock',
+          blockId: 'ui-login-form',
+          durationInFrames: 90,
+          // Deliberately too large for the viewport it is about to be put in.
+          scale: 1.2,
+          idPrefix: 'form',
+        },
+      ],
+    })
+    const before = scene.project.timeline?.items?.find((item) => item.id === 'form-card')
+    const { project } = await editProject({
+      project: scene.project,
+      ops: [
+        {
+          op: 'attachToSlot',
+          idPrefix: 'win',
+          slotId: 'viewport',
+          itemId: 'form-card',
+          scale: 0.6,
+          fit: 'contain',
+        },
+      ],
+    })
+    const after = project.timeline?.items?.find((item) => item.id === 'form-card')
+    const viewport = project.timeline?.items?.find((item) => item.id === 'win-viewport')
+
+    expect(after?.transform?.height).toBeLessThan(before?.transform?.height ?? 0)
+    // It now fits, with the default 10% margin to spare.
+    expect(after?.transform?.height).toBeLessThanOrEqual(
+      (viewport?.transform?.height ?? 0) * 0.9 + 0.5,
+    )
+    // The aspect ratio survives the fit.
+    const beforeRatio = (before?.transform?.width ?? 1) / (before?.transform?.height ?? 1)
+    const afterRatio = (after?.transform?.width ?? 1) / (after?.transform?.height ?? 1)
+    expect(afterRatio).toBeCloseTo(beforeRatio, 4)
+  })
+
+  it('never grows an item to fill its container', async () => {
+    // Scaling committed artwork past its authored size softens it.
+    const scene = await editProject({
+      project: baseProject(),
+      ops: [
+        {
+          op: 'addBlock',
+          blockId: 'ui-browser-window',
+          durationInFrames: 90,
+          scale: 0.6,
+          idPrefix: 'win',
+        },
+        {
+          op: 'addBlock',
+          blockId: 'infra-token-card',
+          durationInFrames: 90,
+          scale: 0.2,
+          idPrefix: 'tok',
+        },
+      ],
+    })
+    const before = scene.project.timeline?.items?.find((item) => item.id === 'tok-card')
+    const { project } = await editProject({
+      project: scene.project,
+      ops: [
+        {
+          op: 'attachToSlot',
+          idPrefix: 'win',
+          slotId: 'viewport',
+          itemId: 'tok-card',
+          scale: 0.6,
+          fit: 'contain',
+        },
+      ],
+    })
+    const after = project.timeline?.items?.find((item) => item.id === 'tok-card')
+    expect(after?.transform?.width).toBe(before?.transform?.width)
+  })
+})

@@ -117,6 +117,14 @@ describe('checkScene', () => {
     expect(result.ok).toBe(true)
   })
 
+  it('warns when text leaves the title-safe area for the whole range', () => {
+    const result = checkScene(
+      frames([box({ type: 'text', text: 'hello', x: 20, y: 500, width: 400, height: 80 })]),
+      canvas,
+    )
+    expect(codes(result)).toContain('title-unsafe')
+  })
+
   it('does not judge the placement of an invisible item', () => {
     // Parked off-canvas is a normal way to hide something; only what is drawn is
     // held to the geometry gates. (The frame is separately reported as empty.)
@@ -238,14 +246,59 @@ describe('checkScene', () => {
     )
   })
 
-  it('collapses a repeated issue into one entry with a frame count', () => {
-    const result = checkScene(frames([box({ x: 5000 })], [box({ x: 5000 })]), canvas)
-    const offCanvas = result.issues.filter((issue) => issue.code === 'off-canvas')
-    expect(offCanvas).toHaveLength(1)
-    expect({ frame: offCanvas[0]?.frame, frames: offCanvas[0]?.frames }).toEqual({
+  it('will not call a barely-sampled item static', () => {
+    // A short-lived item catches only a frame or two of a coarse grid, and two
+    // samples of a settled pose look identical to an animation that never ran.
+    const keyed = box({ animated: true })
+    const sparse = [
+      { frame: 0, boxes: [] },
+      { frame: 10, boxes: [keyed] },
+      { frame: 20, boxes: [keyed] },
+      { frame: 30, boxes: [] },
+    ]
+    expect(codes(checkScene(sparse, canvas))).not.toContain('static-across-range')
+  })
+
+  it('collapses a repeated per-frame issue into one entry with a count', () => {
+    const result = checkScene(frames([box({ width: 0 })], [box({ width: 0 })]), canvas)
+    const degenerate = result.issues.filter((issue) => issue.code === 'degenerate-size')
+    expect(degenerate).toHaveLength(1)
+    expect({ frame: degenerate[0]?.frame, frames: degenerate[0]?.frames }).toEqual({
       frame: 0,
       frames: 2,
     })
+  })
+
+  it('does not fault an item that starts off canvas and travels in', () => {
+    // An `enter` from the right begins outside the frame by design; flagging it
+    // would fire on every correctly-authored entrance.
+    const result = checkScene(
+      frames([box({ x: 4000 })], [box({ x: 1500 })], [box({ x: 860 })]),
+      canvas,
+    )
+    expect(codes(result)).not.toContain('off-canvas')
+    expect(codes(result)).not.toContain('clipped')
+  })
+
+  it('errors on an item that is never on canvas at any sampled frame', () => {
+    const result = checkScene(frames([box({ x: 4000 })], [box({ x: 5000 })]), canvas)
+    expect(codes(result)).toContain('off-canvas')
+    expect(result.ok).toBe(false)
+  })
+
+  it('warns about an item that is never more than partly on canvas', () => {
+    const result = checkScene(
+      frames([box({ x: -150, width: 200 })], [box({ x: -160, width: 200 })]),
+      canvas,
+    )
+    expect(codes(result)).toContain('clipped')
+    expect(result.ok).toBe(true)
+  })
+
+  it('lets text pass through the title-safe edge on its way in', () => {
+    const text = (x: number) => box({ type: 'text', text: 'hi', x, y: 500, width: 400, height: 80 })
+    const result = checkScene(frames([text(10)], [text(760)]), canvas)
+    expect(codes(result)).not.toContain('title-unsafe')
   })
 
   it('sorts errors above warnings', () => {

@@ -87,6 +87,9 @@ export interface MotionReport {
   items: MotionSummary[]
 }
 
+/** Samples an item needs within its own life before "never moves" is a verdict. */
+const MIN_STATIC_SAMPLES = 3
+
 /** Frames sampled when a caller names a range but not a resolution. */
 const DEFAULT_SAMPLES = 24
 
@@ -292,6 +295,7 @@ function checkFrame(
     interior: boolean
   },
   ledger: IssueLedger,
+  framing: FramingLedger,
 ): void {
   const { canvas, canvasRect, settings } = scene
   const context: GateContext = {
@@ -323,8 +327,7 @@ function checkFrame(
     if (gateUndrawable(box, context, ledger)) continue
     // An invisible item may sit anywhere; only what is drawn is judged.
     if (!box.visible) continue
-    gateFraming(box, context, ledger)
-    gateTitleSafe(box, context, ledger)
+    noteFraming(box, context, framing)
     if (isBackdrop(box, context)) backdrops.push(box)
   }
 
@@ -357,7 +360,10 @@ function gateStaticItems(
     frames.flatMap((frame) => frame.boxes.filter((box) => box.animated).map((box) => box.id)),
   )
   for (const summary of summarizeMotion(frames, canvas).items) {
-    if (summary.samples.length <= 1) continue
+    // A short-lived item may only catch one or two of a coarse sample grid, and
+    // two samples of a settled pose look exactly like an animation that never
+    // ran. Below three, the range genuinely cannot answer the question.
+    if (summary.samples.length < MIN_STATIC_SAMPLES) continue
     if (summary.moved || !animated.has(summary.id)) continue
     ledger.add({
       code: 'static-across-range',
@@ -420,6 +426,73 @@ function checkRange(
  * composite, two full-frame backdrops cross-dissolving into mush, a keyframed
  * element that never actually moves.
  */
+/**
+ * Best framing each item ever achieved while drawn.
+ *
+ * Framing is judged over the range, not per frame, because every entrance starts
+ * off-frame and every exit ends there by design. What is worth reporting is an
+ * item that is NEVER on canvas, or copy that is never inside the title-safe area
+ * — the same trade the opacity gate makes.
+ */
+interface FramingLedger {
+  /** Largest fraction of the item that was ever on canvas. */
+  onCanvas: Map<string, number>
+  /** Largest fraction of a text item that was ever inside the safe area. */
+  titleSafe: Map<string, number>
+  firstFrame: Map<string, number>
+}
+
+function noteFraming(box: PerceivedBox, context: GateContext, framing: FramingLedger): void {
+  const inside = insideFraction(box, context.canvasRect)
+  framing.onCanvas.set(box.id, Math.max(framing.onCanvas.get(box.id) ?? 0, inside))
+  if (!framing.firstFrame.has(box.id)) framing.firstFrame.set(box.id, context.frame)
+  if (box.type !== 'text') return
+  const safe = insideFraction(box, context.safeRect)
+  framing.titleSafe.set(box.id, Math.max(framing.titleSafe.get(box.id) ?? 0, safe))
+}
+
+function gateFramingOverRange(
+  framing: FramingLedger,
+  settings: Required<CheckSceneOptions>,
+  ledger: IssueLedger,
+): void {
+  for (const [itemId, best] of framing.onCanvas) {
+    const frame = framing.firstFrame.get(itemId)
+    if (best <= 0) {
+      ledger.add({
+        code: 'off-canvas',
+        severity: 'error',
+        itemId,
+        ...(frame !== undefined && { frame }),
+        message: 'Never appears on canvas at any sampled frame, so it renders as nothing.',
+      })
+      continue
+    }
+    if (best < 1 - settings.offCanvasTolerance) {
+      ledger.add({
+        code: 'clipped',
+        severity: 'warning',
+        itemId,
+        ...(frame !== undefined && { frame }),
+        message: `At best only ${Math.round(best * 100)}% of it is ever on canvas.`,
+      })
+    }
+  }
+
+  for (const [itemId, best] of framing.titleSafe) {
+    if (best >= 1) continue
+    ledger.add({
+      code: 'title-unsafe',
+      severity: 'warning',
+      itemId,
+      ...(framing.firstFrame.get(itemId) !== undefined && {
+        frame: framing.firstFrame.get(itemId),
+      }),
+      message: `Text never sits fully inside the ${Math.round(settings.titleSafe * 100)}% title-safe area.`,
+    })
+  }
+}
+
 interface GateContext {
   canvasRect: Rect
   safeRect: Rect
@@ -454,43 +527,6 @@ function gateUndrawable(box: PerceivedBox, context: GateContext, ledger: IssueLe
   return false
 }
 
-/** Whether what is drawn is actually inside the frame. */
-function gateFraming(box: PerceivedBox, context: GateContext, ledger: IssueLedger): void {
-  const inside = insideFraction(box, context.canvasRect)
-  if (inside <= 0) {
-    ledger.add({
-      code: 'off-canvas',
-      severity: 'error',
-      itemId: box.id,
-      frame: context.frame,
-      message: 'Visible but entirely outside the canvas, so it renders as nothing.',
-    })
-    return
-  }
-  if (inside < 1 - context.settings.offCanvasTolerance) {
-    ledger.add({
-      code: 'clipped',
-      severity: 'warning',
-      itemId: box.id,
-      frame: context.frame,
-      message: `Only ${Math.round(inside * 100)}% of it is on canvas.`,
-    })
-  }
-}
-
-/** On-screen copy has to survive overscan and platform-chrome cropping. */
-function gateTitleSafe(box: PerceivedBox, context: GateContext, ledger: IssueLedger): void {
-  if (box.type !== 'text') return
-  if (insideFraction(box, context.safeRect) >= 1) return
-  ledger.add({
-    code: 'title-unsafe',
-    severity: 'warning',
-    itemId: box.id,
-    frame: context.frame,
-    message: `Text crosses the ${Math.round(context.settings.titleSafe * 100)}% title-safe area.`,
-  })
-}
-
 /** A layer that fills the frame opaquely, and so hides everything behind it. */
 function isBackdrop(box: PerceivedBox, context: GateContext): boolean {
   if (box.opacity < 0.5) return false
@@ -515,10 +551,16 @@ export function checkScene(
   const ledger = new IssueLedger()
   const canvasRect = { x: 0, y: 0, width: canvas.width, height: canvas.height }
 
+  const framing: FramingLedger = {
+    onCanvas: new Map(),
+    titleSafe: new Map(),
+    firstFrame: new Map(),
+  }
   for (const [index, frame] of frames.entries()) {
     const interior = index > 0 && index < frames.length - 1
-    checkFrame(frame, { canvas, canvasRect, settings, interior }, ledger)
+    checkFrame(frame, { canvas, canvasRect, settings, interior }, ledger, framing)
   }
+  gateFramingOverRange(framing, settings, ledger)
   checkRange(frames, canvas, settings, ledger)
 
   const issues = ledger.list()

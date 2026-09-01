@@ -107,6 +107,26 @@ const samples = {
     y: 190,
     scale: 0.9,
   },
+  directAction: {
+    op: 'directAction',
+    idPrefix: 'hero',
+    action: 'enter',
+    direction: 'left',
+    from: 0,
+    durationInFrames: 24,
+    distance: 480,
+    intensity: 1,
+    easing: 'ease-out',
+  },
+  setCamera: {
+    op: 'setCamera',
+    itemIds: ['i'],
+    intent: 'push',
+    from: 0,
+    durationInFrames: 40,
+    amount: 1,
+    planes: [{ idPrefix: 'hero', plane: 0 }],
+  },
   importSvg: { op: 'importSvg', source: '<svg/>', size: 480 },
   morphPath: {
     op: 'morphPath',
@@ -205,6 +225,43 @@ test('frame and layout requests reject invalid targets and frame options', () =>
     { project: 'p', format: 'png' },
   ])
     assert.equal(layoutRequestSchema.safeParse(invalid).success, false, JSON.stringify(invalid))
+})
+
+test('directed actions and camera moves need exactly one target form', () => {
+  const ok = (value) => editOpSchema.safeParse(value).success
+  const action = { op: 'directAction', action: 'enter' }
+  assert.equal(ok({ ...action, idPrefix: 'hero' }), true)
+  assert.equal(ok({ ...action, itemId: 'i' }), true)
+  assert.equal(ok({ ...action, itemIds: ['i', 'j'] }), true)
+  // Ambiguous or absent targets are refused at the wire rather than guessed at.
+  assert.equal(ok(action), false)
+  assert.equal(ok({ ...action, idPrefix: 'hero', itemId: 'i' }), false)
+  assert.equal(ok({ ...action, itemIds: [] }), false)
+
+  assert.equal(ok({ ...action, idPrefix: 'hero', action: 'teleport' }), false)
+  assert.equal(ok({ ...action, idPrefix: 'hero', direction: 'sideways' }), false)
+  assert.equal(ok({ ...action, idPrefix: 'hero', to: { x: 10, y: 20 } }), true)
+  assert.equal(ok({ ...action, idPrefix: 'hero', to: { z: 1 } }), false)
+  assert.equal(ok({ ...action, idPrefix: 'hero', step: 0 }), false)
+
+  const camera = { op: 'setCamera', itemId: 'i' }
+  assert.equal(ok({ ...camera, intent: 'push' }), true)
+  assert.equal(ok({ ...camera, intent: 'zoom' }), false)
+  assert.equal(ok({ ...camera, intent: 'push', planes: [{ idPrefix: 'a', plane: 3 }] }), true)
+  // A plane outside the parallax range, or naming both forms, is a mistake.
+  assert.equal(ok({ ...camera, intent: 'push', planes: [{ idPrefix: 'a', plane: 9 }] }), false)
+  assert.equal(
+    ok({ ...camera, intent: 'push', planes: [{ idPrefix: 'a', itemId: 'b', plane: 1 }] }),
+    false,
+  )
+})
+
+test('attachToSlot can contain-fit an item inside its slot', () => {
+  const ok = (value) => editOpSchema.safeParse(value).success
+  const base = { op: 'attachToSlot', idPrefix: 'win', slotId: 'viewport', itemId: 'card' }
+  assert.equal(ok({ ...base, fit: 'contain', margin: 0.1 }), true)
+  assert.equal(ok({ ...base, fit: 'cover' }), false)
+  assert.equal(ok({ ...base, margin: 1 }), false)
 })
 
 test('perception requests bound their ranges, sample counts and thresholds', () => {

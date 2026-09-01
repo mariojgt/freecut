@@ -54,7 +54,11 @@ export function createFreeCutMcpServer(options = {}) {
         'When animating, close the loop rather than guessing: list_blocks to see which rigs, ' +
         'gestures and poses exist, then after each edit call check_scene for named faults and ' +
         'sample_motion to confirm the motion you intended actually resolved. Read contact_sheet ' +
-        'when judging timing, and grab_frame only for a single pose. Render last.',
+        'when judging timing, and grab_frame only for a single pose. Render last. ' +
+        'Prefer intent over coordinates: directAction (enter/exit/emphasize/moveTo/shake/reveal) ' +
+        'and setCamera (push/pull/pan/rise/settle) choose distance, overshoot, arc and stagger ' +
+        'for you, and attachToSlot with fit=contain keeps a child inside its container. Reach for ' +
+        'addKeyframe only when no recipe fits.',
     },
   )
 
@@ -171,7 +175,10 @@ export function createFreeCutMcpServer(options = {}) {
     {
       title: 'Edit project timeline',
       description:
-        'Apply validated timeline operations. Supports clips, tracks, titles, transforms, effects, transitions, and keyframes. Defaults to a dry run.',
+        'Apply validated timeline operations. Supports clips, tracks, titles, transforms, effects, ' +
+        'transitions and keyframes; rigged blocks (addBlock, applyGesture, applyPose, attachToSlot); ' +
+        'intent-driven motion (directAction, setCamera); and vector work (importSvg, morphPath). ' +
+        'Call get_capabilities for every operation and its fields. Defaults to a dry run.',
       inputSchema: z.object({
         projectId,
         operations: z.array(editOperation).min(1),

@@ -75,6 +75,9 @@ const GESTURE_IDS = [
   'shield-appear',
   'shield-seal',
 ]
+const MOTION_ACTIONS = ['enter', 'exit', 'emphasize', 'moveTo', 'shake', 'reveal']
+const MOTION_DIRECTIONS = ['left', 'right', 'up', 'down', 'in', 'out']
+const CAMERA_INTENTS = ['push', 'pull', 'pan-left', 'pan-right', 'rise', 'settle']
 const POSE_IDS = [
   'stand',
   'point-forward',
@@ -429,11 +432,86 @@ const opSchemas = [
       x: finite.optional(),
       y: finite.optional(),
       scale: finite.positive().optional(),
-      /** Keep the item's own size instead of leaving it untouched. */
       offsetX: finite.optional(),
       offsetY: finite.optional(),
+      /** `contain` shrinks the item to fit inside the slot's part. */
+      fit: z.enum(['contain']).optional(),
+      /** Fraction of the container left as margin when fitting. */
+      margin: finite.min(0).max(0.9).optional(),
     })
     .strict(),
+  z
+    .object({
+      op: z.literal('directAction'),
+      /** Exactly one target form; a block instance moves as a whole. */
+      idPrefix: id.optional(),
+      itemId: id.optional(),
+      itemIds: z.array(id).min(1).max(500).optional(),
+      action: z.enum(MOTION_ACTIONS),
+      direction: z.enum(MOTION_DIRECTIONS).optional(),
+      /**
+       * Beat start in COMPOSITION frames, not item-relative ones. Converted per
+       * target, so one beat can drive items that enter at different times.
+       */
+      from: frame.optional(),
+      durationInFrames: positiveFrames.optional(),
+      /** Travel in canvas pixels. Defaults to a distance derived from the target. */
+      distance: finite.nonnegative().optional(),
+      to: z.object({ x: finite.optional(), y: finite.optional() }).strict().optional(),
+      /** Perpendicular bow on a moveTo, in pixels. Straight lines read as mechanical. */
+      arc: finite.optional(),
+      intensity: finite.nonnegative().optional(),
+      easing: easing.optional(),
+      /** Fraction of the beat one item occupies in a reveal. */
+      step: finite.min(0.05).max(1).optional(),
+    })
+    .strict()
+    .refine(
+      (value) =>
+        [value.idPrefix, value.itemId, value.itemIds].filter((entry) => entry !== undefined)
+          .length === 1,
+      'provide exactly one of idPrefix, itemId or itemIds',
+    ),
+  z
+    .object({
+      op: z.literal('setCamera'),
+      idPrefix: id.optional(),
+      itemId: id.optional(),
+      itemIds: z.array(id).min(1).max(500).optional(),
+      intent: z.enum(CAMERA_INTENTS),
+      /** Composition frames, converted per target. */
+      from: frame.optional(),
+      durationInFrames: positiveFrames.optional(),
+      amount: finite.optional(),
+      easing: easing.optional(),
+      /**
+       * Parallax planes, 0 (foreground) to 5 (far haze). Without them a camera
+       * move is a flat slide; the block catalog publishes each part's plane.
+       */
+      planes: z
+        .array(
+          z
+            .object({
+              idPrefix: id.optional(),
+              itemId: id.optional(),
+              plane: finite.min(0).max(5),
+            })
+            .strict()
+            .refine(
+              (value) => Boolean(value.idPrefix) !== Boolean(value.itemId),
+              'provide exactly one of idPrefix or itemId',
+            ),
+        )
+        .max(200)
+        .optional(),
+    })
+    .strict()
+    .refine(
+      (value) =>
+        [value.idPrefix, value.itemId, value.itemIds].filter((entry) => entry !== undefined)
+          .length === 1,
+      'provide exactly one of idPrefix, itemId or itemIds',
+    ),
   z
     .object({
       op: z.literal('importSvg'),
@@ -501,6 +579,8 @@ export const EDIT_OPERATION_NAMES = [
   'applyGesture',
   'applyPose',
   'attachToSlot',
+  'directAction',
+  'setCamera',
   'importSvg',
   'morphPath',
 ]
@@ -533,6 +613,8 @@ function samplesDescription(name) {
     applyGesture: 'Bake a gesture onto an existing block instance by its id prefix',
     applyPose: `Hold or sequence named poses (${POSE_IDS.join(', ')}) on a block instance`,
     attachToSlot: "Parent an item to a block instance's named slot so it travels with the rig",
+    directAction: `Animate a target by intent (${MOTION_ACTIONS.join(', ')}) with an optional direction (${MOTION_DIRECTIONS.join(', ')}); distances, overshoot and stagger are chosen by the engine, and the beat is given in composition frames`,
+    setCamera: `Apply a camera move (${CAMERA_INTENTS.join(', ')}) across targets, scaled per parallax plane so it reads as depth rather than a slide`,
     importSvg: 'Import SVG source as editable path shapes, one per contour',
     morphPath: 'Animate a path shape into another outline between two frames',
   }
