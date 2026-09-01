@@ -371,18 +371,24 @@ export const Toolbar = memo(function Toolbar({
               <FolderArchive className="h-4 w-4" />
               {t('toolbar.downloadProjectZip')}
             </DropdownMenuItem>
-            {onSendToMcp && (
-              <DropdownMenuItem onClick={onSendToMcp} className="gap-2">
-                <Radio className="h-4 w-4" />
-                {t('toolbar.sendToMcp')}
-              </DropdownMenuItem>
-            )}
+            <SendToMcpMenuItem onSendToMcp={onSendToMcp} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
     </div>
   )
 })
+
+function SendToMcpMenuItem({ onSendToMcp }: { onSendToMcp?: () => void }) {
+  const { t } = useTranslation()
+  if (!onSendToMcp) return null
+  return (
+    <DropdownMenuItem onClick={onSendToMcp} className="gap-2">
+      <Radio className="h-4 w-4" />
+      {t('toolbar.sendToMcp')}
+    </DropdownMenuItem>
+  )
+}
 
 function SaveAnimationIcon({ className }: { className?: string }) {
   return (

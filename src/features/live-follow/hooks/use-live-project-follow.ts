@@ -82,27 +82,35 @@ export function useLiveProjectFollow(projectId: string): LiveFollowState {
       }
     }
 
+    const pollOnce = async () => {
+      if (currentRevision === null) {
+        await load()
+        return
+      }
+      const projects = await listHeadlessProjects(controller.signal)
+      const summary = projects.find((entry) => entry.id === projectId)
+      if (summary && summary.revision !== currentRevision) await load()
+    }
+
+    // A missing project is a state ("push it, or ask the agent to create it")
+    // and the poll keeps watching for it to appear; anything else is transient
+    // and the next tick retries.
+    const reportSyncError = (error: unknown) => {
+      if (controller.signal.aborted) return
+      if (error instanceof HeadlessApiError && error.status === 404) {
+        setState({ status: 'not-found', revision: null, project: null })
+      } else if (currentRevision === null) {
+        setState({ status: 'error', revision: null, project: null })
+      }
+    }
+
     const sync = async () => {
       if (busy || controller.signal.aborted) return
       busy = true
       try {
-        if (currentRevision === null) {
-          await load()
-          return
-        }
-        const projects = await listHeadlessProjects(controller.signal)
-        const summary = projects.find((entry) => entry.id === projectId)
-        if (summary && summary.revision !== currentRevision) await load()
+        await pollOnce()
       } catch (error) {
-        if (controller.signal.aborted) return
-        // A missing project is a state ("push it, or ask the agent to create
-        // it") and the poll keeps watching for it to appear; anything else is
-        // transient and the next tick retries.
-        if (error instanceof HeadlessApiError && error.status === 404) {
-          setState({ status: 'not-found', revision: null, project: null })
-        } else if (currentRevision === null) {
-          setState({ status: 'error', revision: null, project: null })
-        }
+        reportSyncError(error)
       } finally {
         busy = false
       }
