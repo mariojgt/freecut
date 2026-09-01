@@ -74,6 +74,8 @@
     "sendToMcp": "发送到 MCP 工作区",
     "sendToMcpSuccess": "项目已发送到 MCP 工作区",
     "sendToMcpFailed": "无法将项目发送到 MCP 工作区",
+    "sendToMcpUnseenServerCopy": "MCP 工作区中有此编辑器尚未加载的更改。要覆盖它们吗？",
+    "sendToMcpOverwrite": "覆盖",
     "copyLiveLink": "复制实时链接"
   },
   "unsavedChanges": {

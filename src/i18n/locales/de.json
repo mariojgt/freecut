@@ -74,6 +74,8 @@
     "sendToMcp": "An MCP-Workspace senden",
     "sendToMcpSuccess": "Projekt an den MCP-Workspace gesendet",
     "sendToMcpFailed": "Projekt konnte nicht an den MCP-Workspace gesendet werden",
+    "sendToMcpUnseenServerCopy": "Der MCP-Workspace enthält Änderungen, die dieser Editor nicht geladen hat. Überschreiben?",
+    "sendToMcpOverwrite": "Überschreiben",
     "copyLiveLink": "Live-Link kopieren"
   },
   "unsavedChanges": {

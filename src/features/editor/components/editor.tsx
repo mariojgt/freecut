@@ -662,12 +662,14 @@ export const LoadedEditor = memo(function LoadedEditor({
   }, [project.name])
 
   const handleSendToMcp = useCallback(async () => {
-    const revision = await sendProjectToMcpWorkspace(
+    // notePushedRevision runs through the callback so a deferred overwrite
+    // records its revision too, not just the first attempt.
+    await sendProjectToMcpWorkspace(
       projectId,
       handleSave,
       getPushExpectedRevision(),
+      notePushedRevision,
     )
-    notePushedRevision(revision)
   }, [getPushExpectedRevision, handleSave, notePushedRevision, projectId])
 
   // Enable keyboard shortcuts

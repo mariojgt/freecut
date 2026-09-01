@@ -8,6 +8,7 @@ import {
   pushProjectToHeadlessWorkspace,
   toPortableProject,
 } from './headless-api'
+import { HeadlessApiError, UNSEEN_SERVER_COPY } from './headless-api'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -157,6 +158,24 @@ describe('pushProjectToHeadlessWorkspace', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
       expectedRevision: 'sha256:created',
     })
+  })
+
+  it('refuses to overwrite a server copy this browser has never applied', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ error: { code: 'ALREADY_EXISTS', message: 'Project already exists' } }, 409),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const failure = await pushProjectToHeadlessWorkspace(storedProject, null).catch(
+      (error: unknown) => error,
+    )
+    expect(failure).toBeInstanceOf(HeadlessApiError)
+    expect((failure as HeadlessApiError).code).toBe(UNSEEN_SERVER_COPY)
+    // Only the create was attempted: no PUT may reach an unseen project.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('POST')
   })
 
   it('rejects ids the server would refuse instead of dialing out', async () => {

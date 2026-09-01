@@ -74,6 +74,8 @@
     "sendToMcp": "Envoyer vers l'espace de travail MCP",
     "sendToMcpSuccess": "Projet envoyé vers l'espace de travail MCP",
     "sendToMcpFailed": "Impossible d'envoyer le projet vers l'espace de travail MCP",
+    "sendToMcpUnseenServerCopy": "L'espace de travail MCP contient des modifications que cet éditeur n'a pas chargées. Les écraser ?",
+    "sendToMcpOverwrite": "Écraser",
     "copyLiveLink": "Copier le lien live"
   },
   "unsavedChanges": {

@@ -246,6 +246,26 @@ async function createPortableProject(project: PortableProject): Promise<string> 
   return requireRevision(payload, 'the created')
 }
 
+/**
+ * The server already holds this project, but this browser has never applied
+ * that copy — pushing would discard whatever the MCP wrote. Callers surface
+ * this as an explicit overwrite choice rather than a dead end.
+ */
+export const UNSEEN_SERVER_COPY = 'UNSEEN_SERVER_COPY'
+
+async function createUnseenOrFail(project: PortableProject): Promise<string> {
+  try {
+    return await createPortableProject(project)
+  } catch (error) {
+    if (!(error instanceof HeadlessApiError) || error.code !== 'ALREADY_EXISTS') throw error
+    throw new HeadlessApiError(
+      `The MCP workspace already holds "${project.id}", and this browser has never applied that copy.`,
+      409,
+      UNSEEN_SERVER_COPY,
+    )
+  }
+}
+
 async function resolveExpectedRevision(
   project: PortableProject,
   knownRevision: string | undefined,
@@ -274,7 +294,7 @@ export async function pushProjectToHeadlessWorkspace(
   // legacy discover-or-create behavior for non-editor callers.
   const expectedRevision =
     knownRevision === null
-      ? await createPortableProject(portable)
+      ? await createUnseenOrFail(portable)
       : await resolveExpectedRevision(portable, knownRevision)
   const payload = await requestJson(`/v1/projects/${encodeURIComponent(portable.id)}`, {
     method: 'PUT',

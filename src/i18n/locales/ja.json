@@ -74,6 +74,8 @@
     "sendToMcp": "MCPワークスペースへ送信",
     "sendToMcpSuccess": "プロジェクトをMCPワークスペースへ送信しました",
     "sendToMcpFailed": "プロジェクトをMCPワークスペースへ送信できませんでした",
+    "sendToMcpUnseenServerCopy": "MCP ワークスペースに、このエディターが読み込んでいない変更があります。上書きしますか？",
+    "sendToMcpOverwrite": "上書き",
     "copyLiveLink": "ライブリンクをコピー"
   },
   "unsavedChanges": {
