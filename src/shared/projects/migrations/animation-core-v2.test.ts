@@ -47,7 +47,10 @@ describe('Animation Core v2 migration', () => {
     const result = migrateProject(project)
 
     expect(result.project.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-    expect(result.appliedMigrations).toEqual([15])
+    // The v14 project runs every migration from 15 up; this test is about what
+    // 15 does to the keyframes, so it asserts 15 ran rather than pinning the
+    // whole tail, which would fail on each unrelated migration added after it.
+    expect(result.appliedMigrations).toContain(15)
     expect(result.project.timeline?.keyframes?.[0]).toMatchObject({
       animationVersion: 2,
       properties: scalarLane.properties,

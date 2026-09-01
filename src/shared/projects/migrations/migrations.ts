@@ -990,6 +990,19 @@ const migrations: Record<number, Migration> = {
       }
     },
   },
+  /**
+   * Version 16: Give a project somewhere to keep its own rigged blocks.
+   *
+   * Purely additive — no existing project owns any — but the schema is strict,
+   * so the field has to be introduced deliberately rather than appearing the
+   * first time something writes one. Absent and empty are the same thing, and
+   * the migration leaves it absent so untouched projects do not grow a key.
+   */
+  16: {
+    version: 16,
+    description: 'Allow projects to carry their own rigged blocks',
+    migrate: (project: Project): Project => project,
+  },
 }
 
 /**

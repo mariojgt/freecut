@@ -3,6 +3,7 @@ import type { AudioEqSettings } from './audio'
 import type { Transition } from './transition'
 import type { CropSettings } from './transform'
 import type { TextStylePresetId } from '@/shared/typography/text-style-preset-ids'
+import type { BlockDefinition } from '@/shared/graphics/blocks/types'
 import type { TextLayoutDrafts, TextSpan, TextStyleFields } from './text'
 import type { TextMotionSpec } from './text-motion'
 import type { MaskVertex } from './masks'
@@ -18,6 +19,20 @@ import type { CompositionControlOverrides, CompositionControlSchema } from './co
  * compositing workspace.
  */
 export type CompositionEditorKind = 'sequence' | 'composite-2d'
+
+/**
+ * A project-owned block, with the provenance the UI needs to label it.
+ *
+ * The definition itself is the same shape committed artwork uses, so a project
+ * block reaches the timeline through exactly the same lowering path.
+ */
+export interface ProjectBlock {
+  definition: BlockDefinition
+  createdAt: number
+  updatedAt: number
+  /** Where it came from, so the library can say so and a copy can be traced. */
+  origin?: { kind: 'svg'; sourceName?: string } | { kind: 'copied'; fromProjectId: string }
+}
 
 export interface Project {
   id: string
@@ -35,6 +50,19 @@ export interface Project {
   thumbnail?: string // @deprecated Base64 data URL (for backward compatibility)
   metadata: ProjectResolution
   timeline?: ProjectTimeline
+  /**
+   * Rigged illustration blocks belonging to this project.
+   *
+   * The committed library in `src/shared/graphics/blocks` is the reviewed floor
+   * every project starts from; these are the ones authored for this project —
+   * usually by rigging an SVG through `defineBlock`. They live on the project
+   * rather than in the registry so they survive a session, travel with an
+   * export, and can be copied to another project.
+   *
+   * Ids are namespaced (`local-…`) so a project can never shadow committed
+   * artwork: the registry is always consulted first.
+   */
+  blocks?: ProjectBlock[]
   /**
    * Root folder handle for the project's media files.
    * Set when importing a bundle or manually by the user.

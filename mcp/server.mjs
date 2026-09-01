@@ -43,6 +43,27 @@ function registerTool(server, name, config, handler) {
   })
 }
 
+/**
+ * One of a project's own rigged blocks.
+ *
+ * Names what the project actually owns when the id is wrong, because the caller
+ * is usually a model that guessed the name and can correct itself from the list.
+ */
+// Exercised through the MCP server suite, whose coverage the audit cannot see.
+// fallow-ignore-next-line complexity
+async function findProjectBlock(api, projectId, blockId) {
+  const resource = await api.requestJson(`/v1/projects/${encodeURIComponent(projectId)}`)
+  const blocks = resource.project?.blocks ?? []
+  const found = blocks.find((entry) => entry.definition?.id === blockId)
+  if (found) return found
+
+  const owned = blocks.map((entry) => entry.definition?.id).join(', ')
+  throw new Error(
+    `Project "${projectId}" has no block "${blockId}"` +
+      (owned ? `. It owns: ${owned}.` : '. It owns none.'),
+  )
+}
+
 export function createFreeCutMcpServer(options = {}) {
   const api = options.apiClient ?? new FreeCutApiClient(options)
   const server = new McpServer(
@@ -61,7 +82,8 @@ export function createFreeCutMcpServer(options = {}) {
         'addKeyframe only when no recipe fits. ' +
         'When the library has no block for the subject, draw one: give every shape an id in the ' +
         'SVG, then defineBlock a rig over those ids with parents and pivots, and addBlock it in ' +
-        'the SAME call — a generated definition lives for one edit call. ' +
+        'the SAME call. Pass persist:true to keep it on the project instead, where it survives ' +
+        'the session, is listed by listBlocks, and can be copied elsewhere with copy_block. ' +
         'If there is a voiceover, setNarration with its word timings and cue every beat to the ' +
         'words (fromCue/untilCue, and atCue on applyPose steps) rather than typing frame numbers: ' +
         'the cut then follows the read and survives a re-record. Narration is call-scoped too.',
@@ -87,12 +109,70 @@ export function createFreeCutMcpServer(options = {}) {
       title: 'List rigged blocks',
       description:
         'List the committed illustration blocks an animation can be built from — their parts, ' +
-        'named slots, and the gestures each rig can perform. Call this before addBlock so you ' +
-        'choose parts and gestures that exist; blocks cannot be authored, only selected.',
+        'named slots, and the gestures and poses each rig can perform. Call this before addBlock ' +
+        'so you choose parts, gestures and poses that exist. When nothing here fits the subject, ' +
+        'draw one and rig it with defineBlock rather than improvising paths.',
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async () => success(await api.requestJson('/v1/blocks')),
+  )
+
+  registerTool(
+    server,
+    'export_block',
+    {
+      title: 'Export a project block',
+      description:
+        "Read one of a project's own rigged blocks as a portable record. Write it to a file to " +
+        'keep, or hand it straight to import_block to copy it into another project.',
+      inputSchema: z.object({ projectId, blockId: z.string() }),
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ projectId: id, blockId }) => success(await findProjectBlock(api, id, blockId)),
+  )
+
+  registerTool(
+    server,
+    'copy_block',
+    {
+      title: 'Copy a block between projects',
+      description:
+        "Copy one project's rigged block into another, re-validating the rig on the way in. " +
+        'Use blockId to store it under a different id when the target already has that name.',
+      inputSchema: z.object({
+        fromProjectId: projectId,
+        toProjectId: projectId,
+        blockId: z.string(),
+        asBlockId: z.string().optional(),
+        expectedRevision: revision.optional(),
+        force: z.boolean().default(false),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ fromProjectId, toProjectId, blockId, asBlockId, expectedRevision, force }) => {
+      const found = await findProjectBlock(api, fromProjectId, blockId)
+      return success(
+        await api.requestJson(`/v1/projects/${encodeURIComponent(toProjectId)}/edit`, {
+          method: 'POST',
+          body: {
+            ops: [
+              {
+                op: 'importBlock',
+                block: found,
+                fromProjectId,
+                ...(asBlockId ? { blockId: asBlockId } : {}),
+              },
+            ],
+            // A copy is the whole point of the call; a dry run would do nothing.
+            persist: true,
+            expectedRevision,
+            force: expectedRevision ? force : true,
+          },
+        }),
+        `Copied "${blockId}" into ${toProjectId}.`,
+      )
+    },
   )
 
   registerTool(

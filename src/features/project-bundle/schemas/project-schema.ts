@@ -106,25 +106,16 @@ const vectorPropertyKeyframesSchema = z.object({
 
 const linkedPropertyExpressionSchema = z.object({
   type: z.literal('link'),
-  targetProperty: z.union([
-    animatablePropertySchema,
-    z.enum(['position', 'scale', 'anchor']),
-  ]),
+  targetProperty: z.union([animatablePropertySchema, z.enum(['position', 'scale', 'anchor'])]),
   sourceItemId: z.string().min(1),
-  sourceProperty: z.union([
-    animatablePropertySchema,
-    z.enum(['position', 'scale', 'anchor']),
-  ]),
+  sourceProperty: z.union([animatablePropertySchema, z.enum(['position', 'scale', 'anchor'])]),
   enabled: z.boolean(),
   timeOffsetFrames: z.number(),
 })
 
 const propertyExpressionSchema = z.object({
   type: z.literal('expression'),
-  targetProperty: z.union([
-    animatablePropertySchema,
-    z.enum(['position', 'scale', 'anchor']),
-  ]),
+  targetProperty: z.union([animatablePropertySchema, z.enum(['position', 'scale', 'anchor'])]),
   source: z.string(),
   enabled: z.boolean(),
 })
@@ -439,12 +430,7 @@ const compositionControlSchema = z.object({
       id: z.string().min(1),
       name: z.string().min(1),
       targetItemId: z.string().min(1),
-      property: z.enum([
-        'text.text',
-        'text.color',
-        'shape.fillColor',
-        'shape.strokeColor',
-      ]),
+      property: z.enum(['text.text', 'text.color', 'shape.fillColor', 'shape.strokeColor']),
       kind: z.enum(['text', 'color']),
       defaultValue: z.string(),
     }),
@@ -732,6 +718,95 @@ const projectResolutionSchema = z.object({
 // Project Schema
 // ============================================================================
 
+// ============================================================================
+// Project Block Schema
+// ============================================================================
+
+/**
+ * Rigged blocks a project owns.
+ *
+ * Validated structurally here and again by `validateBlock` before anything is
+ * lowered onto a timeline — this layer only guarantees the record is well
+ * formed, not that the rig holds together.
+ */
+const paletteRoleSchema = z.enum([
+  'ink',
+  'inkMuted',
+  'surface',
+  'surfaceDeep',
+  'primary',
+  'secondary',
+  'accent',
+  'highlight',
+  'glow',
+  'shadow',
+])
+
+const rigChannelSchema = z.enum(['rotation', 'x', 'y', 'scale', 'scaleX', 'scaleY', 'opacity'])
+
+const blockPointSchema = z.tuple([z.number().finite(), z.number().finite()])
+
+const blockPartSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(120),
+  d: z.string().min(1).max(200_000),
+  parent: z.string().min(1).max(64).optional(),
+  fill: paletteRoleSchema.optional(),
+  stroke: paletteRoleSchema.optional(),
+  strokeWidth: z.number().finite().positive().optional(),
+  z: z.number().finite(),
+  pivot: blockPointSchema.optional(),
+  depth: z.number().finite().min(0).max(5).optional(),
+  opacity: z.number().finite().min(0).max(1).optional(),
+})
+
+const blockSlotSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(120),
+  at: blockPointSchema,
+  partId: z.string().min(1).max(64).optional(),
+})
+
+const secondaryLinkSchema = z.object({
+  id: z.string().min(1).max(64),
+  driverPartId: z.string().min(1).max(64),
+  followerPartId: z.string().min(1).max(64),
+  driverChannel: rigChannelSchema,
+  followerChannel: rigChannelSchema,
+  gain: z.number().finite(),
+  lagSeconds: z.number().finite().min(0).max(5),
+  stiffness: z.number().finite().min(0.01).max(1).optional(),
+  damping: z.number().finite().min(0).max(1).optional(),
+})
+
+const blockDefinitionSchema = z.object({
+  id: z.string().min(1).max(80),
+  name: z.string().min(1).max(120),
+  category: z.enum(['character', 'world', 'prop']),
+  width: z.number().finite().positive(),
+  height: z.number().finite().positive(),
+  parts: z.array(blockPartSchema).min(1).max(400),
+  slots: z.array(blockSlotSchema).max(50).optional(),
+  gestures: z.array(z.string().min(1).max(64)).max(100).optional(),
+  poses: z.array(z.string().min(1).max(64)).max(100).optional(),
+  secondary: z.array(secondaryLinkSchema).max(50).optional(),
+})
+
+const projectBlockSchema = z.object({
+  definition: blockDefinitionSchema,
+  createdAt: z.number().int().min(0),
+  updatedAt: z.number().int().min(0),
+  origin: z
+    .union([
+      z.object({
+        kind: z.literal('svg'),
+        sourceName: z.string().max(200).optional(),
+      }),
+      z.object({ kind: z.literal('copied'), fromProjectId: z.string().min(1).max(64) }),
+    ])
+    .optional(),
+})
+
 const projectSchema = z
   .object({
     id: z.string().min(1),
@@ -746,6 +821,7 @@ const projectSchema = z
     rootFolderName: z.string().optional(),
     metadata: projectResolutionSchema,
     timeline: timelineSchema.optional(),
+    blocks: z.array(projectBlockSchema).max(200).optional(),
   })
   .strict()
 

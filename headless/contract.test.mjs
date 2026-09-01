@@ -158,6 +158,26 @@ const samples = {
       { text: 'is', start: 0.2, end: 0.35 },
     ],
   },
+  listBlocks: { op: 'listBlocks' },
+  removeBlock: { op: 'removeBlock', blockId: 'local-robot' },
+  updateBlock: {
+    op: 'updateBlock',
+    blockId: 'local-robot',
+    definition: { name: 'Robot mk2' },
+  },
+  importBlock: {
+    op: 'importBlock',
+    fromProjectId: 'other-project',
+    blockId: 'local-robot-copy',
+    definition: {
+      id: 'local-robot',
+      name: 'Robot',
+      category: 'prop',
+      width: 100,
+      height: 200,
+      parts: [{ id: 'body', label: 'Body', d: 'M 0 0 L 4 0 L 4 4 Z', fill: 'primary', z: 0 }],
+    },
+  },
   importSvg: { op: 'importSvg', source: '<svg/>', size: 480 },
   morphPath: {
     op: 'morphPath',
@@ -284,6 +304,44 @@ test('directed actions and camera moves need exactly one target form', () => {
   assert.equal(
     ok({ ...camera, intent: 'push', planes: [{ idPrefix: 'a', itemId: 'b', plane: 1 }] }),
     false,
+  )
+})
+
+test('project blocks cannot shadow or delete committed artwork', () => {
+  const ok = (value) => editOpSchema.safeParse(value).success
+  // The `local-` namespace is the guarantee: committed ids are unreachable by
+  // every op that writes to the project library.
+  assert.equal(ok({ op: 'removeBlock', blockId: 'local-robot' }), true)
+  assert.equal(ok({ op: 'removeBlock', blockId: 'character-astronaut' }), false)
+  assert.equal(ok({ op: 'updateBlock', blockId: 'character-astronaut', definition: {} }), false)
+
+  const rig = {
+    id: 'local-a',
+    name: 'A',
+    category: 'prop',
+    width: 10,
+    height: 10,
+    parts: [{ id: 'p', label: 'P', d: 'M 0 0 L 1 0 L 1 1 Z', fill: 'ink', z: 0 }],
+  }
+  assert.equal(ok({ op: 'importBlock', definition: rig }), true)
+  assert.equal(ok({ op: 'importBlock', block: { definition: rig } }), true)
+  // One source or the other, never both — otherwise which one wins is a guess.
+  assert.equal(ok({ op: 'importBlock', definition: rig, block: { definition: rig } }), false)
+  assert.equal(ok({ op: 'importBlock' }), false)
+  assert.equal(ok({ op: 'importBlock', definition: rig, blockId: 'character-astronaut' }), false)
+  // A rig with no parts would validate structurally and draw nothing.
+  assert.equal(ok({ op: 'importBlock', definition: { ...rig, parts: [] } }), false)
+
+  assert.equal(
+    ok({
+      op: 'defineBlock',
+      blockId: 'local-a',
+      name: 'A',
+      source: '<svg/>',
+      parts: [{ id: 'p' }],
+      persist: true,
+    }),
+    true,
   )
 })
 
@@ -446,12 +504,15 @@ test('validation errors and capabilities are machine-readable and bounded', () =
   assert.ok(result.schemas.frame)
   assert.ok(result.schemas.layout)
   // Guards against an unbounded capabilities document, which every client fetches
-  // and which an agent reads into its context. The op union is what grows: it is
-  // ~20KB across 28 operations and gains ~1KB per operation added. Emitting it
-  // with `reused: 'ref'` was measured LARGER (24KB vs 20KB) — the shared
-  // sub-schemas are not repeated enough to pay for the $defs indirection. If this
-  // is reached again, move `schemas.edit` behind an explicit request rather than
-  // raising the number a second time.
+  // and which an agent reads into its context. The op union is what grows: ~32KB
+  // across 33 operations, gaining roughly 1KB per operation.
+  //
+  // It is already emitted with `reused: 'ref'`, which became worthwhile once a
+  // whole block definition appeared in two ops (32KB against 36KB inline) —
+  // earlier, with nothing large repeated, the same option measured BIGGER. There
+  // is no third saving of that kind available, so if this bound is reached again
+  // the answer is to move `schemas.edit` behind an explicit request, not to raise
+  // the number a second time.
   assert.ok(
     JSON.stringify(result).length < 48_000,
     `capabilities is ${JSON.stringify(result).length} bytes`,

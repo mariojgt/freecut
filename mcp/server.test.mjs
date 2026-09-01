@@ -58,6 +58,8 @@ test('MCP server lists the full editing tool surface and calls the headless API'
   assert.deepEqual(names, [
     'get_capabilities',
     'list_blocks',
+    'export_block',
+    'copy_block',
     'list_projects',
     'get_project',
     'create_project',

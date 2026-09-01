@@ -684,6 +684,122 @@ const cases = [
     },
   },
   {
+    name: 'listBlocks',
+    op: { op: 'listBlocks' },
+    assert: () => {},
+    ops: [{ op: 'listBlocks' }],
+    schemaFailure: { op: 'listBlocks', surprise: true },
+  },
+  {
+    name: 'importBlock',
+    op: {
+      op: 'importBlock',
+      definition: {
+        id: 'local-badge',
+        name: 'Badge',
+        category: 'prop',
+        width: 100,
+        height: 100,
+        parts: [
+          {
+            id: 'body',
+            label: 'Body',
+            d: 'M 10 10 L 90 10 L 90 90 L 10 90 Z',
+            fill: 'accent',
+            z: 0,
+          },
+        ],
+      },
+    },
+    assert: (project) => {
+      assert.equal(project.blocks?.length, 1)
+      assert.equal(project.blocks[0].definition.id, 'local-badge')
+    },
+    failure: {
+      op: 'importBlock',
+      definition: {
+        id: 'local-broken',
+        name: 'Broken',
+        category: 'prop',
+        width: 10,
+        height: 10,
+        parts: [
+          { id: 'p', label: 'P', d: 'M 0 0 L 1 0 L 1 1 Z', parent: 'ghost', fill: 'ink', z: 0 },
+        ],
+      },
+    },
+  },
+  {
+    name: 'updateBlock',
+    op: { op: 'updateBlock', blockId: 'local-badge', definition: { name: 'Badge mk2' } },
+    ops: [
+      {
+        op: 'importBlock',
+        definition: {
+          id: 'local-badge',
+          name: 'Badge',
+          category: 'prop',
+          width: 100,
+          height: 100,
+          parts: [
+            {
+              id: 'body',
+              label: 'Body',
+              d: 'M 10 10 L 90 10 L 90 90 L 10 90 Z',
+              fill: 'accent',
+              z: 0,
+            },
+          ],
+        },
+      },
+      { op: 'updateBlock', blockId: 'local-badge', definition: { name: 'Badge mk2' } },
+    ],
+    assert: (project) => {
+      assert.equal(project.blocks[0].definition.name, 'Badge mk2')
+    },
+    failure: { op: 'updateBlock', blockId: 'local-missing', definition: { name: 'x' } },
+  },
+  {
+    name: 'removeBlock',
+    op: { op: 'removeBlock', blockId: 'local-badge' },
+    ops: [
+      {
+        op: 'importBlock',
+        definition: {
+          id: 'local-badge',
+          name: 'Badge',
+          category: 'prop',
+          width: 100,
+          height: 100,
+          parts: [
+            {
+              id: 'body',
+              label: 'Body',
+              d: 'M 10 10 L 90 10 L 90 90 L 10 90 Z',
+              fill: 'accent',
+              z: 0,
+            },
+          ],
+        },
+      },
+      {
+        op: 'addBlock',
+        blockId: 'local-badge',
+        from: 0,
+        durationInFrames: 30,
+        idPrefix: 'badge',
+      },
+      { op: 'removeBlock', blockId: 'local-badge' },
+    ],
+    assert: (project) => {
+      // The definition is gone and the project no longer carries the key at all.
+      assert.equal(project.blocks, undefined)
+      // What it already drew is untouched: lowered parts are ordinary shapes.
+      assert.equal(project.timeline.items.filter((item) => item.id.startsWith('badge-')).length, 1)
+    },
+    failure: { op: 'removeBlock', blockId: 'local-never-existed' },
+  },
+  {
     name: 'setNarration',
     op: {
       op: 'setNarration',

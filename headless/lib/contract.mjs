@@ -140,6 +140,61 @@ const narrationWord = z
   })
   .strict()
 
+const blockPartShape = z
+  .object({
+    id: id,
+    label: z.string().min(1).max(120),
+    d: z.string().min(1).max(200_000),
+    parent: id.optional(),
+    fill: paletteRole.optional(),
+    stroke: paletteRole.optional(),
+    strokeWidth: finite.positive().optional(),
+    z: finite,
+    pivot: point.optional(),
+    depth: finite.min(0).max(5).optional(),
+    opacity: finite.min(0).max(1).optional(),
+  })
+  .strict()
+
+const blockSlotShape = z
+  .object({
+    id: id,
+    label: z.string().min(1).max(120),
+    at: point,
+    partId: id.optional(),
+  })
+  .strict()
+
+const secondaryLinkShape = z
+  .object({
+    id: id,
+    driverPartId: id,
+    followerPartId: id,
+    driverChannel: rigChannel,
+    followerChannel: rigChannel,
+    gain: finite,
+    lagSeconds: finite.min(0).max(5),
+    stiffness: finite.min(0.01).max(1).optional(),
+    damping: finite.min(0).max(1).optional(),
+  })
+  .strict()
+
+/** A whole rig, as carried between projects or through a file. */
+const blockDefinitionShape = z
+  .object({
+    id: z.string().min(1).max(80),
+    name: z.string().min(1).max(120),
+    category: z.enum(['character', 'world', 'prop']),
+    width: finite.positive(),
+    height: finite.positive(),
+    parts: z.array(blockPartShape).min(1).max(400),
+    slots: z.array(blockSlotShape).max(50).optional(),
+    gestures: z.array(id).max(100).optional(),
+    poses: z.array(id).max(100).optional(),
+    secondary: z.array(secondaryLinkShape).max(50).optional(),
+  })
+  .strict()
+
 const MOTION_ACTIONS = ['enter', 'exit', 'emphasize', 'moveTo', 'shake', 'reveal']
 const MOTION_DIRECTIONS = ['left', 'right', 'up', 'down', 'in', 'out']
 const CAMERA_INTENTS = ['push', 'pull', 'pan-left', 'pan-right', 'rise', 'settle']
@@ -513,6 +568,41 @@ const opSchemas = [
       margin: finite.min(0).max(0.9).optional(),
     })
     .strict(),
+  z.object({ op: z.literal('listBlocks') }).strict(),
+  z.object({ op: z.literal('removeBlock'), blockId: localBlockId }).strict(),
+  z
+    .object({
+      op: z.literal('updateBlock'),
+      blockId: localBlockId,
+      /** Fields to replace. The id is fixed; rename by importing under a new one. */
+      definition: blockDefinitionShape.partial().omit({ id: true }),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('importBlock'),
+      /** A whole project-block record, as exported. */
+      block: z
+        .object({
+          definition: blockDefinitionShape,
+          createdAt: z.number().int().min(0).optional(),
+          updatedAt: z.number().int().min(0).optional(),
+          origin: z.record(z.string(), z.unknown()).optional(),
+        })
+        .strict()
+        .optional(),
+      /** Or just the rig. */
+      definition: blockDefinitionShape.optional(),
+      /** Store it under a different id, so a copy need not collide. */
+      blockId: localBlockId.optional(),
+      /** Recorded as provenance when copying from another project. */
+      fromProjectId: id.optional(),
+    })
+    .strict()
+    .refine(
+      (value) => Boolean(value.block) !== Boolean(value.definition),
+      'provide exactly one of block or definition',
+    ),
   z
     .object({
       op: z.literal('setNarration'),
@@ -537,6 +627,11 @@ const opSchemas = [
       op: z.literal('defineBlock'),
       /** Namespaced so it cannot collide with or shadow a committed block. */
       blockId: localBlockId,
+      /**
+       * Save it on the project. Without this the definition lives for one edit
+       * call — right for a one-off, wrong for a character used across sessions.
+       */
+      persist: z.boolean().optional(),
       name: z.string().min(1).max(120),
       category: z.enum(['character', 'world', 'prop']).optional(),
       source: z.string().min(1).max(4_000_000),
@@ -745,6 +840,10 @@ export const EDIT_OPERATION_NAMES = [
   'setCamera',
   'defineBlock',
   'setNarration',
+  'listBlocks',
+  'removeBlock',
+  'updateBlock',
+  'importBlock',
   'importSvg',
   'morphPath',
 ]
@@ -774,6 +873,11 @@ function samplesDescription(name) {
     removeEffect: 'Remove an existing item effect',
     setTransform: 'Update an item transform',
     addBlock: `Add a rigged illustration block (${BLOCK_IDS.join(', ')}, or a local- id from defineBlock) with optional gestures (${GESTURE_IDS.join(', ')})`,
+    listBlocks: "List the committed library and this project's own rigged blocks",
+    removeBlock: "Delete one of this project's blocks; items already placed keep their geometry",
+    updateBlock: "Replace fields on one of this project's blocks, re-validating the rig",
+    importBlock:
+      'Add a rig exported from a file or copied from another project, re-validated on the way in',
     setNarration:
       'Attach word timings from a transcript so beats can be cued to the read. Ops that take a ' +
       'beat then accept fromCue/untilCue instead of frame numbers, and applyPose steps accept ' +
@@ -1174,7 +1278,11 @@ export function capabilities() {
       motion: z.toJSONSchema(motionRequestSchema, { target: 'draft-7' }),
       check: z.toJSONSchema(checkRequestSchema, { target: 'draft-7' }),
       contactSheet: z.toJSONSchema(contactSheetRequestSchema, { target: 'draft-7' }),
-      edit: z.toJSONSchema(editRequestSchema, { target: 'draft-7' }),
+      // `reused: 'ref'` only for this one: the op union repeats large shapes (a
+      // whole block definition appears in two ops), so hoisting them into $defs
+      // is measurably smaller — 32KB against 36KB inline. The small schemas
+      // share nothing, where the same option costs more than it saves.
+      edit: z.toJSONSchema(editRequestSchema, { target: 'draft-7', reused: 'ref' }),
       projectCreate: z.toJSONSchema(projectCreateRequestSchema, { target: 'draft-7' }),
       projectSave: z.toJSONSchema(projectSaveRequestSchema, { target: 'draft-7' }),
       projectUpdate: z.toJSONSchema(projectUpdateRequestSchema, { target: 'draft-7' }),

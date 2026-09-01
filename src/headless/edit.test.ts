@@ -1482,3 +1482,247 @@ describe('timing a cut to the recorded read', () => {
     expect((results[0] as { detail: { words: number } }).detail.words).toBe(WORDS.length)
   })
 })
+
+describe('a project that owns its own blocks', () => {
+  const FIGURE = [
+    '<svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">',
+    '  <rect id="torso" x="70" y="100" width="60" height="140" fill="#4477ff"/>',
+    '  <rect id="arm" x="120" y="110" width="24" height="90" fill="#223355"/>',
+    '</svg>',
+  ].join('\n')
+
+  const define = (overrides: Record<string, unknown> = {}): EditOp => ({
+    op: 'defineBlock',
+    blockId: 'local-figure',
+    name: 'Figure',
+    category: 'character',
+    source: FIGURE,
+    persist: true,
+    parts: [
+      { id: 'torso', fill: 'primary' },
+      { id: 'arm', parent: 'torso', pivot: [130, 115], fill: 'ink' },
+    ],
+    ...overrides,
+  })
+
+  it('saves a definition onto the project', async () => {
+    const { project, results } = await editProject({ project: baseProject(), ops: [define()] })
+    expect((results[0] as { detail: { persisted: boolean } }).detail.persisted).toBe(true)
+    expect(project.blocks?.map((entry) => entry.definition.id)).toEqual(['local-figure'])
+    expect(project.blocks?.[0]?.definition.parts).toHaveLength(2)
+  })
+
+  it('survives into a later call, which call-scoped definitions do not', async () => {
+    const first = await editProject({ project: baseProject(), ops: [define()] })
+    const { project } = await editProject({
+      project: first.project,
+      ops: [{ op: 'addBlock', blockId: 'local-figure', durationInFrames: 60, idPrefix: 'fig' }],
+    })
+    expect(project.timeline?.items?.filter((item) => item.id.startsWith('fig-'))).toHaveLength(2)
+  })
+
+  it('still scopes an unpersisted definition to its call', async () => {
+    const first = await editProject({
+      project: baseProject(),
+      ops: [define({ persist: false })],
+    })
+    expect(first.project.blocks).toBeUndefined()
+    await expect(
+      editProject({
+        project: first.project,
+        ops: [{ op: 'addBlock', blockId: 'local-figure', durationInFrames: 60 }],
+      }),
+    ).rejects.toThrow(/defineBlock it in this same call/)
+  })
+
+  it('does not grow a blocks key on a project that owns none', async () => {
+    // An empty array would churn every project file on every edit.
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [{ op: 'addText', text: 'hi', from: 0, durationInFrames: 30, trackId: 't_v' }],
+    })
+    expect('blocks' in project).toBe(false)
+  })
+
+  it('lists committed and project blocks separately', async () => {
+    const first = await editProject({ project: baseProject(), ops: [define()] })
+    const { results } = await editProject({
+      project: first.project,
+      ops: [{ op: 'listBlocks' }],
+    })
+    const detail = (results[0] as { detail: { committed: unknown[]; project: unknown[] } }).detail
+    expect(detail.committed.length).toBeGreaterThan(5)
+    expect(detail.project).toHaveLength(1)
+  })
+
+  it('edits a saved rig and re-validates it', async () => {
+    const first = await editProject({ project: baseProject(), ops: [define()] })
+    const { project } = await editProject({
+      project: first.project,
+      ops: [{ op: 'updateBlock', blockId: 'local-figure', definition: { name: 'Figure mk2' } }],
+    })
+    expect(project.blocks?.[0]?.definition.name).toBe('Figure mk2')
+    expect(project.blocks?.[0]?.updatedAt).toBeGreaterThanOrEqual(
+      project.blocks?.[0]?.createdAt ?? 0,
+    )
+  })
+
+  it('refuses an edit that would break the rig', async () => {
+    // An edit can orphan a child exactly as easily as a bad definition can.
+    const first = await editProject({ project: baseProject(), ops: [define()] })
+    await expect(
+      editProject({
+        project: first.project,
+        ops: [
+          {
+            op: 'updateBlock',
+            blockId: 'local-figure',
+            definition: {
+              parts: [
+                {
+                  id: 'arm',
+                  label: 'Arm',
+                  d: 'M 0 0 L 4 0 L 4 4 Z',
+                  parent: 'ghost',
+                  fill: 'ink',
+                  z: 0,
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/not sound/)
+  })
+
+  it('removes a saved rig without disturbing what it already drew', async () => {
+    const placed = await editProject({
+      project: baseProject(),
+      ops: [
+        define(),
+        { op: 'addBlock', blockId: 'local-figure', durationInFrames: 60, idPrefix: 'fig' },
+      ],
+    })
+    const { project } = await editProject({
+      project: placed.project,
+      ops: [{ op: 'removeBlock', blockId: 'local-figure' }],
+    })
+    expect(project.blocks).toBeUndefined()
+    // The items are ordinary shapes once lowered, so the scene is untouched.
+    expect(project.timeline?.items?.filter((item) => item.id.startsWith('fig-'))).toHaveLength(2)
+  })
+
+  it('refuses to remove or edit committed artwork', async () => {
+    for (const op of [
+      { op: 'removeBlock', blockId: 'character-astronaut' },
+      { op: 'updateBlock', blockId: 'character-astronaut', definition: { name: 'x' } },
+    ] as EditOp[]) {
+      await expect(editProject({ project: baseProject(), ops: [op] })).rejects.toThrow()
+    }
+  })
+
+  it('never lets a project block shadow committed artwork', async () => {
+    // The registry is consulted first, whatever a project calls its own blocks.
+    const first = await editProject({ project: baseProject(), ops: [define()] })
+    const forged = {
+      ...first.project,
+      blocks: [
+        {
+          ...first.project.blocks![0]!,
+          definition: { ...first.project.blocks![0]!.definition, id: 'character-astronaut' },
+        },
+      ],
+    }
+    const { project } = await editProject({
+      project: forged as Project,
+      ops: [
+        {
+          op: 'addBlock',
+          blockId: 'character-astronaut',
+          durationInFrames: 60,
+          idPrefix: 'real',
+        },
+      ],
+    })
+    // 17 parts means the committed astronaut won, not the two-part forgery.
+    expect(project.timeline?.items?.filter((item) => item.id.startsWith('real-'))).toHaveLength(17)
+  })
+})
+
+describe('moving a rig between projects', () => {
+  const RIG = {
+    id: 'local-badge',
+    name: 'Badge',
+    category: 'prop' as const,
+    width: 100,
+    height: 100,
+    parts: [
+      { id: 'body', label: 'Body', d: 'M 10 10 L 90 10 L 90 90 L 10 90 Z', fill: 'accent', z: 0 },
+    ],
+  }
+
+  it('imports a rig and records where it came from', async () => {
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [{ op: 'importBlock', definition: RIG, fromProjectId: 'other-project' }],
+    })
+    expect(project.blocks?.[0]?.definition.id).toBe('local-badge')
+    expect(project.blocks?.[0]?.origin).toEqual({
+      kind: 'copied',
+      fromProjectId: 'other-project',
+    })
+  })
+
+  it('places an imported rig immediately', async () => {
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [
+        { op: 'importBlock', definition: RIG },
+        { op: 'addBlock', blockId: 'local-badge', durationInFrames: 60, idPrefix: 'b' },
+      ],
+    })
+    expect(project.timeline?.items?.filter((item) => item.id.startsWith('b-'))).toHaveLength(1)
+  })
+
+  it('re-validates on the way in, because a travelled rig had no reviewer', async () => {
+    await expect(
+      editProject({
+        project: baseProject(),
+        ops: [
+          {
+            op: 'importBlock',
+            definition: { ...RIG, parts: [{ ...RIG.parts[0]!, parent: 'ghost' }] },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/not sound/)
+  })
+
+  it('imports under a new id so a copy need not collide', async () => {
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [
+        { op: 'importBlock', definition: RIG },
+        { op: 'importBlock', definition: RIG, blockId: 'local-badge-2' },
+      ],
+    })
+    expect(project.blocks?.map((entry) => entry.definition.id)).toEqual([
+      'local-badge',
+      'local-badge-2',
+    ])
+  })
+
+  it('round-trips a whole exported record', async () => {
+    const source = await editProject({
+      project: baseProject(),
+      ops: [{ op: 'importBlock', definition: RIG }],
+    })
+    const exported = source.project.blocks![0]!
+    const { project, results } = await editProject({
+      project: baseProject(),
+      ops: [{ op: 'importBlock', block: exported, fromProjectId: 'source' }],
+    })
+    expect((results[0] as { detail: { replaced: boolean } }).detail.replaced).toBe(false)
+    expect(project.blocks?.[0]?.definition).toEqual(exported.definition)
+  })
+})

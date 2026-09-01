@@ -50,6 +50,7 @@ import type {
   GestureDefinition,
   PoseDefinition,
 } from '@/shared/graphics/blocks/types'
+import type { ProjectBlock } from '@/types/project'
 import { compileDirectedAction } from '@/shared/graphics/scene/direction'
 import type {
   DirectedKeyframe,
@@ -123,6 +124,10 @@ export type EditOperationName =
   | 'setCamera'
   | 'defineBlock'
   | 'setNarration'
+  | 'listBlocks'
+  | 'removeBlock'
+  | 'updateBlock'
+  | 'importBlock'
   | 'importSvg'
   | 'morphPath'
 
@@ -202,6 +207,15 @@ function resolveOperationRefs(
 // Canvas of the project being edited (set per editProject call) — transform-parent
 // binds resolve world transforms against it.
 let editCanvas = { width: 1920, height: 1080, fps: 30 }
+
+/**
+ * Wall clock for this edit call, sampled once.
+ *
+ * Every record written during a call shares it, so two blocks saved together
+ * carry the same timestamp and a project round-trips byte-identically when
+ * nothing actually changed.
+ */
+let editNow = 0
 
 const asString = (value: unknown, fallback?: string): string | undefined =>
   typeof value === 'string' ? value : fallback
@@ -514,15 +528,22 @@ function toItemRelative(
 }
 
 /**
- * Blocks defined during this edit call.
+ * Blocks defined during this edit call but not saved.
  *
- * Deliberately call-scoped rather than persisted: a generated rig is a product of
- * the request that authored it, and putting it in the project document would mean
- * a schema change plus a migration for something the caller can simply re-send.
- * The consequence is stated on the op — define and place in the same call — and
- * one definition can be placed as many times as the call likes.
+ * `defineBlock` without `persist` still works this way: a rig used once, for one
+ * request, has no reason to live in the document. Passing `persist: true` moves
+ * it to the project instead, where it survives the session and travels with an
+ * export.
  */
 const adHocBlocks = new Map<string, BlockDefinition>()
+
+/**
+ * Blocks the project owns, keyed by id.
+ *
+ * Seeded from `project.blocks` at the start of a call and written back at the
+ * end, so ops read and edit them like any other project state.
+ */
+let projectBlocks = new Map<string, ProjectBlock>()
 
 /**
  * Work out which block an instance came from, by how much of it each explains.
@@ -535,7 +556,7 @@ const adHocBlocks = new Map<string, BlockDefinition>()
  */
 function inferBlock(idPrefix: string, owned: readonly TimelineItem[]): BlockDefinition | undefined {
   const ownedIds = new Set(owned.map((item) => item.id))
-  const scored = [...BLOCKS.values(), ...adHocBlocks.values()]
+  const scored = availableBlocks()
     .map((block) => ({
       block,
       score: block.parts.filter((part) => ownedIds.has(`${idPrefix}-${part.id}`)).length,
@@ -589,9 +610,23 @@ function beatFromOp(op: Record<string, unknown>): { from: number; durationInFram
   return { from: beat.from, durationInFrames: beat.durationInFrames }
 }
 
-/** Committed blocks first; a generated one can never shadow reviewed artwork. */
+/**
+ * Committed artwork first, then the project's own, then this call's.
+ *
+ * The order is the guarantee: nothing authored at request time can shadow a
+ * reviewed block, whatever it calls itself.
+ */
 function lookupBlock(id: string): BlockDefinition | undefined {
-  return getBlock(id) ?? adHocBlocks.get(id)
+  return getBlock(id) ?? projectBlocks.get(id)?.definition ?? adHocBlocks.get(id)
+}
+
+/** Every block this call may place, committed and otherwise. */
+function availableBlocks(): BlockDefinition[] {
+  return [
+    ...BLOCKS.values(),
+    ...[...projectBlocks.values()].map((entry) => entry.definition),
+    ...adHocBlocks.values(),
+  ]
 }
 
 function requireItem(id: string, field = 'id'): TimelineItem {
@@ -1392,6 +1427,86 @@ function applyOp(op: EditOp): unknown {
       )
       return { intent, targets: targets.length, keyframes: relative.length }
     }
+    case 'listBlocks': {
+      return {
+        committed: [...BLOCKS.values()].map((block) => ({
+          blockId: block.id,
+          name: block.name,
+          category: block.category,
+          parts: block.parts.length,
+        })),
+        project: [...projectBlocks.values()].map((entry) => ({
+          blockId: entry.definition.id,
+          name: entry.definition.name,
+          category: entry.definition.category,
+          parts: entry.definition.parts.length,
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt,
+          origin: entry.origin,
+        })),
+      }
+    }
+    case 'removeBlock': {
+      const blockId = asString(op.blockId)
+      if (!blockId) throw new Error('removeBlock requires `blockId`')
+      if (getBlock(blockId)) {
+        throw new Error(`removeBlock: "${blockId}" is committed artwork and cannot be removed`)
+      }
+      if (!projectBlocks.delete(blockId)) {
+        throw new Error(`removeBlock: this project has no block "${blockId}"`)
+      }
+      // Items already placed keep their geometry — they are ordinary shapes once
+      // lowered — so removing a definition never breaks an existing scene.
+      return { blockId, removed: true }
+    }
+    case 'updateBlock': {
+      const blockId = asString(op.blockId)
+      if (!blockId) throw new Error('updateBlock requires `blockId`')
+      const entry = projectBlocks.get(blockId)
+      if (!entry) {
+        throw new Error(
+          getBlock(blockId)
+            ? `updateBlock: "${blockId}" is committed artwork and cannot be edited`
+            : `updateBlock: this project has no block "${blockId}"`,
+        )
+      }
+
+      const patch = (op.definition ?? {}) as Partial<BlockDefinition>
+      const next: BlockDefinition = { ...entry.definition, ...patch, id: blockId }
+      // Re-validated, because an edit can break a rig exactly as easily as a
+      // bad definition can: a renamed part orphans its children.
+      assertDefinedBlockIsSound(next)
+      projectBlocks.set(blockId, { ...entry, definition: next, updatedAt: editNow })
+      return { blockId, parts: next.parts.length }
+    }
+    case 'importBlock': {
+      const entry = op.block as ProjectBlock | undefined
+      const definition = (entry?.definition ?? op.definition) as BlockDefinition | undefined
+      if (!definition) throw new Error('importBlock requires `block` or `definition`')
+
+      const blockId = asString(op.blockId) ?? definition.id
+      if (getBlock(blockId)) {
+        throw new Error(`importBlock: "${blockId}" is a committed block id`)
+      }
+      const imported: BlockDefinition = { ...definition, id: blockId }
+      // Re-validated on the way in: a definition that travelled through a file
+      // or another project has had no reviewer since it left.
+      assertDefinedBlockIsSound(imported)
+
+      const existing = projectBlocks.get(blockId)
+      const fromProjectId = asString(op.fromProjectId)
+      projectBlocks.set(blockId, {
+        definition: imported,
+        createdAt: existing?.createdAt ?? entry?.createdAt ?? editNow,
+        updatedAt: editNow,
+        ...(fromProjectId
+          ? { origin: { kind: 'copied' as const, fromProjectId } }
+          : entry?.origin
+            ? { origin: entry.origin }
+            : {}),
+      })
+      return { blockId, parts: imported.parts.length, replaced: Boolean(existing) }
+    }
     case 'setNarration': {
       const supplied = Array.isArray(op.words) ? op.words : []
       const segments = Array.isArray(op.segments) ? op.segments : []
@@ -1436,10 +1551,23 @@ function applyOp(op: EditOp): unknown {
       // reviewer, so the validator is the only thing between a mistyped parent
       // and a limb that silently never moves.
       assertDefinedBlockIsSound(block)
-      adHocBlocks.set(blockId, block)
+
+      const persist = op.persist === true
+      if (persist) {
+        const existing = projectBlocks.get(blockId)
+        projectBlocks.set(blockId, {
+          definition: block,
+          createdAt: existing?.createdAt ?? editNow,
+          updatedAt: editNow,
+          origin: { kind: 'svg', ...(asString(op.name) && { sourceName: asString(op.name)! }) },
+        })
+      } else {
+        adHocBlocks.set(blockId, block)
+      }
 
       return {
         blockId,
+        persisted: persist,
         parts: block.parts.length,
         width: block.width,
         height: block.height,
@@ -1666,6 +1794,8 @@ export async function editProject(input: HeadlessEditInput): Promise<HeadlessEdi
   seedMediaLibrary(input.media)
   adHocBlocks.clear()
   narration = []
+  editNow = Date.now()
+  projectBlocks = new Map((migrated.blocks ?? []).map((entry) => [entry.definition.id, entry]))
 
   log.info('Headless edit starting', { ops: input.ops.length })
 
@@ -1678,9 +1808,18 @@ export async function editProject(input: HeadlessEditInput): Promise<HeadlessEdi
   const timeline = buildTimelineFromStores()
   log.info('Headless edit complete', { applied: results.length })
 
+  // Dropped from the spread first: a conditional add cannot remove a stale key,
+  // so deleting the last block would otherwise leave the old array in place.
+  const { blocks: _previousBlocks, ...withoutBlocks } = migrated
+  const blocks = [...projectBlocks.values()]
   return {
     ok: true,
-    project: { ...migrated, timeline },
+    project: {
+      ...withoutBlocks,
+      timeline,
+      // Absent rather than empty, so a project that owns none does not grow a key.
+      ...(blocks.length > 0 ? { blocks } : {}),
+    },
     applied: results.length,
     results,
   }
