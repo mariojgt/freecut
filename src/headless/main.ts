@@ -1335,6 +1335,9 @@ async function sampleAudio(
   const prepared = await prepareLayout(input)
   const endFrame = lastActiveFrame(prepared.view)
   const frames = planSampleFrames({ ...input, defaultTo: endFrame })
+  // Unlike the transform gates, this one needs the bytes: without registering
+  // the media URLs the mixdown has nothing to decode and reports silence.
+  registerMediaUrls(input.media)
   const composition = buildComposition(prepared.view)
   const mix = await processAudio(composition)
   const report = summarizeAudio(mix, frames, prepared.canvas.fps, endFrame)
