@@ -38,10 +38,7 @@ import { useMarkersStore } from './markers-store'
 import { useTimelineSettingsStore } from './timeline-settings-store'
 import { ROOT_HISTORY_CONTEXT, useTimelineCommandStore } from './timeline-command-store'
 import { useCompositionsStore, type SubComposition } from './compositions-store'
-import {
-  getActiveTabId,
-  useCompositionNavigationStore,
-} from './composition-navigation-store'
+import { getActiveTabId, useCompositionNavigationStore } from './composition-navigation-store'
 import { useSequencesStore } from './sequences-store'
 import { getProject, updateProject, saveProjectThumbnail } from '@/infrastructure/storage'
 import {
@@ -785,8 +782,7 @@ function captureTimelinePersistenceSnapshot(): TimelinePersistenceSnapshot {
     compositions,
     currentFrame: heldRoot ? heldRoot.currentFrame : playback.currentFrame,
     zoomLevel: heldRoot?.zoomLevel ?? rootView?.zoomLevel ?? zoom.level,
-    scrollPosition:
-      heldRoot?.scrollPosition ?? rootView?.scrollPosition ?? settings.scrollPosition,
+    scrollPosition: heldRoot?.scrollPosition ?? rootView?.scrollPosition ?? settings.scrollPosition,
     busAudioEq: heldRoot ? heldRoot.busAudioEq : playback.busAudioEq,
     masterBusDb: playback.masterBusDb,
     markers: heldRoot ? heldRoot.markers : markers.markers,
@@ -1083,18 +1079,18 @@ export async function saveTimeline(projectId: string): Promise<void> {
  * dialog side effects. {@link loadTimeline} calls this after reading +
  * migrating from storage; it then runs media validation on top.
  */
-export async function hydrateTimelineStoresFromProject(project: Project): Promise<void> {
-  // Unwind the outgoing runtime context before replacing any live domain
-  // stores. If a Motion composition is active and root items are loaded first,
-  // resetToRoot() mistakes those freshly loaded root items for composition
-  // contents and saves them into the active composition on refresh.
-  useCompositionNavigationStore.getState().resetToRoot()
+export interface HydrateTimelineStoresOptions {
+  /**
+   * Rechecked after all asynchronous preparation and immediately before the
+   * synchronous store swap. Returning false leaves the live editor untouched.
+   */
+  shouldCommit?: () => boolean
+}
 
-  // Swap in this project's saved track heights before any setTracks call, since
-  // that is what resolves each track's height. Heights are a local view
-  // preference and never come out of the project file.
-  loadTrackHeightOverrides(project.id)
-
+export async function hydrateTimelineStoresFromProject(
+  project: Project,
+  options: HydrateTimelineStoresOptions = {},
+): Promise<boolean> {
   if (project.timeline && project.timeline.tracks?.length > 0) {
     const t = project.timeline
 
@@ -1126,6 +1122,41 @@ export async function hydrateTimelineStoresFromProject(project: Project): Promis
     const hydratedItems = await reverseConformService.hydrateItems(
       (t.items || []) as TimelineItem[],
     )
+
+    // Resolve every asynchronous media dependency before touching the live
+    // stores. The MCP follower can then perform one last local-dirty check and
+    // either commit the complete project synchronously or leave it untouched.
+    const hydratedCompositions = await Promise.all(
+      (t.compositions ?? []).map(async (c) => ({
+        id: c.id,
+        name: c.name,
+        editorKind: (c.editorKind === 'composite-2d'
+          ? 'composite-2d'
+          : 'sequence') as CompositionEditorKind,
+        items: await reverseConformService.hydrateItems(c.items as TimelineItem[]),
+        tracks: c.tracks as TimelineTrack[],
+        transitions: (c.transitions ?? []) as Transition[],
+        keyframes: (c.keyframes ?? []) as ItemKeyframes[],
+        fps: c.fps,
+        width: c.width,
+        height: c.height,
+        durationInFrames: c.durationInFrames,
+        ...(c.backgroundColor && { backgroundColor: c.backgroundColor }),
+        compositionControls: c.compositionControls,
+        ...(c.busAudioEq && { busAudioEq: c.busAudioEq }),
+        markers: c.markers ?? [],
+        inPoint: c.inPoint ?? null,
+        outPoint: c.outPoint ?? null,
+      })),
+    )
+
+    if (options.shouldCommit?.() === false) return false
+
+    // Unwind the outgoing runtime context only after the guarded preparation.
+    // From here to the end of hydration there are no awaits, so browser input
+    // cannot interleave with a partial store replacement.
+    useCompositionNavigationStore.getState().resetToRoot()
+    loadTrackHeightOverrides(project.id)
     useItemsStore.getState().setTracks(sortedTracks as TimelineTrack[])
     useItemsStore.getState().setItems(hydratedItems)
     useTransitionsStore.getState().setTransitions((t.transitions || []) as Transition[])
@@ -1138,30 +1169,7 @@ export async function hydrateTimelineStoresFromProject(project: Project): Promis
     usePlaybackStore.getState().setMasterBusDb(t.masterBusDb ?? 0)
 
     // Restore sub-compositions
-    if (t.compositions && t.compositions.length > 0) {
-      const hydratedCompositions = await Promise.all(
-        t.compositions.map(async (c) => ({
-          id: c.id,
-          name: c.name,
-          editorKind: (c.editorKind === 'composite-2d'
-            ? 'composite-2d'
-            : 'sequence') as CompositionEditorKind,
-          items: await reverseConformService.hydrateItems(c.items as TimelineItem[]),
-          tracks: c.tracks as TimelineTrack[],
-          transitions: (c.transitions ?? []) as Transition[],
-          keyframes: (c.keyframes ?? []) as ItemKeyframes[],
-          fps: c.fps,
-          width: c.width,
-          height: c.height,
-          durationInFrames: c.durationInFrames,
-          ...(c.backgroundColor && { backgroundColor: c.backgroundColor }),
-          compositionControls: c.compositionControls,
-          ...(c.busAudioEq && { busAudioEq: c.busAudioEq }),
-          markers: c.markers ?? [],
-          inPoint: c.inPoint ?? null,
-          outPoint: c.outPoint ?? null,
-        })),
-      )
+    if (hydratedCompositions.length > 0) {
       useCompositionsStore.getState().setCompositions(hydratedCompositions)
     } else {
       useCompositionsStore.getState().setCompositions([])
@@ -1170,10 +1178,9 @@ export async function hydrateTimelineStoresFromProject(project: Project): Promis
     // Restore standalone timeline tabs (multi-timeline). Filter to ids that
     // resolve to a hydrated composition so tabs never dangle.
     const hydratedSequenceIds = new Set(
-      useCompositionsStore
-        .getState()
-        .compositions.filter((composition) => composition.editorKind === 'sequence')
-        .map((c) => c.id),
+      hydratedCompositions
+        .filter((composition) => composition.editorKind === 'sequence')
+        .map((composition) => composition.id),
     )
     useSequencesStore.getState().reset()
     useSequencesStore
@@ -1195,6 +1202,11 @@ export async function hydrateTimelineStoresFromProject(project: Project): Promis
     }
   } else {
     logger.debug('hydrateTimelineStoresFromProject: initializing new project with default track')
+
+    if (options.shouldCommit?.() === false) return false
+
+    useCompositionNavigationStore.getState().resetToRoot()
+    loadTrackHeightOverrides(project.id)
 
     // Initialize with default tracks for new projects
     useItemsStore.getState().setTracks(createDefaultClassicTracks())
@@ -1221,6 +1233,7 @@ export async function hydrateTimelineStoresFromProject(project: Project): Promis
 
   // Clear undo history when loading
   useTimelineCommandStore.getState().clearHistory()
+  return true
 }
 
 const inFlightTimelineLoads = new Map<string, Promise<void>>()
@@ -1230,10 +1243,7 @@ function getTimelineLoadKey(projectId: string, options: LoadTimelineOptions): st
   return JSON.stringify([projectId, options.allowProjectUpgrade === true])
 }
 
-export function loadTimeline(
-  projectId: string,
-  options: LoadTimelineOptions = {},
-): Promise<void> {
+export function loadTimeline(projectId: string, options: LoadTimelineOptions = {}): Promise<void> {
   const loadKey = getTimelineLoadKey(projectId, options)
   const inFlightLoad = inFlightTimelineLoads.get(loadKey)
   if (inFlightLoad) return inFlightLoad

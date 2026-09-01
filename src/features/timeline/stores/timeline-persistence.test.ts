@@ -24,6 +24,32 @@ describe('timeline project hydration', () => {
   beforeEach(() => resetTimelineCompositionTestState())
   afterEach(() => resetTimelineCompositionTestState())
 
+  it('leaves live stores untouched when the final hydration guard declines', async () => {
+    const staleItem = makeTimelineVideoItem({ id: 'local-edit', trackId: rootTrack.id })
+    useItemsStore.getState().setTracks([rootTrack])
+    useItemsStore.getState().setItems([staleItem])
+
+    const applied = await hydrateTimelineStoresFromProject(
+      {
+        id: 'guarded-project',
+        name: 'Guarded project',
+        description: '',
+        createdAt: 1,
+        updatedAt: 1,
+        duration: 10,
+        metadata: { width: 1920, height: 1080, fps: 30 },
+        timeline: {
+          tracks: [rootTrack],
+          items: [makeTimelineVideoItem({ id: 'remote-item', trackId: rootTrack.id })],
+        },
+      },
+      { shouldCommit: () => false },
+    )
+
+    expect(applied).toBe(false)
+    expect(useItemsStore.getState().items.map((item) => item.id)).toEqual(['local-edit'])
+  })
+
   it('unwinds an active Motion composition before hydrating root stores', async () => {
     useItemsStore.getState().setTracks([rootTrack])
     useItemsStore
@@ -120,12 +146,11 @@ describe('timeline project hydration', () => {
 
     await hydrateTimelineStoresFromProject(project)
 
-    const hydratedComposition =
-      useCompositionsStore.getState().compositionById['motion-comp']
+    const hydratedComposition = useCompositionsStore.getState().compositionById['motion-comp']
     expect(hydratedComposition?.durationInFrames).toBe(100)
-    expect(
-      hydratedComposition?.items.map((item) => item.from + item.durationInFrames),
-    ).toEqual([130])
+    expect(hydratedComposition?.items.map((item) => item.from + item.durationInFrames)).toEqual([
+      130,
+    ])
   })
 
   it('preserves versioned RGBA keyframe numbers during project hydration', async () => {

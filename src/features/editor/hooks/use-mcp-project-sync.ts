@@ -19,6 +19,7 @@ import { hydrateTimelineStoresFromProject } from '../deps/timeline-persistence-c
 import { useItemsStore, useTimelineSettingsStore } from '../deps/timeline-store'
 
 const POLL_INTERVAL_MS = 1500
+const LOCAL_DIVERGENCE_KEY_PREFIX = 'freecut:mcp-local-diverged:'
 const logger = createLogger('McpProjectSync')
 
 type EditorMutationRunner = <T>(operation: () => Promise<T>) => Promise<T>
@@ -31,6 +32,31 @@ interface UseMcpProjectSyncOptions {
 
 interface McpProjectSyncControl {
   notePushedRevision: (revision: string | null) => void
+}
+
+function localDivergenceKey(projectId: string): string {
+  return `${LOCAL_DIVERGENCE_KEY_PREFIX}${projectId}`
+}
+
+function readPersistedDivergence(projectId: string): boolean {
+  try {
+    return window.localStorage.getItem(localDivergenceKey(projectId)) === '1'
+  } catch {
+    return false
+  }
+}
+
+function persistDivergence(projectId: string, diverged: boolean): void {
+  try {
+    if (diverged) {
+      window.localStorage.setItem(localDivergenceKey(projectId), '1')
+    } else {
+      window.localStorage.removeItem(localDivergenceKey(projectId))
+    }
+  } catch {
+    // Storage can be unavailable in private/restricted browser contexts. The
+    // in-memory latch still protects the current editor session.
+  }
 }
 
 async function registerServerMedia(project: Project, signal: AbortSignal): Promise<void> {
@@ -50,19 +76,35 @@ async function persistAndHydrateRemoteProject(
   projectId: string,
   rawProject: Project,
   signal: AbortSignal,
-): Promise<void> {
+  shouldCommit: () => boolean,
+  onHydrated: () => void,
+): Promise<boolean> {
   const { project } = migrateProject(rawProject)
   await registerServerMedia(project, signal)
 
-  const savedFrame = usePlaybackStore.getState().currentFrame
+  let savedFrame = usePlaybackStore.getState().currentFrame
+  const hydrated = await hydrateTimelineStoresFromProject(project, {
+    shouldCommit: () => {
+      if (!shouldCommit()) return false
+      savedFrame = usePlaybackStore.getState().currentFrame
+      return true
+    },
+  })
+  if (!hydrated) return false
+
+  // Hydration itself marks timeline stores dirty while swapping their data.
+  // Clear that internal signal immediately after the atomic store commit; any
+  // later user edit will latch divergence again while persistence is queued.
+  onHydrated()
+  const maxEnd = useItemsStore.getState().maxItemEndFrame
+  usePlaybackStore.getState().setCurrentFrame(Math.max(0, Math.min(savedFrame, maxEnd)))
+
   const persisted = await updateProject(projectId, {
     ...project,
     id: projectId,
   })
-  await hydrateTimelineStoresFromProject(project)
-  const maxEnd = useItemsStore.getState().maxItemEndFrame
-  usePlaybackStore.getState().setCurrentFrame(Math.max(0, Math.min(savedFrame, maxEnd)))
   useProjectStore.getState().setCurrentProject(persisted)
+  return true
 }
 
 function canApplyRemote(localDiverged: boolean): boolean {
@@ -84,18 +126,21 @@ export function useMcpProjectSync({
 }: UseMcpProjectSyncOptions): McpProjectSyncControl {
   const observedRevisionRef = useRef<string | null>(null)
   const localDivergedRef = useRef(false)
-  const applyingRemoteRef = useRef(false)
 
-  const notePushedRevision = useCallback((revision: string | null) => {
-    if (!revision) return
-    observedRevisionRef.current = revision
-    localDivergedRef.current = false
-  }, [])
+  const notePushedRevision = useCallback(
+    (revision: string | null) => {
+      if (!revision) return
+      observedRevisionRef.current = revision
+      localDivergedRef.current = false
+      persistDivergence(projectId, false)
+    },
+    [projectId],
+  )
 
   useEffect(() => {
     observedRevisionRef.current = null
-    localDivergedRef.current = useTimelineSettingsStore.getState().isDirty
-    applyingRemoteRef.current = false
+    localDivergedRef.current =
+      useTimelineSettingsStore.getState().isDirty || readPersistedDivergence(projectId)
     if (!enabled) return
 
     const controller = new AbortController()
@@ -104,6 +149,7 @@ export function useMcpProjectSync({
     const unsubscribe = useTimelineSettingsStore.subscribe((state, previous) => {
       if (state.isDirty && !previous.isDirty) {
         localDivergedRef.current = true
+        persistDivergence(projectId, true)
       }
     })
 
@@ -115,13 +161,16 @@ export function useMcpProjectSync({
 
       const applied = await runExclusive(async () => {
         if (!canApplyRemote(localDivergedRef.current)) return false
-        applyingRemoteRef.current = true
-        try {
-          await persistAndHydrateRemoteProject(projectId, resource.project, controller.signal)
-          return true
-        } finally {
-          applyingRemoteRef.current = false
-        }
+        return persistAndHydrateRemoteProject(
+          projectId,
+          resource.project,
+          controller.signal,
+          () => canApplyRemote(localDivergedRef.current),
+          () => {
+            localDivergedRef.current = false
+            persistDivergence(projectId, false)
+          },
+        )
       })
       if (applied) observedRevisionRef.current = resource.revision
     }

@@ -93,10 +93,12 @@ function setDirty(isDirty: boolean): void {
 }
 
 const runExclusive = <T,>(operation: () => Promise<T>) => operation()
+const divergenceKey = 'freecut:mcp-local-diverged:proj1'
 
 describe('useMcpProjectSync', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    window.localStorage.clear()
     mocks.settings.isDirty = false
     mocks.settings.isTimelineLoading = false
     mocks.getHeadlessProject.mockResolvedValue({
@@ -106,7 +108,7 @@ describe('useMcpProjectSync', () => {
     mocks.listHeadlessProjects.mockResolvedValue([{ id: 'proj1', revision: 'sha256:r1' }])
     mocks.listHeadlessMedia.mockResolvedValue([{ id: 'card-1', sourceAvailable: true }])
     mocks.updateProject.mockResolvedValue(remoteProject)
-    mocks.hydrate.mockResolvedValue(undefined)
+    mocks.hydrate.mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -162,6 +164,55 @@ describe('useMcpProjectSync', () => {
     })
     await act(async () => vi.advanceTimersByTimeAsync(1600))
     expect(mocks.hydrate).toHaveBeenCalledTimes(2)
+    unmount()
+  })
+
+  it('aborts a prepared remote swap when the user edits before its atomic commit', async () => {
+    let releasePreparation!: () => void
+    const preparation = new Promise<void>((resolve) => {
+      releasePreparation = resolve
+    })
+    mocks.hydrate.mockImplementation(
+      async (_project: unknown, options: { shouldCommit?: () => boolean }) => {
+        await preparation
+        return options.shouldCommit?.() ?? true
+      },
+    )
+
+    const { unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive }),
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(mocks.hydrate).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      setDirty(true)
+      setDirty(false)
+    })
+    await act(async () => {
+      releasePreparation()
+      await Promise.resolve()
+    })
+
+    expect(mocks.updateProject).not.toHaveBeenCalled()
+    expect(mocks.setCurrentProject).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(divergenceKey)).toBe('1')
+    unmount()
+  })
+
+  it('remembers unsent divergence across refresh until the project is pushed', async () => {
+    window.localStorage.setItem(divergenceKey, '1')
+    const { result, unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+
+    expect(mocks.hydrate).not.toHaveBeenCalled()
+    act(() => result.current.notePushedRevision('sha256:r1'))
+    expect(window.localStorage.getItem(divergenceKey)).toBeNull()
     unmount()
   })
 })
