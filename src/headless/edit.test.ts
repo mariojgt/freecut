@@ -1251,3 +1251,234 @@ describe('rigging art the caller just drew', () => {
     expect(project.timeline?.items?.filter((item) => item.id.startsWith('b-')).length).toBe(3)
   })
 })
+
+describe('timing a cut to the recorded read', () => {
+  /** "You type an email and a password to log in." at 25fps. */
+  const WORDS = [
+    { text: 'You', start: 0.0, end: 0.2 },
+    { text: 'type', start: 0.2, end: 0.5 },
+    { text: 'an', start: 0.5, end: 0.6 },
+    { text: 'Email,', start: 0.6, end: 1.0 },
+    { text: 'and', start: 1.0, end: 1.2 },
+    { text: 'a', start: 1.2, end: 1.3 },
+    { text: 'password', start: 1.3, end: 2.0 },
+    { text: 'to', start: 2.0, end: 2.1 },
+    { text: 'log', start: 2.1, end: 2.4 },
+    { text: 'in.', start: 2.4, end: 2.8 },
+  ]
+
+  const narrate = (): EditOp => ({ op: 'setNarration', words: WORDS })
+
+  const lane = (project: Project, itemId: string, property: string) =>
+    project.timeline?.keyframes
+      ?.find((entry) => entry.itemId === itemId)
+      ?.properties.find((entry) => entry.property === property)?.keyframes
+
+  it('places a beat where the word is actually spoken', async () => {
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [
+        narrate(),
+        {
+          op: 'addBlock',
+          blockId: 'infra-token-card',
+          from: 0,
+          durationInFrames: 100,
+          idPrefix: 'tok',
+        },
+        {
+          op: 'directAction',
+          idPrefix: 'tok',
+          action: 'enter',
+          direction: 'left',
+          fromCue: { word: 'password' },
+          untilCue: { word: 'password', edge: 'end' },
+        },
+      ],
+    })
+    // The project runs at 25fps, so 1.3s..2.0s is frames 33..50.
+    const frames = lane(project, 'tok-card', 'x')?.map((entry) => entry.frame)
+    expect(frames?.[0]).toBe(33)
+    expect(frames?.at(-1)).toBe(50)
+  })
+
+  it('anticipates a word so the move lands on it rather than after it', async () => {
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [
+        narrate(),
+        { op: 'addBlock', blockId: 'infra-token-card', durationInFrames: 100, idPrefix: 'tok' },
+        {
+          op: 'directAction',
+          idPrefix: 'tok',
+          action: 'emphasize',
+          fromCue: { word: 'password', offsetSeconds: -0.4 },
+          forSeconds: 0.4,
+        },
+      ],
+    })
+    // 1.3 - 0.4 = 0.9s, which is frame 23 at 25fps.
+    expect(lane(project, 'tok-card', 'width')?.[0]?.frame).toBe(23)
+  })
+
+  it('lands each pose on the word it illustrates', async () => {
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [
+        narrate(),
+        {
+          op: 'addBlock',
+          blockId: 'ui-login-form',
+          from: 0,
+          durationInFrames: 100,
+          scale: 1,
+          idPrefix: 'form',
+        },
+        {
+          op: 'applyPose',
+          idPrefix: 'form',
+          scale: 1,
+          fromCue: { word: 'You' },
+          untilCue: { word: 'in', edge: 'end' },
+          poses: [
+            { id: 'form-empty', atCue: { word: 'You' } },
+            { id: 'email-focused', atCue: { word: 'Email' } },
+            { id: 'credentials-entered', atCue: { word: 'password' } },
+            { id: 'form-submitting', atCue: { word: 'log' } },
+          ],
+        },
+      ],
+    })
+    // The email focus ring reaches full opacity on the word "email" (0.6s ->
+    // frame 15), not at some fraction of an evenly divided span.
+    const ring = lane(project, 'form-email-focus', 'opacity') ?? []
+    const lit = ring.find((entry) => entry.value === 1)
+    expect(lit?.frame).toBe(15)
+    // And the submit spinner appears on "log" (2.1s -> frame 53).
+    const spinner = lane(project, 'form-submit-spinner', 'opacity') ?? []
+    expect(spinner.find((entry) => entry.value === 1)?.frame).toBe(53)
+  })
+
+  it('converts a cued span onto the instance own timeline', async () => {
+    // The same item-relative trap directAction had: a block starting at frame 40
+    // must receive a beat cued at 1.3s as frame 33 - 40, not as 33.
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [
+        narrate(),
+        {
+          op: 'addBlock',
+          blockId: 'ui-login-form',
+          from: 20,
+          durationInFrames: 80,
+          scale: 1,
+          idPrefix: 'form',
+        },
+        {
+          op: 'applyPose',
+          idPrefix: 'form',
+          scale: 1,
+          fromCue: { word: 'password' },
+          untilCue: { word: 'in', edge: 'end' },
+          poses: [{ id: 'form-empty' }, { id: 'credentials-entered' }],
+        },
+      ],
+    })
+    const dots = lane(project, 'form-password-dots', 'opacity') ?? []
+    // 1.3s is composition frame 33; the item starts at 20, so 13 relative.
+    expect(dots[0]?.frame).toBe(13)
+  })
+
+  it('refuses a cue the read does not contain, and suggests what it does', async () => {
+    await expect(
+      editProject({
+        project: baseProject(),
+        ops: [
+          narrate(),
+          { op: 'addBlock', blockId: 'infra-token-card', durationInFrames: 100, idPrefix: 'tok' },
+          { op: 'directAction', idPrefix: 'tok', action: 'enter', fromCue: { word: 'passwrd' } },
+        ],
+      }),
+    ).rejects.toThrow(/never says the word "passwrd".*password/s)
+  })
+
+  it('refuses a cue before any narration is attached', async () => {
+    await expect(
+      editProject({
+        project: baseProject(),
+        ops: [
+          { op: 'addBlock', blockId: 'infra-token-card', durationInFrames: 100, idPrefix: 'tok' },
+          { op: 'directAction', idPrefix: 'tok', action: 'enter', fromCue: { word: 'password' } },
+        ],
+      }),
+    ).rejects.toThrow(/no narration is attached/)
+  })
+
+  it('refuses a step cue when the sequence itself is not cued', async () => {
+    await expect(
+      editProject({
+        project: baseProject(),
+        ops: [
+          narrate(),
+          { op: 'addBlock', blockId: 'ui-login-form', durationInFrames: 100, idPrefix: 'form' },
+          {
+            op: 'applyPose',
+            idPrefix: 'form',
+            poses: [{ id: 'email-focused', atCue: { word: 'Email' } }],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/needs the sequence itself to be cued/)
+  })
+
+  it('refuses a cued beat that misses the instance entirely', async () => {
+    await expect(
+      editProject({
+        project: baseProject(),
+        ops: [
+          narrate(),
+          {
+            op: 'addBlock',
+            blockId: 'ui-login-form',
+            from: 0,
+            durationInFrames: 10,
+            idPrefix: 'form',
+          },
+          {
+            op: 'applyPose',
+            idPrefix: 'form',
+            fromCue: { word: 'log' },
+            forSeconds: 0.5,
+            poses: [{ id: 'email-focused' }],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/does not overlap "form"/)
+  })
+
+  it('does not leak narration into a later call', async () => {
+    const first = await editProject({ project: baseProject(), ops: [narrate()] })
+    await expect(
+      editProject({
+        project: first.project,
+        ops: [
+          { op: 'addBlock', blockId: 'infra-token-card', durationInFrames: 100, idPrefix: 'tok' },
+          { op: 'directAction', idPrefix: 'tok', action: 'enter', fromCue: { word: 'password' } },
+        ],
+      }),
+    ).rejects.toThrow(/no narration is attached/)
+  })
+
+  it('accepts a transcript in segment shape', async () => {
+    const { results } = await editProject({
+      project: baseProject(),
+      ops: [
+        {
+          op: 'setNarration',
+          segments: [{ text: 'You type', words: WORDS.slice(0, 2) }, { words: WORDS.slice(2) }],
+        },
+      ],
+    })
+    expect((results[0] as { detail: { words: number } }).detail.words).toBe(WORDS.length)
+  })
+})

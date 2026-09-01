@@ -684,6 +684,61 @@ const cases = [
     },
   },
   {
+    name: 'setNarration',
+    op: {
+      op: 'setNarration',
+      words: [
+        { text: 'You', start: 0, end: 0.2 },
+        { text: 'type', start: 0.2, end: 0.5 },
+        { text: 'a', start: 0.5, end: 0.6 },
+        { text: 'password.', start: 0.6, end: 1.2 },
+      ],
+    },
+    ops: [
+      {
+        op: 'setNarration',
+        words: [
+          { text: 'You', start: 0, end: 0.2 },
+          { text: 'type', start: 0.2, end: 0.5 },
+          { text: 'a', start: 0.5, end: 0.6 },
+          { text: 'password.', start: 0.6, end: 1.2 },
+        ],
+      },
+      {
+        op: 'addBlock',
+        blockId: 'infra-token-card',
+        from: 0,
+        durationInFrames: 60,
+        scale: 0.5,
+        idPrefix: 'tok',
+      },
+      {
+        op: 'directAction',
+        idPrefix: 'tok',
+        action: 'enter',
+        direction: 'left',
+        fromCue: { word: 'password' },
+        untilCue: { word: 'password', edge: 'end' },
+      },
+    ],
+    assert: (project) => {
+      const frames = project.timeline.keyframes
+        .find((entry) => entry.itemId === 'tok-card')
+        .properties.find((entry) => entry.property === 'x')
+        .keyframes.map((entry) => entry.frame)
+      // The harness project runs at 30fps, so 0.6s..1.2s is frames 18..36 —
+      // measured from the read rather than typed in.
+      assert.equal(frames[0], 18)
+      assert.equal(frames.at(-1), 36)
+    },
+    // Schema-valid and impossible to satisfy: the read never says it.
+    failure: {
+      op: 'setNarration',
+      words: [{ text: 'hello', start: 0, end: 0.4 }],
+    },
+    schemaFailure: { op: 'setNarration' },
+  },
+  {
     name: 'importSvg',
     op: {
       op: 'importSvg',

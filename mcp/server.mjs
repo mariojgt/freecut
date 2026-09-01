@@ -61,7 +61,10 @@ export function createFreeCutMcpServer(options = {}) {
         'addKeyframe only when no recipe fits. ' +
         'When the library has no block for the subject, draw one: give every shape an id in the ' +
         'SVG, then defineBlock a rig over those ids with parents and pivots, and addBlock it in ' +
-        'the SAME call — a generated definition lives for one edit call.',
+        'the SAME call — a generated definition lives for one edit call. ' +
+        'If there is a voiceover, setNarration with its word timings and cue every beat to the ' +
+        'words (fromCue/untilCue, and atCue on applyPose steps) rather than typing frame numbers: ' +
+        'the cut then follows the read and survives a re-record. Narration is call-scoped too.',
     },
   )
 
@@ -180,7 +183,7 @@ export function createFreeCutMcpServer(options = {}) {
       description:
         'Apply validated timeline operations. Supports clips, tracks, titles, transforms, effects, ' +
         'transitions and keyframes; rigged blocks (defineBlock, addBlock, applyGesture, applyPose, ' +
-        'attachToSlot); ' +
+        'attachToSlot); narration-cued timing (setNarration); ' +
         'intent-driven motion (directAction, setCamera); and vector work (importSvg, morphPath). ' +
         'Call get_capabilities for every operation and its fields. Defaults to a dry run.',
       inputSchema: z.object({

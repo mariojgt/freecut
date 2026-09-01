@@ -94,6 +94,52 @@ const paletteRole = z.enum([
 const rigChannel = z.enum(['rotation', 'x', 'y', 'scale', 'scaleX', 'scaleY', 'opacity'])
 const point = z.tuple([finite, finite])
 
+/**
+ * A point in the recorded read.
+ *
+ * Naming the word rather than the second is the whole mechanism: re-record the
+ * line and every beat cued to it follows, where a hand-typed timestamp does not.
+ */
+const narrationCue = z.union([
+  z
+    .object({
+      word: z.string().min(1).max(120),
+      occurrence: z.number().int().min(1).max(500).optional(),
+      edge: z.enum(['start', 'end']).optional(),
+      offsetSeconds: finite.min(-60).max(60).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      phrase: z.string().min(1).max(400),
+      occurrence: z.number().int().min(1).max(500).optional(),
+      edge: z.enum(['start', 'end']).optional(),
+      offsetSeconds: finite.min(-60).max(60).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      atSeconds: finite.nonnegative().max(36_000),
+      offsetSeconds: finite.min(-60).max(60).optional(),
+    })
+    .strict(),
+])
+
+/** Cue fields shared by every op that takes a beat. */
+const cuedBeat = {
+  fromCue: narrationCue.optional(),
+  untilCue: narrationCue.optional(),
+  forSeconds: finite.positive().max(3600).optional(),
+}
+
+const narrationWord = z
+  .object({
+    text: z.string().min(1).max(200),
+    start: finite.nonnegative().max(36_000),
+    end: finite.nonnegative().max(36_000),
+  })
+  .strict()
+
 const MOTION_ACTIONS = ['enter', 'exit', 'emphasize', 'moveTo', 'shake', 'reveal']
 const MOTION_DIRECTIONS = ['left', 'right', 'up', 'down', 'in', 'out']
 const CAMERA_INTENTS = ['push', 'pull', 'pan-left', 'pan-right', 'rise', 'settle']
@@ -424,6 +470,8 @@ const opSchemas = [
               id: z.enum(POSE_IDS),
               /** Normalized position in the span, 0..1. Defaults to even spacing. */
               at: finite.min(0).max(1).optional(),
+              /** Or the word the pose belongs on. Needs the op to carry fromCue. */
+              atCue: narrationCue.optional(),
               easing: easing.optional(),
             })
             .strict(),
@@ -432,6 +480,7 @@ const opSchemas = [
         .max(16),
       durationInFrames: positiveFrames.optional(),
       startFrame: frame.optional(),
+      ...cuedBeat,
       intensity: finite.nonnegative().optional(),
       scale: finite.positive().optional(),
     })
@@ -464,6 +513,25 @@ const opSchemas = [
       margin: finite.min(0).max(0.9).optional(),
     })
     .strict(),
+  z
+    .object({
+      op: z.literal('setNarration'),
+      /** Word timings from transcription. The editor produces these on-device. */
+      words: z.array(narrationWord).min(1).max(20_000).optional(),
+      /** Transcript segments, if that is the shape you already have. */
+      segments: z
+        .array(z.object({ words: z.array(narrationWord).optional() }).loose())
+        .min(1)
+        .max(5_000)
+        .optional(),
+      /** The media the read came from. Recorded for the caller's own reference. */
+      mediaId: id.optional(),
+    })
+    .strict()
+    .refine(
+      (value) => Boolean(value.words?.length) || Boolean(value.segments?.length),
+      'provide words or segments carrying word timings',
+    ),
   z
     .object({
       op: z.literal('defineBlock'),
@@ -547,6 +615,7 @@ const opSchemas = [
        */
       from: frame.optional(),
       durationInFrames: positiveFrames.optional(),
+      ...cuedBeat,
       /** Travel in canvas pixels. Defaults to a distance derived from the target. */
       distance: finite.nonnegative().optional(),
       to: z.object({ x: finite.optional(), y: finite.optional() }).strict().optional(),
@@ -574,6 +643,7 @@ const opSchemas = [
       /** Composition frames, converted per target. */
       from: frame.optional(),
       durationInFrames: positiveFrames.optional(),
+      ...cuedBeat,
       amount: finite.optional(),
       easing: easing.optional(),
       /**
@@ -674,6 +744,7 @@ export const EDIT_OPERATION_NAMES = [
   'directAction',
   'setCamera',
   'defineBlock',
+  'setNarration',
   'importSvg',
   'morphPath',
 ]
@@ -703,6 +774,10 @@ function samplesDescription(name) {
     removeEffect: 'Remove an existing item effect',
     setTransform: 'Update an item transform',
     addBlock: `Add a rigged illustration block (${BLOCK_IDS.join(', ')}, or a local- id from defineBlock) with optional gestures (${GESTURE_IDS.join(', ')})`,
+    setNarration:
+      'Attach word timings from a transcript so beats can be cued to the read. Ops that take a ' +
+      'beat then accept fromCue/untilCue instead of frame numbers, and applyPose steps accept ' +
+      'atCue — so a pose lands on the word it illustrates and survives a re-record.',
     defineBlock:
       'Rig an SVG into a placeable block: each part takes geometry from the element whose id ' +
       'matches, and parent/pivot pairs make it a puppet. Validated like committed artwork. ' +

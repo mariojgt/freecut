@@ -58,6 +58,12 @@ import type {
   MotionDirection,
 } from '@/shared/graphics/scene/direction'
 import { compileCameraMove } from '@/shared/graphics/scene/camera'
+import {
+  cuePositionInBeat,
+  resolveBeat,
+  wordsFromSegments,
+} from '@/shared/graphics/scene/narration'
+import type { NarrationCue, NarrationWord } from '@/shared/graphics/scene/narration'
 import type { CameraIntent } from '@/shared/graphics/scene/camera'
 import { SCENE_PALETTES, DEFAULT_SCENE_PALETTE } from '@/shared/graphics/blocks/scene-palette'
 import { importSvgSource } from '@/shared/graphics/shapes/svg-document-import'
@@ -116,6 +122,7 @@ export type EditOperationName =
   | 'directAction'
   | 'setCamera'
   | 'defineBlock'
+  | 'setNarration'
   | 'importSvg'
   | 'morphPath'
 
@@ -218,6 +225,42 @@ function allItems(): TimelineItem[] {
 }
 
 /**
+ * Where a gesture sits on the instance's own timeline.
+ *
+ * `bakeGesture` places keyframes relative to the item, so a beat measured in
+ * composition frames — which is what a narration cue produces — has to be
+ * converted against the instance's start. A beat that misses the instance is
+ * refused rather than baked outside its life, where it would resolve to nothing.
+ */
+function instanceSpan(
+  op: Record<string, unknown>,
+  idPrefix: string,
+  anchor: TimelineItem,
+  compositionSpan?: { from: number; durationInFrames: number },
+): { startFrame?: number; durationInFrames: number } {
+  if (!compositionSpan) {
+    const startFrame = asNumber(op.startFrame)
+    return {
+      ...(startFrame !== undefined && { startFrame }),
+      durationInFrames: asNumber(op.durationInFrames, anchor.durationInFrames)!,
+    }
+  }
+
+  const startFrame = compositionSpan.from - anchor.from
+  const overlaps =
+    startFrame + compositionSpan.durationInFrames >= 0 && startFrame <= anchor.durationInFrames
+  if (!overlaps) {
+    throw new Error(
+      `${String(op.op)}: the cued beat (composition frames ` +
+        `${compositionSpan.from}..${compositionSpan.from + compositionSpan.durationInFrames}) ` +
+        `does not overlap "${idPrefix}", which spans ` +
+        `${anchor.from}..${anchor.from + anchor.durationInFrames}`,
+    )
+  }
+  return { startFrame, durationInFrames: compositionSpan.durationInFrames }
+}
+
+/**
  * Bake a gesture onto a block instance that already exists on the timeline.
  *
  * Shared by `applyGesture` and `applyPose` because a pose sequence compiles to
@@ -231,6 +274,13 @@ function bakeOntoInstance(
   idPrefix: string,
   gesture: GestureDefinition,
   extra: Record<string, unknown>,
+  /**
+   * Span in COMPOSITION frames, when the caller cued it. Converted against the
+   * instance's own start here, because `bakeGesture` places keyframes relative
+   * to the item — the same distinction that made cued beats resolve to nothing
+   * in `directAction` until they were converted.
+   */
+  compositionSpan?: { from: number; durationInFrames: number },
 ): Record<string, unknown> {
   // Positional and size contributions are authored in block units, so the caller
   // restates the scale it placed the block at; rotation and opacity do not
@@ -244,11 +294,12 @@ function bakeOntoInstance(
   if (owned.size === 0) throw new Error(`${String(op.op)}: no items with prefix "${idPrefix}"`)
 
   const anchor = [...owned.values()][0]!
+  const span = instanceSpan(op, idPrefix, anchor, compositionSpan)
   const baked = bakeGesture(gesture, {
-    durationInFrames: asNumber(op.durationInFrames, anchor.durationInFrames)!,
+    durationInFrames: span.durationInFrames,
     ...(asNumber(op.cycles) !== undefined && { cycles: asNumber(op.cycles)! }),
     ...(asNumber(op.intensity) !== undefined && { intensity: asNumber(op.intensity)! }),
-    ...(asNumber(op.startFrame) !== undefined && { startFrame: asNumber(op.startFrame)! }),
+    ...(span.startFrame !== undefined && { startFrame: span.startFrame }),
   })
 
   const payloads = []
@@ -309,6 +360,41 @@ function rigTrackPayloads(
     }
   }
   return payloads
+}
+
+/**
+ * Place one pose in the sequence.
+ *
+ * Positioned by a cue when it has one — which is the point of cueing a sequence
+ * at all, since "focus the email field when the narrator says email" is a timing
+ * nobody has to maintain — and otherwise by an explicit fraction or even spacing.
+ */
+function toPoseStep(
+  record: Record<string, unknown>,
+  poseId: string,
+  index: number,
+  total: number,
+  span: { fromSeconds: number; untilSeconds: number } | undefined,
+): PoseStep {
+  const easing = asString(record.easing)
+  const style = easing ? { easing: easing as EasingType } : {}
+  const cue = record.atCue as NarrationCue | undefined
+
+  if (cue) {
+    if (!span) {
+      throw new Error(
+        'applyPose: a step cue needs the sequence itself to be cued — give the op a fromCue.',
+      )
+    }
+    return { poseId, at: cuePositionInBeat(narration, cue, span), ...style }
+  }
+
+  // Even spacing when the caller times neither the step nor the sequence.
+  return {
+    poseId,
+    at: asNumber(record.at) ?? (total === 1 ? 1 : index / (total - 1)),
+    ...style,
+  }
 }
 
 /**
@@ -465,6 +551,42 @@ function inferBlock(idPrefix: string, owned: readonly TimelineItem[]): BlockDefi
       a.block.id.localeCompare(b.block.id),
   )
   return scored[0]?.block
+}
+
+/**
+ * The read this edit call is timing against.
+ *
+ * Call-scoped for the same reason generated blocks are: word timings belong to a
+ * take, the caller already has them from transcription, and persisting them would
+ * mean a schema change for something a request can carry.
+ */
+let narration: NarrationWord[] = []
+
+/**
+ * Turn a cue-shaped op field into a beat in composition frames.
+ *
+ * Ops keep taking plain frames — everything downstream is unchanged — and a cue
+ * is simply another way to arrive at them. That keeps the timing mechanism out
+ * of every recipe and confined to this one conversion.
+ */
+function beatFromOp(op: Record<string, unknown>): { from: number; durationInFrames: number } {
+  const fromCue = op.fromCue as NarrationCue | undefined
+  if (!fromCue) {
+    return {
+      from: asNumber(op.from, 0)!,
+      durationInFrames: asNumber(op.durationInFrames, editCanvas.fps)!,
+    }
+  }
+  const beat = resolveBeat(
+    narration,
+    {
+      from: fromCue,
+      ...(op.untilCue ? { until: op.untilCue as NarrationCue } : {}),
+      ...(asNumber(op.forSeconds) !== undefined && { forSeconds: asNumber(op.forSeconds)! }),
+    },
+    editCanvas.fps,
+  )
+  return { from: beat.from, durationInFrames: beat.durationInFrames }
 }
 
 /** Committed blocks first; a generated one can never shadow reviewed artwork. */
@@ -1057,6 +1179,23 @@ function applyOp(op: EditOp): unknown {
       const requested = Array.isArray(op.poses) ? op.poses : []
       if (requested.length === 0) throw new Error('applyPose requires at least one pose')
 
+      // The span the steps are placed inside. When it is cued, each step may be
+      // cued too — which is the point: "focus the email field when the narrator
+      // says email" is a timing nobody has to guess or maintain.
+      const span = op.fromCue
+        ? resolveBeat(
+            narration,
+            {
+              from: op.fromCue as NarrationCue,
+              ...(op.untilCue ? { until: op.untilCue as NarrationCue } : {}),
+              ...(asNumber(op.forSeconds) !== undefined && {
+                forSeconds: asNumber(op.forSeconds)!,
+              }),
+            },
+            editCanvas.fps,
+          )
+        : undefined
+
       const poses = new Map<string, PoseDefinition>()
       const steps: PoseStep[] = requested.map((entry, index) => {
         const record = (entry ?? {}) as Record<string, unknown>
@@ -1064,29 +1203,32 @@ function applyOp(op: EditOp): unknown {
         const pose = poseId ? getPose(poseId) : undefined
         if (!pose) throw new Error(`applyPose: unknown pose "${poseId ?? ''}"`)
         poses.set(pose.id, pose)
-        return {
-          poseId: pose.id,
-          // Even spacing when the caller does not time the sequence itself.
-          at: asNumber(record.at) ?? (requested.length === 1 ? 1 : index / (requested.length - 1)),
-          ...(asString(record.easing) && { easing: asString(record.easing) as EasingType }),
-        }
+        return toPoseStep(record, pose.id, index, requested.length, span)
       })
 
       // One untimed pose means "hold this", which has to be eased into from rest:
       // a lone keyframe resolves to the pose on frame zero, so the character
       // would already be mid-gesture as the clip opens. A caller that timed the
       // pose itself, or gave a sequence, has said where it wants the keys.
-      const timed = requested.some(
-        (entry) => asNumber(((entry ?? {}) as Record<string, unknown>).at) !== undefined,
-      )
+      const timed =
+        span !== undefined ||
+        requested.some(
+          (entry) =>
+            asNumber(((entry ?? {}) as Record<string, unknown>).at) !== undefined ||
+            ((entry ?? {}) as Record<string, unknown>).atCue !== undefined,
+        )
       const held = steps.length === 1 && !timed ? steps[0] : undefined
       const gesture = held
         ? poseToGesture(poses.get(held.poseId)!, { ...(held.easing && { easing: held.easing }) })
         : posesToGesture(steps, poses)
 
-      return bakeOntoInstance(op, idPrefix, gesture, {
-        poses: steps.map((step) => step.poseId),
-      })
+      return bakeOntoInstance(
+        op,
+        idPrefix,
+        gesture,
+        { poses: steps.map((step) => step.poseId) },
+        span ? { from: span.from, durationInFrames: span.durationInFrames } : undefined,
+      )
     }
     case 'attachToSlot': {
       const idPrefix = asString(op.idPrefix)
@@ -1180,11 +1322,12 @@ function applyOp(op: EditOp): unknown {
       const targets = directedTargets(op)
       const action = asString(op.action)
       if (!action) throw new Error('directAction requires `action`')
+      const beat = beatFromOp(op)
       const keyframes = compileDirectedAction(targets, {
         action: action as MotionAction,
         ...(asString(op.direction) && { direction: asString(op.direction) as MotionDirection }),
-        from: asNumber(op.from, 0)!,
-        durationInFrames: asNumber(op.durationInFrames, editCanvas.fps)!,
+        from: beat.from,
+        durationInFrames: beat.durationInFrames,
         ...(asNumber(op.distance) !== undefined && { distance: asNumber(op.distance)! }),
         ...(op.to && typeof op.to === 'object' ? { to: op.to as { x?: number; y?: number } } : {}),
         ...(asNumber(op.arc) !== undefined && { arc: asNumber(op.arc)! }),
@@ -1229,10 +1372,11 @@ function applyOp(op: EditOp): unknown {
         ...target,
         plane: planeFor(target.itemId),
       }))
+      const cameraBeat = beatFromOp(op)
       const keyframes = compileCameraMove(targets, {
         intent: intent as CameraIntent,
-        from: asNumber(op.from, 0)!,
-        durationInFrames: asNumber(op.durationInFrames, editCanvas.fps)!,
+        from: cameraBeat.from,
+        durationInFrames: cameraBeat.durationInFrames,
         ...(asNumber(op.amount) !== undefined && { amount: asNumber(op.amount)! }),
         ...(asString(op.easing) && { easing: asString(op.easing) as EasingType }),
       })
@@ -1247,6 +1391,24 @@ function applyOp(op: EditOp): unknown {
         })),
       )
       return { intent, targets: targets.length, keyframes: relative.length }
+    }
+    case 'setNarration': {
+      const supplied = Array.isArray(op.words) ? op.words : []
+      const segments = Array.isArray(op.segments) ? op.segments : []
+      const words = supplied.length
+        ? (supplied as NarrationWord[])
+        : wordsFromSegments(segments as { words?: NarrationWord[] }[])
+      if (words.length === 0) {
+        throw new Error('setNarration needs `words` or `segments` carrying word timings')
+      }
+      // Sorted, because cue order is compared against it and a transcript
+      // assembled from several passes can arrive out of order.
+      narration = [...words].sort((a, b) => a.start - b.start)
+      return {
+        words: narration.length,
+        startSeconds: narration[0]?.start ?? 0,
+        endSeconds: narration[narration.length - 1]?.end ?? 0,
+      }
     }
     case 'defineBlock': {
       const blockId = asString(op.blockId)
@@ -1503,6 +1665,7 @@ export async function editProject(input: HeadlessEditInput): Promise<HeadlessEdi
   await hydrateTimelineStoresFromProject(migrated)
   seedMediaLibrary(input.media)
   adHocBlocks.clear()
+  narration = []
 
   log.info('Headless edit starting', { ops: input.ops.length })
 

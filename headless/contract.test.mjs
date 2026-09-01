@@ -150,6 +150,14 @@ const samples = {
       },
     ],
   },
+  setNarration: {
+    op: 'setNarration',
+    mediaId: 'vo-take-3',
+    words: [
+      { text: 'This', start: 0, end: 0.2 },
+      { text: 'is', start: 0.2, end: 0.35 },
+    ],
+  },
   importSvg: { op: 'importSvg', source: '<svg/>', size: 480 },
   morphPath: {
     op: 'morphPath',
@@ -277,6 +285,51 @@ test('directed actions and camera moves need exactly one target form', () => {
     ok({ ...camera, intent: 'push', planes: [{ idPrefix: 'a', itemId: 'b', plane: 1 }] }),
     false,
   )
+})
+
+test('narration cues are bounded and take exactly one form', () => {
+  const ok = (value) => editOpSchema.safeParse(value).success
+  const beat = { op: 'directAction', idPrefix: 'hero', action: 'enter' }
+
+  assert.equal(ok({ ...beat, fromCue: { word: 'password' } }), true)
+  assert.equal(ok({ ...beat, fromCue: { phrase: 'login page', occurrence: 2 } }), true)
+  assert.equal(ok({ ...beat, fromCue: { atSeconds: 4.5 } }), true)
+  assert.equal(ok({ ...beat, fromCue: { word: 'a' }, untilCue: { word: 'b', edge: 'end' } }), true)
+  assert.equal(ok({ ...beat, fromCue: { word: 'a' }, forSeconds: 1.5 }), true)
+
+  // A cue names one thing: mixing forms would leave which one wins to the reader.
+  assert.equal(ok({ ...beat, fromCue: { word: 'a', phrase: 'b' } }), false)
+  assert.equal(ok({ ...beat, fromCue: {} }), false)
+  assert.equal(ok({ ...beat, fromCue: { word: 'a', edge: 'middle' } }), false)
+  assert.equal(ok({ ...beat, fromCue: { word: 'a', occurrence: 0 } }), false)
+  assert.equal(ok({ ...beat, fromCue: { atSeconds: -1 } }), false)
+  // A nudge is a nudge, not a way to smuggle in an arbitrary time.
+  assert.equal(ok({ ...beat, fromCue: { word: 'a', offsetSeconds: 600 } }), false)
+
+  assert.equal(ok({ op: 'setCamera', itemId: 'i', intent: 'push', fromCue: { word: 'a' } }), true)
+  assert.equal(
+    ok({
+      op: 'applyPose',
+      idPrefix: 'form',
+      poses: [{ id: 'email-focused', atCue: { word: 'email' } }],
+      fromCue: { word: 'you' },
+      untilCue: { word: 'password' },
+    }),
+    true,
+  )
+})
+
+test('setNarration needs word timings in one shape or the other', () => {
+  const ok = (value) => editOpSchema.safeParse(value).success
+  const word = { text: 'hi', start: 0, end: 0.2 }
+  assert.equal(ok({ op: 'setNarration', words: [word] }), true)
+  assert.equal(ok({ op: 'setNarration', segments: [{ words: [word] }] }), true)
+  // Neither shape means nothing to time against, which would fail later and
+  // further from the cause.
+  assert.equal(ok({ op: 'setNarration' }), false)
+  assert.equal(ok({ op: 'setNarration', words: [] }), false)
+  assert.equal(ok({ op: 'setNarration', words: [{ text: '', start: 0, end: 1 }] }), false)
+  assert.equal(ok({ op: 'setNarration', words: [{ text: 'hi', start: -1, end: 1 }] }), false)
 })
 
 test('generated block ids are namespaced away from committed ones', () => {
