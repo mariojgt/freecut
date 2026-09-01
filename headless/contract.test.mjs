@@ -7,7 +7,10 @@ import {
   HEADLESS_API_VERSION,
   EDIT_OPERATION_NAMES,
   capabilities,
+  checkRequestSchema,
+  contactSheetRequestSchema,
   editOpSchema,
+  motionRequestSchema,
   editRequestSchema,
   frameRequestSchema,
   layoutRequestSchema,
@@ -40,7 +43,12 @@ const samples = {
     alignment: 0.4,
     properties: { intensity: 2 },
   },
-  updateTransition: { op: 'updateTransition', id: 't', presentation: 'wipe', direction: 'from-top' },
+  updateTransition: {
+    op: 'updateTransition',
+    id: 't',
+    presentation: 'wipe',
+    direction: 'from-top',
+  },
   removeTransition: { op: 'removeTransition', id: 't' },
   addTrack: { op: 'addTrack', kind: 'audio', order: 2 },
   addClip: { op: 'addClip', mediaId: 'm', from: 0 },
@@ -80,8 +88,33 @@ const samples = {
     gestures: [{ id: 'walk', cycles: 6 }],
   },
   applyGesture: { op: 'applyGesture', idPrefix: 'hero', gestureId: 'idle-breath', scale: 0.9 },
+  applyPose: {
+    op: 'applyPose',
+    idPrefix: 'hero',
+    poses: [
+      { id: 'stand', at: 0 },
+      { id: 'point-forward', at: 0.6, easing: 'ease-out' },
+    ],
+    durationInFrames: 90,
+    scale: 0.9,
+  },
+  attachToSlot: {
+    op: 'attachToSlot',
+    idPrefix: 'hero',
+    slotId: 'hand',
+    itemId: 'i',
+    x: -180,
+    y: 190,
+    scale: 0.9,
+  },
   importSvg: { op: 'importSvg', source: '<svg/>', size: 480 },
-  morphPath: { op: 'morphPath', itemId: 'i', fromFrame: 0, toFrame: 30, targetPathData: 'M 0 0 L 1 1' },
+  morphPath: {
+    op: 'morphPath',
+    itemId: 'i',
+    fromFrame: 0,
+    toFrame: 30,
+    targetPathData: 'M 0 0 L 1 1',
+  },
 }
 
 test('every published edit discriminator has a valid strict schema', () => {
@@ -163,13 +196,59 @@ test('frame and layout requests reject invalid targets and frame options', () =>
     { project: 'p', height: 10.5 },
     { project: 'p', projectObject: {}, frame: 0 },
     { frame: 0 },
-  ]) assert.equal(frameRequestSchema.safeParse(invalid).success, false, JSON.stringify(invalid))
+  ])
+    assert.equal(frameRequestSchema.safeParse(invalid).success, false, JSON.stringify(invalid))
 
   for (const invalid of [
     { project: 'p', frame: '12' },
     { project: 'p', at: '1.5' },
     { project: 'p', format: 'png' },
-  ]) assert.equal(layoutRequestSchema.safeParse(invalid).success, false, JSON.stringify(invalid))
+  ])
+    assert.equal(layoutRequestSchema.safeParse(invalid).success, false, JSON.stringify(invalid))
+})
+
+test('perception requests bound their ranges, sample counts and thresholds', () => {
+  const ok = (schema, value) => schema.safeParse(value).success
+  // Every field is optional but the project source is not: a range with no
+  // project would silently answer about nothing.
+  assert.equal(ok(motionRequestSchema, { project: 'p' }), true)
+  assert.equal(ok(motionRequestSchema, {}), false)
+  assert.equal(ok(motionRequestSchema, { project: 'p', projectObject: { id: 'p' } }), false)
+
+  assert.equal(ok(motionRequestSchema, { project: 'p', from: 0, to: 120, samples: 24 }), true)
+  assert.equal(ok(motionRequestSchema, { project: 'p', samples: 0 }), false)
+  assert.equal(ok(motionRequestSchema, { project: 'p', samples: 601 }), false)
+  assert.equal(ok(motionRequestSchema, { project: 'p', samples: 2.5 }), false)
+  assert.equal(ok(motionRequestSchema, { project: 'p', from: -1 }), false)
+  assert.equal(ok(motionRequestSchema, { project: 'p', itemIds: ['a', 'b'] }), true)
+  assert.equal(ok(motionRequestSchema, { project: 'p', surprise: true }), false)
+
+  assert.equal(ok(checkRequestSchema, { project: 'p', titleSafe: 0.9 }), true)
+  // A title-safe fraction under 10% would report every title as unsafe.
+  assert.equal(ok(checkRequestSchema, { project: 'p', titleSafe: 0 }), false)
+  assert.equal(ok(checkRequestSchema, { project: 'p', titleSafe: 1.5 }), false)
+  assert.equal(ok(checkRequestSchema, { project: 'p', ghostOpacity: 0.06 }), true)
+  assert.equal(ok(checkRequestSchema, { project: 'p', ghostOpacity: 2 }), false)
+  assert.equal(ok(checkRequestSchema, { project: 'p', offCanvasTolerance: 0.25 }), true)
+
+  assert.equal(ok(contactSheetRequestSchema, { project: 'p', count: 9, columns: 3 }), true)
+  assert.equal(ok(contactSheetRequestSchema, { project: 'p', count: 0 }), false)
+  assert.equal(ok(contactSheetRequestSchema, { project: 'p', count: 65 }), false)
+  assert.equal(ok(contactSheetRequestSchema, { project: 'p', columns: 17 }), false)
+  assert.equal(ok(contactSheetRequestSchema, { project: 'p', cellWidth: 4097 }), false)
+  assert.equal(ok(contactSheetRequestSchema, { project: 'p', format: 'PNG' }), true)
+  assert.equal(ok(contactSheetRequestSchema, { project: 'p', format: 'gif' }), false)
+  assert.equal(ok(contactSheetRequestSchema, { project: 'p', label: false }), true)
+})
+
+test('capabilities advertises the perception routes and their schemas', () => {
+  const result = capabilities()
+  for (const route of ['POST /v1/motion', 'POST /v1/check', 'POST /v1/contact-sheet']) {
+    assert.ok(result.lifecycle.routes.includes(route), route)
+  }
+  for (const schema of ['motion', 'check', 'contactSheet']) {
+    assert.ok(result.schemas[schema], schema)
+  }
 })
 
 test('validation errors and capabilities are machine-readable and bounded', () => {

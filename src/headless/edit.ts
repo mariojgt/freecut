@@ -33,9 +33,14 @@ import { useTransitionsStore } from '@/features/timeline/stores/transitions-stor
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { createClassicTrack } from '@/features/timeline/utils/classic-tracks'
-import { getBlock, getGesture } from '@/shared/graphics/blocks/registry'
+import { BLOCKS, getBlock, getGesture, getPose } from '@/shared/graphics/blocks/registry'
 import { instantiateBlock } from '@/shared/graphics/blocks/instantiate'
 import { bakeGesture } from '@/shared/graphics/blocks/gesture-bake'
+import type { BakedTrack } from '@/shared/graphics/blocks/gesture-bake'
+import { poseToGesture, posesToGesture } from '@/shared/graphics/blocks/poses'
+import type { PoseStep } from '@/shared/graphics/blocks/poses'
+import { resolveRigProperty, rigChannelProperties } from '@/shared/graphics/blocks/rig-channels'
+import type { GestureDefinition, PoseDefinition } from '@/shared/graphics/blocks/types'
 import { SCENE_PALETTES, DEFAULT_SCENE_PALETTE } from '@/shared/graphics/blocks/scene-palette'
 import { importSvgSource } from '@/shared/graphics/shapes/svg-document-import'
 import { parseSvgPathToVertices } from '@/shared/graphics/shapes/svg-path-parse'
@@ -88,6 +93,8 @@ export type EditOperationName =
   | 'setTransform'
   | 'addBlock'
   | 'applyGesture'
+  | 'applyPose'
+  | 'attachToSlot'
   | 'importSvg'
   | 'morphPath'
 
@@ -175,6 +182,112 @@ const asNumber = (value: unknown, fallback?: number): number | undefined =>
 
 function tracks(): TimelineTrack[] {
   return useItemsStore.getState().tracks
+}
+
+/**
+ * Every item on the timeline.
+ *
+ * Read from the store's flat list rather than by walking `tracks[].items`: that
+ * per-track array is only populated while a timeline fragment is being spliced
+ * in, and is empty once a project has been hydrated. Walking it silently found
+ * nothing on any project loaded from disk.
+ */
+function allItems(): TimelineItem[] {
+  return useItemsStore.getState().items
+}
+
+/**
+ * Bake a gesture onto a block instance that already exists on the timeline.
+ *
+ * Shared by `applyGesture` and `applyPose` because a pose sequence compiles to
+ * an ordinary gesture, and it resolves channels through `rig-channels` — the
+ * same resolver `instantiateBlock` uses. That shared path is the point: when the
+ * two had separate copies of the mapping, the `scale` channel worked on insert
+ * and silently did nothing here.
+ */
+function bakeOntoInstance(
+  op: Record<string, unknown>,
+  idPrefix: string,
+  gesture: GestureDefinition,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  // Positional and size contributions are authored in block units, so the caller
+  // restates the scale it placed the block at; rotation and opacity do not
+  // depend on it.
+  const scale = asNumber(op.scale, 1)!
+  const owned = new Map(
+    allItems()
+      .filter((item) => item.id.startsWith(`${idPrefix}-`))
+      .map((item) => [item.id.slice(idPrefix.length + 1), item]),
+  )
+  if (owned.size === 0) throw new Error(`${String(op.op)}: no items with prefix "${idPrefix}"`)
+
+  const anchor = [...owned.values()][0]!
+  const baked = bakeGesture(gesture, {
+    durationInFrames: asNumber(op.durationInFrames, anchor.durationInFrames)!,
+    ...(asNumber(op.cycles) !== undefined && { cycles: asNumber(op.cycles)! }),
+    ...(asNumber(op.intensity) !== undefined && { intensity: asNumber(op.intensity)! }),
+    ...(asNumber(op.startFrame) !== undefined && { startFrame: asNumber(op.startFrame)! }),
+  })
+
+  const payloads = []
+  const driven = new Set<string>()
+  for (const track of baked) {
+    const item = owned.get(track.partId)
+    if (!item) continue
+    const emitted = rigTrackPayloads(track, item, scale)
+    if (emitted.length === 0) continue
+    driven.add(track.partId)
+    payloads.push(...emitted)
+  }
+  addKeyframes(payloads)
+  return { idPrefix, ...extra, parts: driven.size, keyframes: payloads.length }
+}
+
+/**
+ * Keyframe payloads for one baked rig track against an item's rest pose.
+ *
+ * The nesting is inherent: one rig channel can reach two properties (a uniform
+ * squash drives both width and height), and each carries the whole curve.
+ */
+// fallow-ignore-next-line complexity
+function rigTrackPayloads(
+  track: BakedTrack,
+  item: TimelineItem,
+  scale: number,
+): Array<{
+  itemId: string
+  property: AnimatableProperty
+  frame: number
+  value: number
+  easing: EasingType
+}> {
+  const transform = item.transform ?? {}
+  const rest = {
+    rotation: transform.rotation ?? 0,
+    x: transform.x ?? 0,
+    y: transform.y ?? 0,
+    opacity: transform.opacity ?? 1,
+    width: transform.width ?? 0,
+    height: transform.height ?? 0,
+  }
+
+  const payloads = []
+  for (const property of rigChannelProperties(track.channel)) {
+    // A size channel on an item with no measured box has nothing to scale, and
+    // would write a constant 0 over the part's real width.
+    if ((property === 'width' || property === 'height') && rest[property] <= 0) continue
+    for (const keyframe of track.keyframes) {
+      payloads.push({
+        itemId: item.id,
+        property: property as AnimatableProperty,
+        frame: keyframe.frame,
+        value: resolveRigProperty(property, keyframe.value, rest, scale),
+        easing: keyframe.easing,
+      })
+    }
+  }
+  return payloads
 }
 
 function requireItem(id: string, field = 'id'): TimelineItem {
@@ -341,6 +454,16 @@ function nextBlockTrackOrder(count: number): number {
   return Math.min(0, ...orders) - count - 1
 }
 
+/**
+ * The op dispatcher.
+ *
+ * One flat `switch` with one case per wire operation. It scores badly on
+ * complexity by construction and is left that way deliberately: every branch is
+ * independent, the shape mirrors the wire contract one-to-one, and splitting it
+ * into sub-dispatchers would hide which ops exist without making any single
+ * branch simpler to read.
+ */
+// fallow-ignore-next-line complexity
 function applyOp(op: EditOp): unknown {
   switch (op.op) {
     case 'addText': {
@@ -704,6 +827,9 @@ function applyOp(op: EditOp): unknown {
       const result = instantiateBlock({
         block,
         palette: (paletteName ? SCENE_PALETTES[paletteName] : undefined) ?? DEFAULT_SCENE_PALETTE,
+        // Secondary motion authors its lag in seconds, so it needs the real rate
+        // to land the same way at 24, 30 or 60 fps.
+        fps: editCanvas.fps,
         from: asNumber(op.from, 0)!,
         durationInFrames: asNumber(op.durationInFrames, 150)!,
         placement: {
@@ -734,60 +860,103 @@ function applyOp(op: EditOp): unknown {
       }
       const gesture = getGesture(gestureId)
       if (!gesture) throw new Error(`applyGesture: unknown gesture "${gestureId}"`)
+      return bakeOntoInstance(op, idPrefix, gesture, { gestureId })
+    }
+    case 'applyPose': {
+      const idPrefix = asString(op.idPrefix)
+      if (!idPrefix) throw new Error('applyPose requires `idPrefix`')
+      const requested = Array.isArray(op.poses) ? op.poses : []
+      if (requested.length === 0) throw new Error('applyPose requires at least one pose')
 
-      // Positional contributions are authored in block units, so the caller
-      // restates the scale it placed the block at; rotation and opacity do not
-      // depend on it.
-      const scale = asNumber(op.scale, 1)!
-      const all = tracks().flatMap((track) => track.items)
-      const owned = new Map(
-        all
-          .filter((item) => item.id.startsWith(`${idPrefix}-`))
-          .map((item) => [item.id.slice(idPrefix.length + 1), item]),
-      )
-      if (owned.size === 0) throw new Error(`applyGesture: no items with prefix "${idPrefix}"`)
-
-      const anchor = [...owned.values()][0]!
-      const baked = bakeGesture(gesture, {
-        durationInFrames: asNumber(op.durationInFrames, anchor.durationInFrames)!,
-        ...(asNumber(op.cycles) !== undefined && { cycles: asNumber(op.cycles)! }),
-        ...(asNumber(op.intensity) !== undefined && { intensity: asNumber(op.intensity)! }),
-        ...(asNumber(op.startFrame) !== undefined && { startFrame: asNumber(op.startFrame)! }),
+      const poses = new Map<string, PoseDefinition>()
+      const steps: PoseStep[] = requested.map((entry, index) => {
+        const record = (entry ?? {}) as Record<string, unknown>
+        const poseId = asString(record.id)
+        const pose = poseId ? getPose(poseId) : undefined
+        if (!pose) throw new Error(`applyPose: unknown pose "${poseId ?? ''}"`)
+        poses.set(pose.id, pose)
+        return {
+          poseId: pose.id,
+          // Even spacing when the caller does not time the sequence itself.
+          at: asNumber(record.at) ?? (requested.length === 1 ? 1 : index / (requested.length - 1)),
+          ...(asString(record.easing) && { easing: asString(record.easing) as EasingType }),
+        }
       })
 
-      const payloads = []
-      let driven = 0
-      for (const track of baked) {
-        const item = owned.get(track.partId)
-        if (!item) continue
-        driven++
-        const transform = item.transform ?? {}
-        for (const keyframe of track.keyframes) {
-          const lane =
-            track.channel === 'rotation'
-              ? { property: 'rotation', value: (transform.rotation ?? 0) + keyframe.value }
-              : track.channel === 'x'
-                ? { property: 'x', value: (transform.x ?? 0) + keyframe.value * scale }
-                : track.channel === 'y'
-                  ? { property: 'y', value: (transform.y ?? 0) + keyframe.value * scale }
-                  : track.channel === 'opacity'
-                    ? {
-                        property: 'opacity',
-                        value: Math.max(0, Math.min(1, (transform.opacity ?? 1) + keyframe.value)),
-                      }
-                    : null
-          if (!lane) continue
-          payloads.push({
-            itemId: item.id,
-            property: lane.property as AnimatableProperty,
-            frame: keyframe.frame,
-            value: lane.value,
-            easing: keyframe.easing,
-          })
+      // One untimed pose means "hold this", which has to be eased into from rest:
+      // a lone keyframe resolves to the pose on frame zero, so the character
+      // would already be mid-gesture as the clip opens. A caller that timed the
+      // pose itself, or gave a sequence, has said where it wants the keys.
+      const timed = requested.some(
+        (entry) => asNumber(((entry ?? {}) as Record<string, unknown>).at) !== undefined,
+      )
+      const held = steps.length === 1 && !timed ? steps[0] : undefined
+      const gesture = held
+        ? poseToGesture(poses.get(held.poseId)!, { ...(held.easing && { easing: held.easing }) })
+        : posesToGesture(steps, poses)
+
+      return bakeOntoInstance(op, idPrefix, gesture, {
+        poses: steps.map((step) => step.poseId),
+      })
+    }
+    case 'attachToSlot': {
+      const idPrefix = asString(op.idPrefix)
+      const slotId = asString(op.slotId)
+      const itemId = asString(op.itemId)
+      if (!idPrefix || !slotId || !itemId) {
+        throw new Error('attachToSlot requires `idPrefix`, `slotId` and `itemId`')
+      }
+
+      const all = allItems()
+      const target = all.find((item) => item.id === itemId)
+      if (!target) throw new Error(`attachToSlot: no item "${itemId}"`)
+
+      // The instance is identified by its item ids, and those carry the block id
+      // the prefix was derived from, so the block is recoverable without the
+      // caller naming it twice.
+      const owned = all.filter((item) => item.id.startsWith(`${idPrefix}-`))
+      if (owned.length === 0) throw new Error(`attachToSlot: no items with prefix "${idPrefix}"`)
+      const block = [...BLOCKS.values()].find((candidate) =>
+        candidate.parts.some((part) => owned.some((item) => item.id === `${idPrefix}-${part.id}`)),
+      )
+      if (!block) throw new Error(`attachToSlot: "${idPrefix}" is not a known block instance`)
+
+      const slot = (block.slots ?? []).find((candidate) => candidate.id === slotId)
+      if (!slot) {
+        throw new Error(
+          `attachToSlot: block "${block.id}" has no slot "${slotId}" (has: ${(block.slots ?? [])
+            .map((candidate) => candidate.id)
+            .join(', ')})`,
+        )
+      }
+
+      // Block-local units become canvas pixels the same way `instantiateBlock`
+      // does it, so a slot lands exactly on the artwork it was authored against.
+      const scale = asNumber(op.scale, 1)!
+      const x =
+        (slot.at[0] - block.width / 2) * scale + asNumber(op.x, 0)! + asNumber(op.offsetX, 0)!
+      const y =
+        (slot.at[1] - block.height / 2) * scale + asNumber(op.y, 0)! + asNumber(op.offsetY, 0)!
+      updateItem(itemId, { transform: { ...(target.transform ?? {}), x, y } })
+
+      // Parenting is what makes the attachment hold: without it the prop sits at
+      // a fixed canvas position while the rig walks away from it. A slot with no
+      // part is a location marker in a static world, so positioning is all it
+      // can offer.
+      let parentItemId: string | null = null
+      if (slot.partId && owned.some((item) => item.id === `${idPrefix}-${slot.partId}`)) {
+        parentItemId = `${idPrefix}-${slot.partId}`
+        const ok = setTransformParent({
+          childItemId: itemId,
+          parentItemId,
+          frame: target.from,
+          canvas: editCanvas,
+        })
+        if (!ok) {
+          throw new Error(`attachToSlot: could not parent "${itemId}" to "${parentItemId}"`)
         }
       }
-      addKeyframes(payloads)
-      return { idPrefix, gestureId, parts: driven, keyframes: payloads.length }
+      return { itemId, slotId, blockId: block.id, x, y, parentItemId }
     }
     case 'importSvg': {
       const source = asString(op.source)

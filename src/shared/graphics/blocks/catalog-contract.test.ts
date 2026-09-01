@@ -14,7 +14,7 @@ const { EDIT_OPERATION_NAMES, editOpSchema } = (await import(
   EDIT_OPERATION_NAMES: string[]
   editOpSchema: { safeParse: (value: unknown) => { success: boolean } }
 }
-import { BLOCKS, GESTURES } from './registry'
+import { BLOCKS, GESTURES, POSES } from './registry'
 import { SCENE_PALETTES } from './scene-palette'
 
 const sample = (overrides: Record<string, unknown>) =>
@@ -39,6 +39,19 @@ describe('catalog / wire contract', () => {
     }
   })
 
+  it('accepts every registered pose id', () => {
+    for (const poseId of POSES.keys()) {
+      expect({
+        poseId,
+        accepted: editOpSchema.safeParse({
+          op: 'applyPose',
+          idPrefix: 'character-astronaut-abc',
+          poses: [{ id: poseId }],
+        }).success,
+      }).toEqual({ poseId, accepted: true })
+    }
+  })
+
   it('accepts every registered palette id', () => {
     for (const palette of Object.keys(SCENE_PALETTES)) {
       expect({ palette, accepted: sample({ palette }).success }).toEqual({
@@ -52,6 +65,13 @@ describe('catalog / wire contract', () => {
     expect(sample({ blockId: 'character-unicorn' }).success).toBe(false)
     expect(sample({ gestures: [{ id: 'moonwalk' }] }).success).toBe(false)
     expect(sample({ palette: 'neon' }).success).toBe(false)
+    expect(
+      editOpSchema.safeParse({
+        op: 'applyPose',
+        idPrefix: 'character-astronaut-abc',
+        poses: [{ id: 'breakdance' }],
+      }).success,
+    ).toBe(false)
   })
 
   it('publishes the vector operations so capabilities advertises them', () => {

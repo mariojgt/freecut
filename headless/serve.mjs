@@ -62,9 +62,12 @@ import {
   HEADLESS_API_VERSION,
   ContractValidationError,
   capabilities,
+  checkRequestSchema,
+  contactSheetRequestSchema,
   editRequestSchema,
   frameRequestSchema,
   layoutRequestSchema,
+  motionRequestSchema,
   lifecycleEditRequestSchema,
   mediaProbeRequestSchema,
   projectCreateRequestSchema,
@@ -583,6 +586,100 @@ async function main() {
     sendJson(res, 200, layout)
   }
 
+  /**
+   * Perception endpoints.
+   *
+   * `/frame` answers "what does it look like", which only helps a caller with
+   * eyes. These answer "did it move", "is anything broken" and "show me the
+   * whole beat at once", which is what an agent can actually act on.
+   */
+  const handleRange = async (req, res, schema, method) => {
+    const body = validate(schema, await readJsonBody(req))
+    if (body.project) assertSinglePathComponent(body.project, 'project id')
+    const project =
+      body.projectObject ?? loadJobProject(workspace, { project: body.project }).project
+    // Metadata only — these are transform maths, so no media bytes are fetched.
+    const { media } = resolveProjectMedia(workspace, project, mediaUrlOf, null)
+    // The wire form names a project by id; the harness needs the document, so the
+    // id fields are replaced rather than carried alongside it.
+    const { project: _id, projectObject: _inline, ...options } = body
+    const result = await queue.enqueue(
+      () =>
+        session.page.evaluate((payload) => window.freecut[payload.method](payload.input), {
+          method,
+          input: { ...options, project, media },
+        }),
+      { timeoutMs: editTimeoutMs, kind: method },
+    )
+    sendJson(res, 200, { ok: true, apiVersion: HEADLESS_API_VERSION, ...result })
+  }
+
+  // Browser-harness driver; exercised end-to-end by the headless chrome contract suite
+  // fallow-ignore-next-line complexity
+  const handleContactSheet = async (req, res) => {
+    const body = validate(contactSheetRequestSchema, await readJsonBody(req))
+    if (body.project) assertSinglePathComponent(body.project, 'project id')
+    const project =
+      body.projectObject ?? loadJobProject(workspace, { project: body.project }).project
+    const { media, missing } = resolveProjectMedia(workspace, project, mediaUrlOf, null)
+    const format = (body.format ?? 'png').toLowerCase()
+    const mime = IMAGE_MIME_BY_FORMAT[format]
+    const outPath = path.join(
+      tmpDir,
+      `sheet-${process.pid}-${++counter}.${IMAGE_EXT_BY_MIME[mime]}`,
+    )
+
+    const t0 = Date.now()
+    const summary = await queue.enqueue(
+      async () => {
+        const downloadPromise = session.page.waitForEvent('download', { timeout: 5 * 60_000 })
+        downloadPromise.catch(() => {})
+        const s = await session.page.evaluate(
+          (payload) => window.freecut.renderContactSheet(payload),
+          {
+            project,
+            media,
+            from: body.from,
+            to: body.to,
+            count: body.count,
+            columns: body.columns,
+            cellWidth: body.cellWidth,
+            label: body.label,
+            format: mime,
+            quality: body.quality,
+            strict: body.strict,
+          },
+        )
+        const download = await downloadPromise
+        await download.saveAs(outPath)
+        return s
+      },
+      // A sheet renders one real frame per cell, so it needs the render budget.
+      { timeoutMs: renderTimeoutMs, kind: 'contact-sheet' },
+    )
+    console.log(
+      `contact-sheet ${project.name ?? project.id} ${summary.frames.length} cells -> ` +
+        `${summary.width}x${summary.height} (${(summary.fileSize / 1000).toFixed(1)}KB) ` +
+        `in ${Date.now() - t0}ms`,
+    )
+
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Content-Length': fs.statSync(outPath).size,
+      'Content-Disposition': `attachment; filename="${path.basename(outPath)}"`,
+      'X-Freecut-Frames': summary.frames.join(','),
+      ...(missing.length ? { 'X-Freecut-Missing-Media': asciiHeader(missing) } : {}),
+    })
+    const stream = fs.createReadStream(outPath)
+    stream.pipe(res)
+    stream.on('close', () => fs.rm(outPath, () => {}))
+  }
+
+  // The route table. Flat by construction — one branch per endpoint, each
+  // delegating immediately to a named handler — so it scores badly on complexity
+  // and is left that way: the shape is the routing table, and breaking it up
+  // would scatter the list of endpoints without simplifying any one of them.
+  // fallow-ignore-next-line complexity
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const route = `${req.method} ${url.pathname}`
@@ -621,81 +718,99 @@ async function main() {
             : route === 'GET /v1/blocks'
               ? () => handleBlocks(req, res)
               : route === 'POST /v1/projects'
-              ? () => handleV1ProjectCreate(req, res)
-              : route === 'GET /v1/projects'
-                ? () => handleV1ProjectList(url, res)
-                : projectEditMatch && req.method === 'POST'
-                  ? () =>
-                      handleV1ProjectEdit(
-                        req,
-                        res,
-                        assertPortableId(projectEditMatch[1], 'project id'),
-                      )
-                  : projectMatch && req.method === 'GET'
-                    ? async () =>
-                        sendJson(
+                ? () => handleV1ProjectCreate(req, res)
+                : route === 'GET /v1/projects'
+                  ? () => handleV1ProjectList(url, res)
+                  : projectEditMatch && req.method === 'POST'
+                    ? () =>
+                        handleV1ProjectEdit(
+                          req,
                           res,
-                          200,
-                          resourceEnvelope(
-                            await getProjectResource(
-                              workspace,
-                              assertPortableId(projectMatch[1], 'project id'),
-                            ),
-                          ),
+                          assertPortableId(projectEditMatch[1], 'project id'),
                         )
-                    : projectMatch && req.method === 'PUT'
-                      ? () =>
-                          handleV1ProjectSave(
-                            req,
+                    : projectMatch && req.method === 'GET'
+                      ? async () =>
+                          sendJson(
                             res,
-                            assertPortableId(projectMatch[1], 'project id'),
+                            200,
+                            resourceEnvelope(
+                              await getProjectResource(
+                                workspace,
+                                assertPortableId(projectMatch[1], 'project id'),
+                              ),
+                            ),
                           )
-                      : projectMatch && req.method === 'PATCH'
+                      : projectMatch && req.method === 'PUT'
                         ? () =>
-                            handleV1ProjectUpdate(
+                            handleV1ProjectSave(
                               req,
                               res,
                               assertPortableId(projectMatch[1], 'project id'),
                             )
-                        : route === 'GET /v1/media'
-                          ? async () =>
-                              sendJson(res, 200, {
-                                ok: true,
-                                apiVersion: HEADLESS_API_VERSION,
-                                media: await listMediaResources(workspace),
-                              })
-                          : mediaProbeMatch && req.method === 'POST'
-                            ? () =>
-                                handleV1MediaProbe(
-                                  req,
-                                  res,
-                                  assertPortableId(mediaProbeMatch[1], 'media id'),
-                                )
-                            : mediaMatch && req.method === 'GET'
-                              ? async () =>
-                                  sendJson(
+                        : projectMatch && req.method === 'PATCH'
+                          ? () =>
+                              handleV1ProjectUpdate(
+                                req,
+                                res,
+                                assertPortableId(projectMatch[1], 'project id'),
+                              )
+                          : route === 'GET /v1/media'
+                            ? async () =>
+                                sendJson(res, 200, {
+                                  ok: true,
+                                  apiVersion: HEADLESS_API_VERSION,
+                                  media: await listMediaResources(workspace),
+                                })
+                            : mediaProbeMatch && req.method === 'POST'
+                              ? () =>
+                                  handleV1MediaProbe(
+                                    req,
                                     res,
-                                    200,
-                                    resourceEnvelope(
-                                      await getMediaResource(
-                                        workspace,
-                                        assertPortableId(mediaMatch[1], 'media id'),
-                                      ),
-                                    ),
+                                    assertPortableId(mediaProbeMatch[1], 'media id'),
                                   )
-                              : route === 'POST /v1/render'
-                                ? () => handleRender(req, res, { normalizeInline: true })
-                                : route === 'GET /projects'
-                                  ? async () => sendJson(res, 200, listProjects(workspace))
-                                  : route === 'POST /render'
-                                    ? () => handleRender(req, res)
-                                    : route === 'POST /edit'
-                                      ? () => handleEdit(req, res)
-                                      : route === 'POST /frame'
-                                        ? () => handleFrame(req, res)
-                                        : route === 'POST /layout'
-                                          ? () => handleLayout(req, res)
-                                          : null
+                              : mediaMatch && req.method === 'GET'
+                                ? async () =>
+                                    sendJson(
+                                      res,
+                                      200,
+                                      resourceEnvelope(
+                                        await getMediaResource(
+                                          workspace,
+                                          assertPortableId(mediaMatch[1], 'media id'),
+                                        ),
+                                      ),
+                                    )
+                                : route === 'POST /v1/render'
+                                  ? () => handleRender(req, res, { normalizeInline: true })
+                                  : route === 'GET /projects'
+                                    ? async () => sendJson(res, 200, listProjects(workspace))
+                                    : route === 'POST /render'
+                                      ? () => handleRender(req, res)
+                                      : route === 'POST /edit'
+                                        ? () => handleEdit(req, res)
+                                        : route === 'POST /frame'
+                                          ? () => handleFrame(req, res)
+                                          : route === 'POST /layout'
+                                            ? () => handleLayout(req, res)
+                                            : route === 'POST /v1/motion'
+                                              ? () =>
+                                                  handleRange(
+                                                    req,
+                                                    res,
+                                                    motionRequestSchema,
+                                                    'sampleMotion',
+                                                  )
+                                              : route === 'POST /v1/check'
+                                                ? () =>
+                                                    handleRange(
+                                                      req,
+                                                      res,
+                                                      checkRequestSchema,
+                                                      'checkScene',
+                                                    )
+                                                : route === 'POST /v1/contact-sheet'
+                                                  ? () => handleContactSheet(req, res)
+                                                  : null
     if (!handler) {
       sendJson(res, 404, { error: `No route: ${route}` })
       return

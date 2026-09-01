@@ -456,9 +456,9 @@ async function main() {
       'textLayout line has positive width within the box',
       Boolean(
         tl &&
-          tl.lines.every(
-            (line) => line.width > 0 && line.inkWidth > 0 && line.width <= tl.box.width + 0.5,
-          ),
+        tl.lines.every(
+          (line) => line.width > 0 && line.inkWidth > 0 && line.width <= tl.box.width + 0.5,
+        ),
       ),
       tl ? JSON.stringify(tl.lines.map((line) => line.width)) : 'missing',
     )
@@ -466,7 +466,9 @@ async function main() {
       'textLayout baseline sits inside the box',
       Boolean(
         tl &&
-          tl.lines.every((line) => line.baseline > tl.box.y && line.baseline <= tl.box.y + tl.box.height),
+        tl.lines.every(
+          (line) => line.baseline > tl.box.y && line.baseline <= tl.box.y + tl.box.height,
+        ),
       ),
     )
 
@@ -500,12 +502,145 @@ async function main() {
       'span runs advance left-to-right with positive widths',
       Boolean(
         spanRuns &&
-          spanRuns.every((run) => run.width > 0) &&
-          spanRuns[1].x > spanRuns[0].x &&
-          spanRuns[2].x > spanRuns[1].x,
+        spanRuns.every((run) => run.width > 0) &&
+        spanRuns[1].x > spanRuns[0].x &&
+        spanRuns[2].x > spanRuns[1].x,
       ),
-      spanRuns ? JSON.stringify(spanRuns.map((run) => [Math.round(run.x), Math.round(run.width)])) : 'missing',
+      spanRuns
+        ? JSON.stringify(spanRuns.map((run) => [Math.round(run.x), Math.round(run.width)]))
+        : 'missing',
     )
+
+    console.log('\nPerception (motion, gates, contact sheet):')
+    // A rigged block with a walk on it: real animation to measure, rather than a
+    // static frame that would make every motion number trivially zero.
+    const riggedEdit = await page.evaluate((input) => window.freecut.editProject(input), {
+      project: reopenedProject,
+      ops: [
+        {
+          op: 'addBlock',
+          blockId: 'character-astronaut',
+          from: 0,
+          durationInFrames: 60,
+          scale: 0.5,
+          idPrefix: 'walker',
+          gestures: [{ id: 'walk', cycles: 2 }],
+        },
+      ],
+    })
+    const riggedProject = riggedEdit.project
+
+    const motion = await page.evaluate((input) => window.freecut.sampleMotion(input), {
+      project: riggedProject,
+      from: 0,
+      to: 59,
+      samples: 12,
+    })
+    check('sampleMotion returns the requested frame grid', motion.frames.length === 12)
+    const thigh = motion.items.find((entry) => entry.id === 'walker-thigh-near')
+    check('sampleMotion reports a driven rig part', Boolean(thigh))
+    check(
+      'a walking thigh is measured as moving',
+      Boolean(thigh && thigh.moved && thigh.rotationRange > 5),
+      thigh ? `rotationRange ${thigh.rotationRange}` : 'missing',
+    )
+    const glint = motion.items.find((entry) => entry.id === 'walker-visor-glint')
+    check(
+      'derived follow-through is measurable too',
+      Boolean(glint && glint.moved),
+      glint ? `travel ${glint.travel}` : 'missing',
+    )
+    // World coordinates, not local: the chest panel carries no keyframes of its
+    // own, but it hangs off the torso, so what is actually on screen moves. This
+    // is the property that makes the numbers trustworthy — they describe the
+    // frame, not the dopesheet.
+    const panel = motion.items.find((entry) => entry.id === 'walker-chest-panel')
+    check(
+      'a part inherits its parent motion in world space',
+      Boolean(panel && panel.moved && panel.travel > 1),
+      panel ? `travel ${panel.travel}` : 'missing',
+    )
+
+    // A block placed with no gestures is the real "nothing moved" case.
+    const stillEdit = await page.evaluate((input) => window.freecut.editProject(input), {
+      project: reopenedProject,
+      ops: [
+        {
+          op: 'addBlock',
+          blockId: 'character-astronaut',
+          from: 0,
+          durationInFrames: 60,
+          scale: 0.5,
+          idPrefix: 'statue',
+        },
+      ],
+    })
+    const stillMotion = await page.evaluate((input) => window.freecut.sampleMotion(input), {
+      project: stillEdit.project,
+      from: 0,
+      to: 59,
+      samples: 8,
+    })
+    const statueParts = stillMotion.items.filter((entry) => entry.id.startsWith('statue-'))
+    check(
+      'an ungestured block reports every part as still',
+      statueParts.length === 17 && statueParts.every((entry) => entry.moved === false),
+      `${statueParts.filter((entry) => entry.moved).length} of ${statueParts.length} moved`,
+    )
+
+    const gates = await page.evaluate((input) => window.freecut.checkScene(input), {
+      project: riggedProject,
+      from: 0,
+      to: 59,
+      samples: 8,
+    })
+    check('checkScene reports a pass/fail verdict', typeof gates.ok === 'boolean')
+    check('checkScene reports how many frames it read', gates.framesChecked === 8)
+    check('checkScene returns an issue list', Array.isArray(gates.issues))
+    check(
+      'a well-formed rigged scene raises no errors',
+      gates.issues.every((issue) => issue.severity !== 'error'),
+      JSON.stringify(gates.issues.filter((issue) => issue.severity === 'error')),
+    )
+
+    // A deliberately broken scene must be caught, or the gate is decorative.
+    const offCanvasProject = JSON.parse(JSON.stringify(reopenedProject))
+    const strayTitle = offCanvasProject.timeline.items.find((item) => item.id === 'text-1')
+    strayTitle.transform = { ...(strayTitle.transform ?? {}), x: 99_999 }
+    const brokenGates = await page.evaluate((input) => window.freecut.checkScene(input), {
+      project: offCanvasProject,
+      from: 0,
+      to: 10,
+      samples: 3,
+    })
+    check(
+      'checkScene catches an item pushed off canvas',
+      brokenGates.ok === false && brokenGates.issues.some((issue) => issue.code === 'off-canvas'),
+      JSON.stringify(brokenGates.issues.map((issue) => issue.code)),
+    )
+
+    const sheetDownloadPromise = page.waitForEvent('download', { timeout: 120_000 })
+    sheetDownloadPromise.catch(() => {})
+    const sheet = await page.evaluate((input) => window.freecut.renderContactSheet(input), {
+      project: riggedProject,
+      from: 0,
+      to: 59,
+      count: 6,
+      columns: 3,
+      cellWidth: 320,
+    })
+    const sheetPath = path.join(tempDir, 'contact-sheet.png')
+    const sheetDownload = await sheetDownloadPromise
+    await sheetDownload.saveAs(sheetPath)
+    const sheetSize = fs.existsSync(sheetPath) ? fs.statSync(sheetPath).size : 0
+    check('contact sheet renders every requested cell', sheet.frames.length === 6)
+    check('contact sheet spans the whole range', sheet.frames[0] === 0 && sheet.frames[5] === 59)
+    check(
+      'contact sheet tiles into the requested grid',
+      sheet.columns === 3 && sheet.rows === 2 && sheet.width === 960,
+      `${sheet.columns}x${sheet.rows} ${sheet.width}x${sheet.height}`,
+    )
+    check('contact sheet PNG has real pixels (>10KB)', sheetSize > 10_000, `size ${sheetSize}`)
 
     // --strict must fail BEFORE rendering on silent-failure findings.
     const brokenProject = JSON.parse(JSON.stringify(reopenedProject))

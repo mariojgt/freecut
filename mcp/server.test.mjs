@@ -68,6 +68,9 @@ test('MCP server lists the full editing tool surface and calls the headless API'
     'probe_media',
     'dump_layout',
     'grab_frame',
+    'sample_motion',
+    'check_scene',
+    'contact_sheet',
     'render_project',
   ])
 

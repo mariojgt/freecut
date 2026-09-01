@@ -76,6 +76,13 @@ import { layoutTextBlock, lineInkWidth } from '@/shared/typography/text-block-la
 import { createCanvasTextMeasurer } from '@/shared/typography/text-measurer'
 import { resolveAnimatedTextItem } from '@/features/keyframes/utils/animated-text-item'
 import { buildBlockCatalog, type BlockCatalog } from '@/shared/graphics/blocks/catalog'
+import { checkScene, planContactSheet, planSampleFrames, summarizeMotion } from './perception'
+import type {
+  CheckSceneOptions,
+  ContactSheetPlan,
+  MotionReport,
+  PerceivedFrame,
+} from './perception'
 
 const log = createLogger('Headless')
 
@@ -927,12 +934,20 @@ function buildComposition(view: MigratedTimelineView): CompositionInputProps {
  * PNG). Much faster than encoding a short clip + extracting a frame with
  * ffmpeg: no muxer, no encoder, no audio pipeline — just one composited frame.
  */
-// Browser-harness driver; exercised end-to-end by the headless chrome contract suite
-// fallow-ignore-next-line complexity
-async function renderFrame(input: HeadlessFrameInput): Promise<HeadlessFrameSummary> {
+/**
+ * Migrate a project and collect every validation warning it carries.
+ *
+ * Shared by every entry point that takes a project, because they all have to
+ * agree on what counts as a warning: a frame grab, a layout dump and a contact
+ * sheet that disagreed about a broken transform parent would make the cheap
+ * checks useless as a proxy for the expensive one.
+ */
+async function openProject(
+  input: { project: Project; media?: HeadlessMediaSource[]; strict?: boolean },
+  stage: string,
+): Promise<{ view: MigratedTimelineView; validationWarnings: HeadlessRenderWarning[] }> {
   const view = extractTimeline(input.project)
   const gpuAvailable = await detectWebGpuOnce()
-  const frame = resolveTargetFrame(view, input)
   const validationWarnings = [
     ...projectWarningsToHeadless(view.projectWarnings),
     ...sourceRangeWarnings(
@@ -944,7 +959,15 @@ async function renderFrame(input: HeadlessFrameInput): Promise<HeadlessFrameSumm
     ...transitionWarnings(view.transitions, view.items, { gpuAvailable }),
     ...transformParentWarnings(view.items),
   ]
-  reportValidationWarnings(validationWarnings, input.strict, 'frame')
+  reportValidationWarnings(validationWarnings, input.strict, stage)
+  return { view, validationWarnings }
+}
+
+// Browser-harness driver; exercised end-to-end by the headless chrome contract suite
+// fallow-ignore-next-line complexity
+async function renderFrame(input: HeadlessFrameInput): Promise<HeadlessFrameSummary> {
+  const { view, validationWarnings } = await openProject(input, 'frame')
+  const frame = resolveTargetFrame(view, input)
 
   useCompositionsStore.getState().setCompositions(view.compositions)
   registerMediaUrls(input.media)
@@ -1080,22 +1103,26 @@ function computeTextLayout(
  */
 // Browser-harness driver; exercised end-to-end by the headless chrome contract suite
 // fallow-ignore-next-line complexity
-async function dumpLayout(input: HeadlessLayoutInput): Promise<HeadlessLayoutResult> {
-  const view = extractTimeline(input.project)
-  const gpuAvailable = await detectWebGpuOnce()
-  const frame = resolveTargetFrame(view, input)
-  const validationWarnings = [
-    ...projectWarningsToHeadless(view.projectWarnings),
-    ...sourceRangeWarnings(
-      view.items,
-      view.compositions,
-      buildMediaMetadataMap(input.media),
-      view.fps,
-    ),
-    ...transitionWarnings(view.transitions, view.items, { gpuAvailable }),
-    ...transformParentWarnings(view.items),
-  ]
-  reportValidationWarnings(validationWarnings, input.strict, 'layout')
+/**
+ * Everything needed to resolve layout, computed once.
+ *
+ * Split out of `dumpLayout` because the perception tools sample the same project
+ * across a range of frames: fonts, media seeding and composition building are
+ * per-project work, and repeating them per frame would make a 24-frame sample
+ * 24 times more expensive for no change in result.
+ */
+interface PreparedLayout {
+  view: MigratedTimelineView
+  composition: CompositionInputProps
+  canvas: { width: number; height: number; fps: number }
+  layoutCanvas: Parameters<typeof getAnimatedTransform>[3]
+  keyframesMap: Map<string, ItemKeyframes>
+  visibleTrackIds: Set<string>
+  warnings: HeadlessRenderWarning[]
+}
+
+async function prepareLayout(input: HeadlessLayoutInput): Promise<PreparedLayout> {
+  const { view, validationWarnings } = await openProject(input, 'layout')
 
   // Source dimensions (video/image) feed the fit-to-canvas default, so seed the
   // media store. No blob URLs / GPU needed — this is pure transform math.
@@ -1134,60 +1161,309 @@ async function dumpLayout(input: HeadlessLayoutInput): Promise<HeadlessLayoutRes
     getExpressionKeyframes: (itemId: string) => keyframesMap.get(itemId),
   }
 
+  return {
+    view,
+    composition,
+    canvas,
+    layoutCanvas,
+    keyframesMap,
+    visibleTrackIds,
+    warnings: [...validationWarnings, ...warnings],
+  }
+}
+
+/**
+ * Resolve every drawn item's box at one frame.
+ *
+ * Pulled out of the prepare step so a range can be sampled; the ordering and
+ * visibility rules are the export renderer's, not a reimplementation.
+ */
+// Browser-harness driver; exercised end-to-end by the headless chrome contract suite
+// fallow-ignore-next-line complexity
+function layoutBoxesAt(prepared: PreparedLayout, frame: number): LayoutBox[] {
   const items: LayoutBox[] = []
   let z = 0
   // composition.tracks is already sorted descending by order (topmost track
   // last), matching the export draw order; within a track, items draw in array
   // order. Together these give the true z-stack (later = on top).
-  for (const track of composition.tracks) {
-    const trackVisible = visibleTrackIds.has(track.id)
+  for (const track of prepared.composition.tracks) {
+    const trackVisible = prepared.visibleTrackIds.has(track.id)
     for (const item of track.items ?? []) {
       if (item.type === 'audio') continue
-      const active = frame >= item.from && frame < item.from + item.durationInFrames
-      if (!active) continue
-      const t = getAnimatedTransform(item, keyframesMap.get(item.id), frame, layoutCanvas)
-      const left = canvas.width / 2 + t.x - t.width / 2
-      const top = canvas.height / 2 + t.y - t.height / 2
-      const box: LayoutBox = {
-        id: item.id,
-        type: item.type,
-        trackId: item.trackId,
-        from: item.from,
-        durationInFrames: item.durationInFrames,
-        x: round1(left),
-        y: round1(top),
-        width: round1(t.width),
-        height: round1(t.height),
-        opacity: Math.round(t.opacity * 1000) / 1000,
-        rotation: t.rotation,
-        cornerRadius: t.cornerRadius,
-        visible: trackVisible && t.opacity > 0,
-        z: z++,
-      }
-      if (item.type === 'text') {
-        box.text = item.text
-        box.textAlign = item.textAlign
-        box.verticalAlign = item.verticalAlign
-        box.fontSize = item.fontSize
-        const measured = computeTextLayout(item, keyframesMap.get(item.id), frame, canvas, t)
-        if (measured) {
-          box.textLayout = measured.textLayout
-          // Report the box the render actually uses (auto-expanded to fit content).
-          box.x = round1(measured.textLayout.box.x)
-          box.y = round1(measured.textLayout.box.y)
-          box.width = round1(measured.expanded.width)
-          box.height = round1(measured.expanded.height)
-        }
-      }
-      items.push(box)
+      if (frame < item.from || frame >= item.from + item.durationInFrames) continue
+      items.push(toLayoutBox(item, prepared, frame, { trackVisible, z: z++ }))
     }
   }
+  return items
+}
 
+/** One item's resolved box, with text boxes reported as the render expands them. */
+// Browser-harness driver; exercised end-to-end by the headless chrome contract suite
+// fallow-ignore-next-line complexity
+function toLayoutBox(
+  item: TimelineItem,
+  prepared: PreparedLayout,
+  frame: number,
+  stacking: { trackVisible: boolean; z: number },
+): LayoutBox {
+  const { canvas, keyframesMap, layoutCanvas } = prepared
+  const keyframes = keyframesMap.get(item.id)
+  const t = getAnimatedTransform(item, keyframes, frame, layoutCanvas)
+  const box: LayoutBox = {
+    id: item.id,
+    type: item.type,
+    trackId: item.trackId,
+    from: item.from,
+    durationInFrames: item.durationInFrames,
+    x: round1(canvas.width / 2 + t.x - t.width / 2),
+    y: round1(canvas.height / 2 + t.y - t.height / 2),
+    width: round1(t.width),
+    height: round1(t.height),
+    opacity: Math.round(t.opacity * 1000) / 1000,
+    rotation: t.rotation,
+    cornerRadius: t.cornerRadius,
+    visible: stacking.trackVisible && t.opacity > 0,
+    z: stacking.z,
+  }
+  if (item.type !== 'text') return box
+
+  box.text = item.text
+  box.textAlign = item.textAlign
+  box.verticalAlign = item.verticalAlign
+  box.fontSize = item.fontSize
+  const measured = computeTextLayout(item, keyframes, frame, canvas, t)
+  if (measured) {
+    box.textLayout = measured.textLayout
+    // Report the box the render actually uses (auto-expanded to fit content).
+    box.x = round1(measured.textLayout.box.x)
+    box.y = round1(measured.textLayout.box.y)
+    box.width = round1(measured.expanded.width)
+    box.height = round1(measured.expanded.height)
+  }
+  return box
+}
+
+async function dumpLayout(input: HeadlessLayoutInput): Promise<HeadlessLayoutResult> {
+  const prepared = await prepareLayout(input)
+  const frame = resolveTargetFrame(prepared.view, input)
   return {
     frame,
-    atSeconds: frame / view.fps,
-    canvas,
-    items,
+    atSeconds: frame / prepared.view.fps,
+    canvas: prepared.canvas,
+    items: layoutBoxesAt(prepared, frame),
+    warnings: prepared.warnings,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Perception: what an agent can measure about frames it cannot see
+// ---------------------------------------------------------------------------
+
+interface HeadlessRangeInput extends HeadlessLayoutInput {
+  /** First frame of the range. Defaults to 0. */
+  from?: number
+  /** Last frame, inclusive. Defaults to the end of the longest active item. */
+  to?: number
+  /** How many frames to sample across the range. */
+  samples?: number
+}
+
+/** Last frame any item is still on screen, so a default range covers the cut. */
+function lastActiveFrame(view: MigratedTimelineView): number {
+  return view.items.reduce(
+    (latest, item) => Math.max(latest, item.from + item.durationInFrames - 1),
+    0,
+  )
+}
+
+function toPerceivedFrames(prepared: PreparedLayout, frames: readonly number[]): PerceivedFrame[] {
+  return frames.map((frame) => ({
+    frame,
+    boxes: layoutBoxesAt(prepared, frame).map((item) => ({
+      id: item.id,
+      type: item.type,
+      x: item.x,
+      y: item.y,
+      width: item.width,
+      height: item.height,
+      rotation: item.rotation,
+      opacity: item.opacity,
+      visible: item.visible,
+      z: item.z,
+      ...(item.text !== undefined && { text: item.text }),
+    })),
+  }))
+}
+
+/**
+ * Measure motion across a range without rendering anything.
+ *
+ * The question this answers is the one an agent otherwise cannot: did the
+ * keyframes I just wrote actually move the thing, how far, and how fast. Pure
+ * transform maths, so it costs a fraction of a render and can be run per edit.
+ */
+async function sampleMotion(
+  input: HeadlessRangeInput & { itemIds?: string[] },
+): Promise<MotionReport & { warnings: HeadlessRenderWarning[] }> {
+  const prepared = await prepareLayout(input)
+  const frames = planSampleFrames({ ...input, defaultTo: lastActiveFrame(prepared.view) })
+  const report = summarizeMotion(toPerceivedFrames(prepared, frames), prepared.canvas, {
+    ...(input.itemIds?.length && { itemIds: input.itemIds }),
+  })
+  return { ...report, warnings: prepared.warnings }
+}
+
+/** Run the semantic gates over a range and report named failures. */
+async function checkSceneRange(
+  input: HeadlessRangeInput & CheckSceneOptions,
+): Promise<ReturnType<typeof checkScene> & { warnings: HeadlessRenderWarning[] }> {
+  const prepared = await prepareLayout(input)
+  const frames = planSampleFrames({ ...input, defaultTo: lastActiveFrame(prepared.view) })
+  const result = checkScene(toPerceivedFrames(prepared, frames), prepared.canvas, {
+    ...(input.titleSafe !== undefined && { titleSafe: input.titleSafe }),
+    ...(input.ghostOpacity !== undefined && { ghostOpacity: input.ghostOpacity }),
+    ...(input.offCanvasTolerance !== undefined && {
+      offCanvasTolerance: input.offCanvasTolerance,
+    }),
+  })
+  return { ...result, warnings: prepared.warnings }
+}
+
+interface HeadlessContactSheetInput extends HeadlessFrameInput {
+  from?: number
+  to?: number
+  /** Cells on the sheet. */
+  count?: number
+  columns?: number
+  /** Width of one cell in px; the height follows the canvas aspect. */
+  cellWidth?: number
+  /** Stamp each cell with its frame number. */
+  label?: boolean
+}
+
+interface HeadlessContactSheetSummary {
+  ok: true
+  frames: number[]
+  columns: number
+  rows: number
+  width: number
+  height: number
+  format: string
+  fileSize: number
+  fileName: string
+  warnings: HeadlessRenderWarning[]
+}
+
+const SHEET_LABEL_HEIGHT = 22
+
+const SHEET_BACKGROUND = '#101014'
+const SHEET_LABEL_COLOR = '#d8d8e0'
+
+/** Draw one rendered frame into its cell, with the frame number under it. */
+async function drawSheetCell(
+  ctx: OffscreenCanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  cell: { plan: ContactSheetPlan; index: number; labelHeight: number; label: string },
+): Promise<void> {
+  const { plan, index, labelHeight } = cell
+  const x = (index % plan.columns) * plan.cellWidth
+  const y = Math.floor(index / plan.columns) * (plan.cellHeight + labelHeight)
+  ctx.drawImage(bitmap, x, y, plan.cellWidth, plan.cellHeight)
+  bitmap.close()
+  if (labelHeight <= 0) return
+
+  ctx.fillStyle = SHEET_BACKGROUND
+  ctx.fillRect(x, y + plan.cellHeight, plan.cellWidth, labelHeight)
+  ctx.fillStyle = SHEET_LABEL_COLOR
+  ctx.font = `500 ${labelHeight - 8}px monospace`
+  ctx.textBaseline = 'middle'
+  ctx.fillText(cell.label, x + 6, y + plan.cellHeight + labelHeight / 2)
+}
+
+/**
+ * Tile several rendered frames into one image.
+ *
+ * One image rather than N files because the point is comparison: whether a move
+ * eases or snaps, whether a limb passes through a body, whether a reveal lands on
+ * its beat — none of that is visible one still at a time. Frames are rendered
+ * through the same `renderSingleFrame` a real export uses, so a cell is not an
+ * approximation of the output.
+ */
+// Browser-harness driver; exercised end-to-end by the headless chrome contract suite
+// fallow-ignore-next-line complexity
+async function renderContactSheet(
+  input: HeadlessContactSheetInput,
+): Promise<HeadlessContactSheetSummary> {
+  const { view, validationWarnings } = await openProject(input, 'contact-sheet')
+
+  useCompositionsStore.getState().setCompositions(view.compositions)
+  registerMediaUrls(input.media)
+  seedMediaLibrary(input.media)
+
+  const composition = buildComposition(view)
+  const warnings = await prepareFonts(composition.tracks)
+  await assertGpuForComposition(composition, view.compositions)
+  composition.tracks = await resolveMediaUrls(composition.tracks, { useProxy: false })
+
+  const plan = planContactSheet({
+    from: input.from ?? 0,
+    to: input.to ?? lastActiveFrame(view),
+    count: input.count ?? 9,
+    canvas: { width: view.width, height: view.height },
+    ...(input.columns !== undefined && { columns: input.columns }),
+    ...(input.cellWidth !== undefined && { cellWidth: input.cellWidth }),
+  })
+
+  const labelHeight = input.label === false ? 0 : SHEET_LABEL_HEIGHT
+  const sheet = new OffscreenCanvas(plan.sheetWidth, plan.sheetHeight + labelHeight * plan.rows)
+  const ctx = sheet.getContext('2d')
+  if (!ctx) throw new Error('Contact sheet needs a 2D context')
+  ctx.fillStyle = SHEET_BACKGROUND
+  ctx.fillRect(0, 0, sheet.width, sheet.height)
+
+  for (const [index, frame] of plan.frames.entries()) {
+    const blob = await renderSingleFrame({
+      composition,
+      frame,
+      width: plan.cellWidth,
+      height: plan.cellHeight,
+      format: 'image/png',
+      quality: 1,
+    })
+    await drawSheetCell(ctx, await createImageBitmap(blob), {
+      plan,
+      index,
+      labelHeight,
+      label: `f${frame}  ${(frame / view.fps).toFixed(2)}s`,
+    })
+  }
+
+  const format = input.format ?? 'image/png'
+  const blob = await sheet.convertToBlob({
+    type: format,
+    ...(format !== 'image/png' && { quality: input.quality ?? 0.92 }),
+  })
+  const ext = format === 'image/jpeg' ? 'jpg' : format === 'image/webp' ? 'webp' : 'png'
+  const fileName = input.outputFileName ?? `freecut-contact-sheet.${ext}`
+  triggerDownload(blob, fileName)
+
+  log.info('Headless contact sheet complete', {
+    frames: plan.frames.length,
+    width: sheet.width,
+    height: sheet.height,
+    fileSize: blob.size,
+  })
+
+  return {
+    ok: true,
+    frames: plan.frames,
+    columns: plan.columns,
+    rows: plan.rows,
+    width: sheet.width,
+    height: sheet.height,
+    format,
+    fileSize: blob.size,
+    fileName,
     warnings: [...validationWarnings, ...warnings],
   }
 }
@@ -1200,6 +1476,10 @@ interface FreecutHeadlessApi {
   renderProject: typeof renderProject
   renderFrame: typeof renderFrame
   dumpLayout: typeof dumpLayout
+  /** Perception surface: measure, gate and contact-sheet a range of frames. */
+  sampleMotion: typeof sampleMotion
+  checkScene: typeof checkSceneRange
+  renderContactSheet: typeof renderContactSheet
   editProject: typeof editProject
   normalizeProject: typeof normalizeProjectForHeadless
   probeMedia: typeof probeMedia
@@ -1289,6 +1569,9 @@ window.freecut = {
   renderProject,
   renderFrame,
   dumpLayout,
+  sampleMotion,
+  checkScene: checkSceneRange,
+  renderContactSheet,
   editProject,
   normalizeProject: normalizeProjectForHeadless,
   probeMedia,

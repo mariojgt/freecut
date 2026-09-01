@@ -33,7 +33,8 @@ const hasExactlyOneProjectSource = (value) =>
 // wire rather than producing an empty scene. Kept in sync by
 // src/shared/graphics/blocks/catalog-contract.test.ts.
 const BLOCK_IDS = ['character-astronaut', 'world-moon-surface']
-const GESTURE_IDS = ['walk', 'idle-breath', 'wave', 'parallax-pan', 'star-drift']
+const GESTURE_IDS = ['walk', 'idle-breath', 'wave', 'land-squash', 'parallax-pan', 'star-drift']
+const POSE_IDS = ['stand', 'point-forward', 'arms-raised', 'crouch', 'look-up']
 const SCENE_PALETTE_IDS = ['brand', 'deep-space']
 
 const GPU_EFFECT_TYPES = [
@@ -135,10 +136,7 @@ const easing = z.enum([
 const easingConfigSchema = z
   .object({
     type: easing,
-    bezier: z
-      .object({ x1: finite, y1: finite, x2: finite, y2: finite })
-      .strict()
-      .optional(),
+    bezier: z.object({ x1: finite, y1: finite, x2: finite, y2: finite }).strict().optional(),
     spring: z
       .object({
         tension: z.number().min(0).max(500),
@@ -334,6 +332,53 @@ const opSchemas = [
     .strict(),
   z
     .object({
+      op: z.literal('applyPose'),
+      idPrefix: id,
+      /**
+       * One pose holds for the span; several are read as a sequence in the order
+       * given, so acting is expressed as poses over time rather than as angles.
+       */
+      poses: z
+        .array(
+          z
+            .object({
+              id: z.enum(POSE_IDS),
+              /** Normalized position in the span, 0..1. Defaults to even spacing. */
+              at: finite.min(0).max(1).optional(),
+              easing: easing.optional(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(16),
+      durationInFrames: positiveFrames.optional(),
+      startFrame: frame.optional(),
+      intensity: finite.nonnegative().optional(),
+      scale: finite.positive().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('attachToSlot'),
+      /** Block instance that owns the slot. */
+      idPrefix: id,
+      slotId: id,
+      /** Existing item to move onto the slot. */
+      itemId: id,
+      /**
+       * The placement the block was added at. Restated because a lowered block
+       * keeps no record of it, the same way `applyGesture` restates `scale`.
+       */
+      x: finite.optional(),
+      y: finite.optional(),
+      scale: finite.positive().optional(),
+      /** Keep the item's own size instead of leaving it untouched. */
+      offsetX: finite.optional(),
+      offsetY: finite.optional(),
+    })
+    .strict(),
+  z
+    .object({
       op: z.literal('importSvg'),
       source: z.string().min(1).max(4_000_000),
       name: z.string().min(1).optional(),
@@ -397,6 +442,8 @@ export const EDIT_OPERATION_NAMES = [
   'setTransform',
   'addBlock',
   'applyGesture',
+  'applyPose',
+  'attachToSlot',
   'importSvg',
   'morphPath',
 ]
@@ -427,6 +474,8 @@ function samplesDescription(name) {
     setTransform: 'Update an item transform',
     addBlock: `Add a rigged illustration block (${BLOCK_IDS.join(', ')}) with optional gestures (${GESTURE_IDS.join(', ')})`,
     applyGesture: 'Bake a gesture onto an existing block instance by its id prefix',
+    applyPose: `Hold or sequence named poses (${POSE_IDS.join(', ')}) on a block instance`,
+    attachToSlot: "Parent an item to a block instance's named slot so it travels with the rig",
     importSvg: 'Import SVG source as editable path shapes, one per contour',
     morphPath: 'Animate a path shape into another outline between two frames',
   }
@@ -706,6 +755,64 @@ export const layoutRequestSchema = z
     path: ['project'],
   })
 
+/**
+ * Fields the perception endpoints share.
+ *
+ * A range rather than a single frame: motion, gates and contact sheets are all
+ * questions about a span of time, and the whole reason they exist is that a
+ * single frame cannot answer them.
+ */
+const rangeFields = {
+  project: id.optional(),
+  projectObject: projectObject.optional(),
+  from: frame.optional(),
+  to: frame.optional(),
+  strict: z.boolean().optional(),
+}
+
+export const motionRequestSchema = z
+  .object({
+    ...rangeFields,
+    samples: z.number().int().min(1).max(600).optional(),
+    itemIds: z.array(id).max(500).optional(),
+  })
+  .strict()
+  .refine(hasExactlyOneProjectSource, {
+    message: 'provide exactly one of project or projectObject',
+    path: ['project'],
+  })
+
+export const checkRequestSchema = z
+  .object({
+    ...rangeFields,
+    samples: z.number().int().min(1).max(600).optional(),
+    /** Fraction of the canvas on-screen copy must stay inside. */
+    titleSafe: finite.min(0.1).max(1).optional(),
+    ghostOpacity: finite.min(0).max(1).optional(),
+    offCanvasTolerance: finite.min(0).max(1).optional(),
+  })
+  .strict()
+  .refine(hasExactlyOneProjectSource, {
+    message: 'provide exactly one of project or projectObject',
+    path: ['project'],
+  })
+
+export const contactSheetRequestSchema = z
+  .object({
+    ...rangeFields,
+    count: z.number().int().min(1).max(64).optional(),
+    columns: z.number().int().min(1).max(16).optional(),
+    cellWidth: positiveFrames.max(4096).optional(),
+    label: z.boolean().optional(),
+    format: imageFormat.optional(),
+    quality: finite.min(0).max(1).optional(),
+  })
+  .strict()
+  .refine(hasExactlyOneProjectSource, {
+    message: 'provide exactly one of project or projectObject',
+    path: ['project'],
+  })
+
 export function normalizeRenderInput(value) {
   const out = { ...value }
   if (out.in !== undefined) out.inSec = Number(out.in)
@@ -753,6 +860,9 @@ export function capabilities() {
       render: z.toJSONSchema(renderRequestSchema, { target: 'draft-7' }),
       frame: z.toJSONSchema(frameRequestSchema, { target: 'draft-7' }),
       layout: z.toJSONSchema(layoutRequestSchema, { target: 'draft-7' }),
+      motion: z.toJSONSchema(motionRequestSchema, { target: 'draft-7' }),
+      check: z.toJSONSchema(checkRequestSchema, { target: 'draft-7' }),
+      contactSheet: z.toJSONSchema(contactSheetRequestSchema, { target: 'draft-7' }),
       edit: z.toJSONSchema(editRequestSchema, { target: 'draft-7' }),
       projectCreate: z.toJSONSchema(projectCreateRequestSchema, { target: 'draft-7' }),
       projectSave: z.toJSONSchema(projectSaveRequestSchema, { target: 'draft-7' }),
@@ -774,6 +884,9 @@ export function capabilities() {
         'GET /v1/media/:id',
         'POST /v1/media/:id/probe',
         'POST /v1/render',
+        'POST /v1/motion',
+        'POST /v1/check',
+        'POST /v1/contact-sheet',
       ],
       httpMediaUpload: false,
       deleteProject: false,

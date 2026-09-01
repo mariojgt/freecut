@@ -1,7 +1,9 @@
-import type { BlockDefinition, GestureDefinition } from './types'
+import type { BlockDefinition, GestureDefinition, PoseDefinition } from './types'
 import {
   ASTRONAUT_BLOCK,
+  ASTRONAUT_POSES,
   IDLE_BREATH_GESTURE,
+  LAND_SQUASH_GESTURE,
   WALK_GESTURE,
   WAVE_GESTURE,
 } from './character-astronaut'
@@ -20,9 +22,11 @@ const GESTURE_LIST: GestureDefinition[] = [
   WALK_GESTURE,
   IDLE_BREATH_GESTURE,
   WAVE_GESTURE,
+  LAND_SQUASH_GESTURE,
   PARALLAX_PAN_GESTURE,
   STAR_DRIFT_GESTURE,
 ]
+const POSE_LIST: PoseDefinition[] = [...ASTRONAUT_POSES]
 
 export const BLOCKS: ReadonlyMap<string, BlockDefinition> = new Map(
   BLOCK_LIST.map((block) => [block.id, block]),
@@ -32,12 +36,20 @@ export const GESTURES: ReadonlyMap<string, GestureDefinition> = new Map(
   GESTURE_LIST.map((gesture) => [gesture.id, gesture]),
 )
 
+export const POSES: ReadonlyMap<string, PoseDefinition> = new Map(
+  POSE_LIST.map((pose) => [pose.id, pose]),
+)
+
 export function getBlock(id: string): BlockDefinition | undefined {
   return BLOCKS.get(id)
 }
 
 export function getGesture(id: string): GestureDefinition | undefined {
   return GESTURES.get(id)
+}
+
+export function getPose(id: string): PoseDefinition | undefined {
+  return POSES.get(id)
 }
 
 export function listBlocks(category?: BlockDefinition['category']): BlockDefinition[] {
@@ -78,24 +90,14 @@ export interface BlockValidationIssue {
   message: string
 }
 
-/**
- * Structural check for a block and the gestures that claim to drive it.
- *
- * Run in tests and before any generated scene is committed, so a mistyped part
- * id fails loudly instead of producing a limb that silently never moves.
- */
-export function validateBlock(
-  block: BlockDefinition,
-  gestures: readonly GestureDefinition[] = [],
-): BlockValidationIssue[] {
+function validatePartIds(block: BlockDefinition, ids: Set<string>): BlockValidationIssue[] {
   const issues: BlockValidationIssue[] = []
-  const ids = new Set<string>()
-
+  const seen = new Set<string>()
   for (const part of block.parts) {
-    if (ids.has(part.id)) {
+    if (seen.has(part.id)) {
       issues.push({ blockId: block.id, partId: part.id, message: 'Duplicate part id.' })
     }
-    ids.add(part.id)
+    seen.add(part.id)
   }
 
   for (const part of block.parts) {
@@ -114,8 +116,12 @@ export function validateBlock(
       })
     }
   }
+  return issues
+}
 
-  // A parenting cycle would make the transform hierarchy unresolvable.
+/** A parenting cycle would make the transform hierarchy unresolvable. */
+function validateHierarchy(block: BlockDefinition): BlockValidationIssue[] {
+  const issues: BlockValidationIssue[] = []
   const byId = new Map(block.parts.map((part) => [part.id, part]))
   for (const part of block.parts) {
     const seen = new Set<string>([part.id])
@@ -133,7 +139,15 @@ export function validateBlock(
       cursor = byId.get(cursor)?.parent
     }
   }
+  return issues
+}
 
+function validateGestures(
+  block: BlockDefinition,
+  ids: Set<string>,
+  gestures: readonly GestureDefinition[],
+): BlockValidationIssue[] {
+  const issues: BlockValidationIssue[] = []
   for (const gestureId of block.gestures ?? []) {
     const gesture = gestures.find((candidate) => candidate.id === gestureId)
     if (!gesture) {
@@ -149,6 +163,113 @@ export function validateBlock(
       }
     }
   }
-
   return issues
+}
+
+function validatePoses(
+  block: BlockDefinition,
+  ids: Set<string>,
+  poses: readonly PoseDefinition[],
+): BlockValidationIssue[] {
+  const issues: BlockValidationIssue[] = []
+  for (const poseId of block.poses ?? []) {
+    const pose = poses.find((candidate) => candidate.id === poseId)
+    if (!pose) {
+      issues.push({ blockId: block.id, message: `Pose "${poseId}" is not registered.` })
+      continue
+    }
+    if (pose.blockId !== block.id) {
+      issues.push({
+        blockId: block.id,
+        message: `Pose "${poseId}" was authored for block "${pose.blockId}".`,
+      })
+    }
+    for (const channel of pose.channels) {
+      if (!ids.has(channel.partId)) {
+        issues.push({
+          blockId: block.id,
+          message: `Pose "${poseId}" targets unknown part "${channel.partId}".`,
+        })
+      }
+    }
+  }
+  return issues
+}
+
+/**
+ * Slots.
+ *
+ * A slot whose part was mistyped silently stops parenting, so an attached prop
+ * sits at a fixed canvas position while the rig moves away from it — visible only
+ * in motion, which is exactly the kind of fault worth catching at load.
+ */
+function validateSlots(block: BlockDefinition, ids: Set<string>): BlockValidationIssue[] {
+  const issues: BlockValidationIssue[] = []
+  for (const slot of block.slots ?? []) {
+    if (slot.partId && !ids.has(slot.partId)) {
+      issues.push({
+        blockId: block.id,
+        message: `Slot "${slot.id}" names unknown part "${slot.partId}".`,
+      })
+    }
+  }
+  return issues
+}
+
+/** Derived followers. */
+function validateSecondary(block: BlockDefinition, ids: Set<string>): BlockValidationIssue[] {
+  const issues: BlockValidationIssue[] = []
+  const links = block.secondary ?? []
+  const drivers = new Set(links.map((link) => link.driverPartId))
+
+  for (const link of links) {
+    for (const [role, partId] of [
+      ['driver', link.driverPartId],
+      ['follower', link.followerPartId],
+    ] as const) {
+      if (!ids.has(partId)) {
+        issues.push({
+          blockId: block.id,
+          message: `Secondary link "${link.id}" names unknown ${role} part "${partId}".`,
+        })
+      }
+    }
+    // A follower that is also a driver makes the compiled result depend on link
+    // order, which would make the same project resolve differently across runs.
+    if (drivers.has(link.followerPartId)) {
+      issues.push({
+        blockId: block.id,
+        message: `Secondary link "${link.id}" drives "${link.followerPartId}", which is itself a driver; chains are not supported.`,
+      })
+    }
+    if (link.lagSeconds < 0) {
+      issues.push({
+        blockId: block.id,
+        message: `Secondary link "${link.id}" has a negative lag.`,
+      })
+    }
+  }
+  return issues
+}
+
+/**
+ * Structural check for a block and everything that claims to drive it.
+ *
+ * Run in tests and before any generated scene is committed, so a mistyped part
+ * id fails loudly instead of producing a limb that silently never moves.
+ */
+export function validateBlock(
+  block: BlockDefinition,
+  gestures: readonly GestureDefinition[] = [],
+  poses: readonly PoseDefinition[] = [],
+): BlockValidationIssue[] {
+  const ids = new Set(block.parts.map((part) => part.id))
+  return [
+    ...validatePartIds(block, ids),
+    ...validateHierarchy(block),
+    ...validateGestures(block, ids, gestures),
+    ...validatePoses(block, ids, poses),
+    ...validateSlots(block, ids),
+    ...validateSecondary(block, ids),
+  ]
 }

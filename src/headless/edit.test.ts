@@ -423,3 +423,149 @@ describe('editProject', () => {
     })
   })
 })
+
+describe('rigged block ops', () => {
+  const place = async (extra: EditOp[] = []) =>
+    editProject({
+      project: baseProject(),
+      ops: [
+        { op: 'addBlock', blockId: 'character-astronaut', durationInFrames: 60, scale: 2 },
+        ...extra,
+      ],
+    })
+
+  /** Every keyframe written for one part item and property. */
+  const lane = (project: Project, suffix: string, property: string) =>
+    project.timeline?.keyframes
+      ?.find((entry) => entry.itemId.endsWith(suffix))
+      ?.properties.find((entry) => entry.property === property)
+
+  /** `addBlock` reports the prefix it namespaced the instance with. */
+  const prefixOf = (result: Awaited<ReturnType<typeof editProject>>) =>
+    (result.results[0] as { detail: { idPrefix: string } }).detail.idPrefix
+
+  /** Ids are generated, so a follow-up op has to read the one that was made. */
+  const idOf = (result: Awaited<ReturnType<typeof editProject>>, index: number) =>
+    (result.results[index] as { detail: { id: string } }).detail.id
+
+  it('lowers a block into one item per part', async () => {
+    const { project } = await place()
+    const parts = project.timeline?.items?.filter((item) => item.id.includes('character-astronaut'))
+    expect(parts?.length).toBe(17)
+  })
+
+  it('bakes a gesture onto an existing instance', async () => {
+    const first = await place()
+    const prefix = prefixOf(first)
+    const { project } = await editProject({
+      project: first.project,
+      ops: [{ op: 'applyGesture', idPrefix: prefix, gestureId: 'walk', cycles: 2, scale: 2 }],
+    })
+    expect(lane(project, '-thigh-near', 'rotation')?.keyframes.length).toBeGreaterThan(16)
+  })
+
+  it('applies the scale channel, which a per-channel copy used to drop', async () => {
+    const first = await place()
+    const prefix = prefixOf(first)
+    const before = first.project.timeline?.items?.find((item) => item.id.endsWith('-torso'))
+    const { project } = await editProject({
+      project: first.project,
+      ops: [{ op: 'applyGesture', idPrefix: prefix, gestureId: 'land-squash', scale: 2 }],
+    })
+
+    const height = lane(project, '-torso', 'height')
+    const width = lane(project, '-torso', 'width')
+    expect(height?.keyframes.length).toBeGreaterThan(2)
+    expect(width?.keyframes.length).toBeGreaterThan(2)
+
+    // The squash flattens to -22% and widens to +18% of the authored box.
+    const restHeight = before?.transform?.height ?? 0
+    const flattest = Math.min(...(height?.keyframes.map((k) => k.value) ?? []))
+    expect(flattest).toBeCloseTo(restHeight * 0.78, 4)
+  })
+
+  it('holds a named pose on an instance', async () => {
+    const first = await place()
+    const { project } = await editProject({
+      project: first.project,
+      ops: [
+        {
+          op: 'applyPose',
+          idPrefix: prefixOf(first),
+          poses: [{ id: 'point-forward' }],
+          scale: 2,
+        },
+      ],
+    })
+    const arm = lane(project, '-arm-near', 'rotation')
+    expect(arm?.keyframes[0]?.value).toBeCloseTo(0, 6)
+    expect(arm?.keyframes.at(-1)?.value).toBeCloseTo(-78, 6)
+  })
+
+  it('sequences poses and spaces them evenly when untimed', async () => {
+    const first = await place()
+    const { project } = await editProject({
+      project: first.project,
+      ops: [
+        {
+          op: 'applyPose',
+          idPrefix: prefixOf(first),
+          poses: [{ id: 'stand' }, { id: 'crouch' }, { id: 'stand' }],
+          durationInFrames: 60,
+          scale: 2,
+        },
+      ],
+    })
+    const thigh = lane(project, '-thigh-near', 'rotation')
+    expect(thigh?.keyframes.map((keyframe) => keyframe.frame)).toEqual([0, 30, 60])
+    // Down into the crouch and back to rest.
+    expect(thigh?.keyframes[1]?.value).toBeCloseTo(52, 6)
+    expect(thigh?.keyframes.at(-1)?.value).toBeCloseTo(0, 6)
+  })
+
+  it('refuses an unknown pose', async () => {
+    const first = await place()
+    await expect(
+      editProject({
+        project: first.project,
+        ops: [{ op: 'applyPose', idPrefix: prefixOf(first), poses: [{ id: 'moonwalk' }] }],
+      }),
+    ).rejects.toThrow(/unknown pose/i)
+  })
+
+  it('attaches an item to a slot and parents it to the slot part', async () => {
+    const withText = await place([
+      { op: 'addText', text: 'flag', from: 0, durationInFrames: 60, trackId: 't_v' },
+    ])
+    const prefix = prefixOf(withText)
+    const flagId = idOf(withText, 1)
+    const { project } = await editProject({
+      project: withText.project,
+      ops: [{ op: 'attachToSlot', idPrefix: prefix, slotId: 'hand', itemId: flagId, scale: 2 }],
+    })
+    const flag = project.timeline?.items?.find((item) => item.id === flagId)
+    expect(flag?.transformParent?.parentItemId).toBe(`${prefix}-glove-near`)
+    // Slot 'hand' sits at [110, 282] in a 200x400 block, so at scale 2 the
+    // canvas offset from block centre is (10*2, 82*2).
+    expect({ x: flag?.transform?.x, y: flag?.transform?.y }).toEqual({ x: 20, y: 164 })
+  })
+
+  it('refuses a slot the block does not have', async () => {
+    const withText = await place([
+      { op: 'addText', text: 'x', from: 0, durationInFrames: 60, trackId: 't_v' },
+    ])
+    await expect(
+      editProject({
+        project: withText.project,
+        ops: [
+          {
+            op: 'attachToSlot',
+            idPrefix: prefixOf(withText),
+            slotId: 'tail',
+            itemId: idOf(withText, 1),
+          },
+        ],
+      }),
+    ).rejects.toThrow(/has no slot "tail"/)
+  })
+})

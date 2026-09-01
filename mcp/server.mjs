@@ -50,7 +50,11 @@ export function createFreeCutMcpServer(options = {}) {
     {
       instructions:
         'Use get_project before persistent edits and pass its revision as expectedRevision. ' +
-        'Call edit_project with persist=false to preview risky changes, then persist only after review.',
+        'Call edit_project with persist=false to preview risky changes, then persist only after review. ' +
+        'When animating, close the loop rather than guessing: list_blocks to see which rigs, ' +
+        'gestures and poses exist, then after each edit call check_scene for named faults and ' +
+        'sample_motion to confirm the motion you intended actually resolved. Read contact_sheet ' +
+        'when judging timing, and grab_frame only for a single pose. Render last.',
     },
   )
 
@@ -281,6 +285,91 @@ export function createFreeCutMcpServer(options = {}) {
         await api.requestFile('/frame', {
           body: { project: id, format, ...settings },
           fallbackName: `frame.${format === 'jpeg' ? 'jpg' : format}`,
+        }),
+      ),
+  )
+
+  registerTool(
+    server,
+    'sample_motion',
+    {
+      title: 'Measure motion over a range',
+      description:
+        'Resolve each item transform across a frame range and return motion statistics — ' +
+        'travel, net displacement, peak speed, and per-channel ranges — plus a `moved` flag. ' +
+        'Use this to confirm keyframes you just wrote actually animate something, and how far. ' +
+        'Costs no render: it is transform maths, so it is cheap enough to run after every edit.',
+      inputSchema: z.object({
+        projectId,
+        from: z.number().int().nonnegative().optional(),
+        to: z.number().int().nonnegative().optional(),
+        samples: z.number().int().min(1).max(600).default(24),
+        itemIds: z.array(z.string()).max(500).optional(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ projectId: id, ...range }) =>
+      success(
+        await api.requestJson('/v1/motion', { method: 'POST', body: { project: id, ...range } }),
+      ),
+  )
+
+  registerTool(
+    server,
+    'check_scene',
+    {
+      title: 'Check a scene for visual faults',
+      description:
+        'Run semantic gates over a frame range and report named failures a rendered image ' +
+        'cannot tell you about: items off canvas or clipped, layers left at ghost opacity, ' +
+        'text crossing the title-safe area, degenerate or non-finite transforms, two ' +
+        'full-frame backdrops ghosting over each other, frames with nothing drawn, and ' +
+        'items that never move. Run this before rendering; errors mean the frame is broken.',
+      inputSchema: z.object({
+        projectId,
+        from: z.number().int().nonnegative().optional(),
+        to: z.number().int().nonnegative().optional(),
+        samples: z.number().int().min(1).max(600).default(24),
+        titleSafe: z.number().min(0.1).max(1).optional(),
+        ghostOpacity: z.number().min(0).max(1).optional(),
+        offCanvasTolerance: z.number().min(0).max(1).optional(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ projectId: id, ...options }) =>
+      success(
+        await api.requestJson('/v1/check', { method: 'POST', body: { project: id, ...options } }),
+      ),
+  )
+
+  registerTool(
+    server,
+    'contact_sheet',
+    {
+      title: 'Render a contact sheet',
+      description:
+        'Render several frames across a range and tile them into one labelled image in the ' +
+        'MCP output directory. This is how you see timing: whether a move eases or snaps, ' +
+        'whether a reveal lands on its beat, whether a limb passes through a body. Prefer it ' +
+        'over repeated grab_frame calls when reviewing motion rather than a single pose.',
+      inputSchema: z.object({
+        projectId,
+        from: z.number().int().nonnegative().optional(),
+        to: z.number().int().nonnegative().optional(),
+        count: z.number().int().min(1).max(64).default(9),
+        columns: z.number().int().min(1).max(16).optional(),
+        cellWidth: z.number().int().positive().max(4096).optional(),
+        label: z.boolean().default(true),
+        format: z.enum(['png', 'jpg', 'jpeg', 'webp']).default('png'),
+        quality: z.number().min(0).max(1).optional(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ projectId: id, format, ...settings }) =>
+      success(
+        await api.requestFile('/v1/contact-sheet', {
+          body: { project: id, format, ...settings },
+          fallbackName: `contact-sheet.${format === 'jpeg' ? 'jpg' : format}`,
         }),
       ),
   )

@@ -7,8 +7,11 @@ import { parseSvgPathData, subpathBounds, subpathToMaskVertices } from '../shape
 import type { BakedKeyframe, BakedTrack } from './gesture-bake'
 import { bakeGesture } from './gesture-bake'
 import { partsInHierarchyOrder } from './registry'
+import type { RigLaneProperty } from './rig-channels'
+import { RIG_CHANNELS, resolveRigProperty, rigChannelProperties } from './rig-channels'
 import { resolvePaletteRole, type ScenePalette } from './scene-palette'
-import type { BlockDefinition, BlockPart, GestureDefinition, RigChannel } from './types'
+import { compileSecondaryTracks } from './secondary-motion'
+import type { BlockDefinition, BlockPart, GestureDefinition } from './types'
 
 /**
  * Lower a block onto the timeline.
@@ -61,6 +64,14 @@ export interface InstantiateBlockOptions {
    * a gate, or the whole silhouette without a second definition.
    */
   partIds?: readonly string[]
+  /**
+   * Composition frame rate. Only secondary motion needs it — a follower's lag is
+   * authored in seconds so it feels the same at any frame rate — so it defaults
+   * rather than becoming required for every caller.
+   */
+  fps?: number
+  /** Skip the block's derived follow-through. Mainly for tests and diffing. */
+  disableSecondaryMotion?: boolean
 }
 
 export interface InstantiatedBlock {
@@ -120,7 +131,7 @@ function mergeContributions(tracks: BakedTrack[]): BakedKeyframe[] {
 }
 
 /**
- * Turn a rig channel's contributions into concrete property keyframes.
+ * Turn one property's summed contributions into concrete keyframes.
  *
  * Contributions are relative to the rest pose and expressed in block units, so
  * this is where the rest value is added and block units become canvas pixels.
@@ -128,42 +139,47 @@ function mergeContributions(tracks: BakedTrack[]): BakedKeyframe[] {
  * it was drawn.
  */
 function toPropertyKeyframes(
-  channel: RigChannel,
+  property: RigLaneProperty,
   contributions: BakedKeyframe[],
   rest: ResolvedTransform,
   scale: number,
   itemId: string,
-): PropertyKeyframes[] {
-  const build = (property: PropertyKeyframes['property'], valueAt: (c: number) => number) => ({
+): PropertyKeyframes {
+  return {
     property,
     keyframes: contributions.map(
       (contribution): Keyframe => ({
         id: `${itemId}-${property}-${contribution.frame}`,
         frame: contribution.frame,
-        value: valueAt(contribution.value),
+        value: resolveRigProperty(property, contribution.value, rest, scale),
         easing: contribution.easing,
       }),
     ),
-  })
-
-  switch (channel) {
-    case 'rotation':
-      return [build('rotation', (c) => rest.rotation + c)]
-    case 'x':
-      return [build('x', (c) => rest.x + c * scale)]
-    case 'y':
-      return [build('y', (c) => rest.y + c * scale)]
-    case 'opacity':
-      return [build('opacity', (c) => Math.max(0, Math.min(1, rest.opacity + c)))]
-    case 'scale':
-      // A scale contribution is a factor around 0, so 0 is the rest size.
-      return [
-        build('width', (c) => rest.width * (1 + c)),
-        build('height', (c) => rest.height * (1 + c)),
-      ]
-    default:
-      return []
   }
+}
+
+/**
+ * Group a part's channel contributions by the property each one drives.
+ *
+ * Summing per property rather than per channel is what lets a uniform `scale`
+ * gesture and a `scaleX` squash coexist on one part: both reach `width`, and the
+ * two contributions add instead of the second silently replacing the first.
+ */
+function contributionsByProperty(
+  partId: string,
+  byPartChannel: Map<string, BakedTrack[]>,
+): Map<RigLaneProperty, BakedTrack[]> {
+  const grouped = new Map<RigLaneProperty, BakedTrack[]>()
+  for (const channel of RIG_CHANNELS) {
+    const tracks = byPartChannel.get(`${partId}:${channel}`)
+    if (!tracks || tracks.length === 0) continue
+    for (const property of rigChannelProperties(channel)) {
+      const existing = grouped.get(property)
+      if (existing) existing.push(...tracks)
+      else grouped.set(property, [...tracks])
+    }
+  }
+  return grouped
 }
 
 /** Geometry of one part in canvas space, or null when it draws nothing. */
@@ -229,6 +245,139 @@ function selectParts(
   return ordered.filter((part) => keep.has(part.id))
 }
 
+/** One part's timeline item, parented to its rig ancestor when it has one. */
+function buildPartItem(args: {
+  part: BlockPart
+  geometry: NonNullable<ReturnType<typeof placePart>>
+  palette: ScenePalette
+  placement: Required<BlockPlacement>
+  ids: { itemId: string; trackId: string }
+  span: { from: number; durationInFrames: number }
+  parent?: PartPlacement
+}): ShapeItem {
+  const { part, geometry, palette, placement, ids, span, parent } = args
+  const { transform } = geometry
+  return {
+    id: ids.itemId,
+    trackId: ids.trackId,
+    type: 'shape',
+    shapeType: 'path',
+    from: span.from,
+    durationInFrames: span.durationInFrames,
+    label: part.label,
+    pathVertices: geometry.vertices,
+    pathClosed: geometry.closed,
+    fillColor: resolvePaletteRole(palette, part.fill),
+    fillEnabled: Boolean(part.fill),
+    ...(part.stroke && {
+      strokeColor: resolvePaletteRole(palette, part.stroke),
+      strokeEnabled: true,
+      strokeWidth: (part.strokeWidth ?? 1) * placement.scale,
+    }),
+    transform: {
+      x: transform.x,
+      y: transform.y,
+      width: transform.width,
+      height: transform.height,
+      anchorX: transform.anchorX,
+      anchorY: transform.anchorY,
+      rotation: transform.rotation,
+      opacity: transform.opacity,
+      aspectRatioLocked: false,
+    },
+    // At rest the child sits exactly where it was authored, so local and world
+    // references match and the basis is identity. Once the parent animates, the
+    // binding carries the child by the parent's delta.
+    ...(parent && {
+      transformParent: createTransformParentBinding({
+        childLocal: transform,
+        childWorld: transform,
+        parentItemId: parent.itemId,
+        parentWorld: parent.transform,
+      }),
+    }),
+  }
+}
+
+/** A part's animation, or null when nothing drives it. */
+function buildPartKeyframes(
+  partId: string,
+  itemId: string,
+  byPartChannel: Map<string, BakedTrack[]>,
+  rest: ResolvedTransform,
+  scale: number,
+): ItemKeyframes | null {
+  const properties: PropertyKeyframes[] = []
+  for (const [property, tracks] of contributionsByProperty(partId, byPartChannel)) {
+    const merged = mergeContributions(tracks)
+    if (merged.length === 0) continue
+    properties.push(toPropertyKeyframes(property, merged, rest, scale, itemId))
+  }
+  if (properties.length === 0) return null
+
+  const separated: ItemKeyframes['separatedVectorProperties'] = []
+  if (properties.some((entry) => entry.property === 'x' || entry.property === 'y')) {
+    separated.push('position')
+  }
+  if (properties.some((entry) => entry.property === 'width' || entry.property === 'height')) {
+    separated.push('scale')
+  }
+  return {
+    itemId,
+    animationVersion: ANIMATION_CORE_VERSION,
+    properties,
+    // Declared so the dopesheet shows these as separated component lanes; the
+    // resolver reads the scalar lanes either way.
+    ...(separated.length > 0 && { separatedVectorProperties: separated }),
+  }
+}
+
+/**
+ * Bake every gesture, then derive the block's followers from the result.
+ *
+ * Order matters: followers read the summed driven curve, so they trail whatever
+ * the scene actually asked for rather than one gesture in isolation. They never
+ * feed each other either — a follower driving a follower would make the result
+ * depend on link order.
+ */
+function bakeContributions(
+  block: BlockDefinition,
+  gestures: readonly GestureApplication[],
+  options: { durationInFrames: number; fps: number; secondary: boolean },
+): Map<string, BakedTrack[]> {
+  const byPartChannel = new Map<string, BakedTrack[]>()
+  const collect = (tracks: readonly BakedTrack[]): void => {
+    for (const track of tracks) {
+      const key = `${track.partId}:${track.channel}`
+      const existing = byPartChannel.get(key)
+      if (existing) existing.push(track)
+      else byPartChannel.set(key, [track])
+    }
+  }
+
+  const driven: BakedTrack[] = []
+  for (const application of gestures) {
+    const baked = bakeGesture(application.gesture, {
+      durationInFrames: application.durationInFrames ?? options.durationInFrames,
+      cycles: application.cycles,
+      intensity: application.intensity,
+      startFrame: application.startFrame,
+    })
+    driven.push(...baked)
+    collect(baked)
+  }
+
+  if (options.secondary && block.secondary?.length) {
+    collect(
+      compileSecondaryTracks(block.secondary, driven, {
+        durationInFrames: options.durationInFrames,
+        fps: options.fps,
+      }),
+    )
+  }
+  return byPartChannel
+}
+
 export function instantiateBlock(options: InstantiateBlockOptions): InstantiatedBlock {
   const {
     block,
@@ -251,23 +400,11 @@ export function instantiateBlock(options: InstantiateBlockOptions): Instantiated
   const keyframes: ItemKeyframes[] = []
   const placed = new Map<string, PartPlacement>()
 
-  // Bake first: every gesture resolves against the clip, and parts look their
-  // contributions up by id afterwards.
-  const contributionsByPart = new Map<string, BakedTrack[]>()
-  for (const application of gestures) {
-    const baked = bakeGesture(application.gesture, {
-      durationInFrames: application.durationInFrames ?? durationInFrames,
-      cycles: application.cycles,
-      intensity: application.intensity,
-      startFrame: application.startFrame,
-    })
-    for (const track of baked) {
-      const key = `${track.partId}:${track.channel}`
-      const existing = contributionsByPart.get(key)
-      if (existing) existing.push(track)
-      else contributionsByPart.set(key, [track])
-    }
-  }
+  const contributionsByPart = bakeContributions(block, gestures, {
+    durationInFrames,
+    fps: options.fps ?? 30,
+    secondary: !options.disableSecondaryMotion,
+  })
 
   const groupTrackId = `${idPrefix}-group`
   // Parents must exist before their children can bind to them, and a part that
@@ -290,87 +427,36 @@ export function instantiateBlock(options: InstantiateBlockOptions): Instantiated
     const { transform } = geometry
     const parent = part.parent ? placed.get(part.parent) : undefined
 
-    const item: ShapeItem = {
-      id: itemId,
-      trackId,
-      type: 'shape',
-      shapeType: 'path',
-      from,
-      durationInFrames,
-      label: part.label,
-      pathVertices: geometry.vertices,
-      pathClosed: geometry.closed,
-      fillColor: resolvePaletteRole(palette, part.fill),
-      fillEnabled: Boolean(part.fill),
-      ...(part.stroke && {
-        strokeColor: resolvePaletteRole(palette, part.stroke),
-        strokeEnabled: true,
-        strokeWidth: (part.strokeWidth ?? 1) * placement.scale,
-      }),
-      transform: {
-        x: transform.x,
-        y: transform.y,
-        width: transform.width,
-        height: transform.height,
-        anchorX: transform.anchorX,
-        anchorY: transform.anchorY,
-        rotation: transform.rotation,
-        opacity: transform.opacity,
-        aspectRatioLocked: false,
-      },
-      // At rest the child sits exactly where it was authored, so local and
-      // world references match and the basis is identity. Once the parent
-      // animates, the binding carries the child by the parent's delta.
-      ...(parent && {
-        transformParent: createTransformParentBinding({
-          childLocal: transform,
-          childWorld: transform,
-          parentItemId: parent.itemId,
-          parentWorld: parent.transform,
-        }),
-      }),
-    }
+    const item = buildPartItem({
+      part,
+      geometry,
+      palette,
+      placement,
+      ids: { itemId, trackId },
+      span: { from, durationInFrames },
+      ...(parent && { parent }),
+    })
 
     items.push(item)
     placed.set(part.id, { itemId, transform })
 
-    tracks.push({
-      id: trackId,
-      name: part.label,
-      kind: 'video',
-      height: DEFAULT_TRACK_HEIGHT,
-      locked: false,
-      visible: true,
-      muted: false,
-      solo: false,
-      order: trackOrderByPart.get(part.id) ?? baseTrackOrder + 1,
-      items: [],
-      parentTrackId: groupTrackId,
-    })
+    tracks.push(
+      buildPartTrack({
+        part,
+        trackId,
+        groupTrackId,
+        order: trackOrderByPart.get(part.id) ?? baseTrackOrder + 1,
+      }),
+    )
 
-    const properties: PropertyKeyframes[] = []
-    for (const channel of ['rotation', 'x', 'y', 'opacity', 'scale'] as RigChannel[]) {
-      const merged = mergeContributions(contributionsByPart.get(`${part.id}:${channel}`) ?? [])
-      if (merged.length === 0) continue
-      properties.push(...toPropertyKeyframes(channel, merged, transform, placement.scale, itemId))
-    }
-    if (properties.length > 0) {
-      const separated: ItemKeyframes['separatedVectorProperties'] = []
-      if (properties.some((entry) => entry.property === 'x' || entry.property === 'y')) {
-        separated.push('position')
-      }
-      if (properties.some((entry) => entry.property === 'width' || entry.property === 'height')) {
-        separated.push('scale')
-      }
-      keyframes.push({
-        itemId,
-        animationVersion: ANIMATION_CORE_VERSION,
-        properties,
-        // Declared so the dopesheet shows these as separated component lanes;
-        // the resolver reads the scalar lanes either way.
-        ...(separated.length > 0 && { separatedVectorProperties: separated }),
-      })
-    }
+    const animation = buildPartKeyframes(
+      part.id,
+      itemId,
+      contributionsByPart,
+      transform,
+      placement.scale,
+    )
+    if (animation) keyframes.push(animation)
   }
 
   tracks.unshift({
@@ -388,13 +474,42 @@ export function instantiateBlock(options: InstantiateBlockOptions): Instantiated
     isCollapsed: true,
   })
 
-  // Items live on their own tracks; attaching them here keeps the returned
-  // tracks directly usable as a timeline fragment.
+  attachItemsToTracks(tracks, items)
+  return { tracks, items, keyframes, skipped }
+}
+
+/**
+ * Put each item on its own track.
+ *
+ * Keeps the returned tracks directly usable as a timeline fragment, so a caller
+ * can splice the result in without re-deriving which item belongs where.
+ */
+function attachItemsToTracks(tracks: TimelineTrack[], items: readonly ShapeItem[]): void {
   const itemsByTrack = new Map(items.map((item) => [item.trackId, item]))
   for (const track of tracks) {
     const item = itemsByTrack.get(track.id)
     if (item) track.items = [item]
   }
+}
 
-  return { tracks, items, keyframes, skipped }
+/** One part's own track. Per-part tracks are how z-order is expressed here. */
+function buildPartTrack(args: {
+  part: BlockPart
+  trackId: string
+  groupTrackId: string
+  order: number
+}): TimelineTrack {
+  return {
+    id: args.trackId,
+    name: args.part.label,
+    kind: 'video',
+    height: DEFAULT_TRACK_HEIGHT,
+    locked: false,
+    visible: true,
+    muted: false,
+    solo: false,
+    order: args.order,
+    items: [],
+    parentTrackId: args.groupTrackId,
+  }
 }

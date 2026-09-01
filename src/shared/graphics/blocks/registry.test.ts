@@ -6,6 +6,7 @@ import type { BlockDefinition } from './types'
 import {
   BLOCKS,
   GESTURES,
+  POSES,
   getBlock,
   getGesture,
   listBlocks,
@@ -15,6 +16,7 @@ import {
 
 const allGestures = [...GESTURES.values()]
 const allBlocks = [...BLOCKS.values()]
+const allPoses = [...POSES.values()]
 
 function blockWith(parts: BlockDefinition['parts']): BlockDefinition {
   return { id: 'test', name: 'Test', category: 'prop', width: 100, height: 100, parts }
@@ -43,7 +45,7 @@ describe('block registry', () => {
 
   it('reports no structural issues for any shipped block', () => {
     for (const block of allBlocks) {
-      expect({ id: block.id, issues: validateBlock(block, allGestures) }).toEqual({
+      expect({ id: block.id, issues: validateBlock(block, allGestures, allPoses) }).toEqual({
         id: block.id,
         issues: [],
       })

@@ -22,6 +22,8 @@ export interface InsertBlockParams {
   durationInFrames: number
   canvasWidth: number
   canvasHeight: number
+  /** Composition rate. Secondary motion times its lag in seconds against it. */
+  fps?: number
   gestures?: Array<{ gesture: GestureDefinition; cycles?: number; intensity?: number }>
   /** Insert a subset; ancestors are pulled in so the rig stays articulated. */
   partIds?: readonly string[]
@@ -51,6 +53,7 @@ export function insertBlock(params: InsertBlockParams): InsertBlockResult | null
     from,
     durationInFrames,
     placement: { x: 0, y: 0, scale: fitScale(block, canvasWidth, canvasHeight) },
+    ...(params.fps !== undefined && { fps: params.fps }),
     ...(params.gestures && { gestures: params.gestures }),
     ...(params.partIds && { partIds: params.partIds }),
     // Blocks claim the orders above existing content, so a newly inserted

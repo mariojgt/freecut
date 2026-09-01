@@ -102,6 +102,7 @@ export function BlockLibraryPanel() {
       durationInFrames,
       canvasWidth,
       canvasHeight,
+      fps,
       gestures,
       ...(partIds?.length ? { partIds } : {}),
     })

@@ -400,6 +400,190 @@ const cases = [
       ),
     failure: { op: 'setTransform', id: 'missing', transform: { opacity: 0.4 } },
   },
+  {
+    name: 'addBlock',
+    op: {
+      op: 'addBlock',
+      blockId: 'character-astronaut',
+      from: 0,
+      durationInFrames: 90,
+      x: -120,
+      y: 40,
+      scale: 0.5,
+      palette: 'deep-space',
+      idPrefix: 'hero',
+      gestures: [{ id: 'walk', cycles: 2 }],
+    },
+    assert: (project) => {
+      // One path item per rigged part, each on its own track under one group.
+      const parts = project.timeline.items.filter((candidate) => candidate.id.startsWith('hero-'))
+      assert.equal(parts.length, 17)
+      assert.equal(
+        parts.every((candidate) => candidate.type === 'shape' && candidate.shapeType === 'path'),
+        true,
+      )
+      // The armature has to survive the project round-trip, or the rig is just
+      // a pile of unrelated shapes.
+      assert.equal(item(project, 'hero-helmet')?.transformParent?.parentItemId, 'hero-torso')
+      const walked = project.timeline.keyframes.filter((entry) => entry.itemId.startsWith('hero-'))
+      assert.equal(walked.length > 0, true)
+      // Derived follow-through: no gesture names the backpack.
+      assert.equal(
+        walked.some((entry) => entry.itemId === 'hero-backpack'),
+        true,
+      )
+    },
+    schemaFailure: { op: 'addBlock', blockId: 'character-unicorn' },
+  },
+  {
+    name: 'applyGesture',
+    op: { op: 'applyGesture', idPrefix: 'hero', gestureId: 'land-squash', scale: 0.5 },
+    ops: [
+      {
+        op: 'addBlock',
+        blockId: 'character-astronaut',
+        durationInFrames: 60,
+        scale: 0.5,
+        idPrefix: 'hero',
+      },
+      { op: 'applyGesture', idPrefix: 'hero', gestureId: 'land-squash', scale: 0.5 },
+    ],
+    assert: (project) => {
+      const torso = project.timeline.keyframes.find((entry) => entry.itemId === 'hero-torso')
+      const lanes = torso.properties.map((entry) => entry.property).sort()
+      // The squash is non-uniform, so it must reach width and height separately.
+      assert.deepEqual(lanes, ['height', 'width'])
+      const heights = torso.properties
+        .find((entry) => entry.property === 'height')
+        .keyframes.map((entry) => entry.value)
+      assert.equal(Math.min(...heights) < Math.max(...heights), true)
+    },
+    failure: { op: 'applyGesture', idPrefix: 'not-placed', gestureId: 'walk' },
+  },
+  {
+    name: 'applyPose',
+    op: { op: 'applyPose', idPrefix: 'hero', poses: [{ id: 'point-forward' }] },
+    ops: [
+      {
+        op: 'addBlock',
+        blockId: 'character-astronaut',
+        durationInFrames: 60,
+        scale: 0.5,
+        idPrefix: 'hero',
+      },
+      {
+        op: 'applyPose',
+        idPrefix: 'hero',
+        poses: [
+          { id: 'stand', at: 0 },
+          { id: 'crouch', at: 0.5 },
+          { id: 'stand', at: 1 },
+        ],
+        durationInFrames: 60,
+        scale: 0.5,
+      },
+    ],
+    assert: (project) => {
+      const thigh = project.timeline.keyframes
+        .find((entry) => entry.itemId === 'hero-thigh-near')
+        .properties.find((entry) => entry.property === 'rotation')
+      assert.deepEqual(
+        thigh.keyframes.map((entry) => entry.frame),
+        [0, 30, 60],
+      )
+      // Into the crouch and back to rest, so the sequence returns the pose.
+      assert.equal(thigh.keyframes[1].value > thigh.keyframes[0].value, true)
+      assert.equal(Math.abs(thigh.keyframes[2].value - thigh.keyframes[0].value) < 1e-6, true)
+    },
+    failure: { op: 'applyPose', idPrefix: 'not-placed', poses: [{ id: 'stand' }] },
+  },
+  {
+    name: 'attachToSlot',
+    op: { op: 'attachToSlot', idPrefix: 'hero', slotId: 'hand', itemId: 'text-1', scale: 0.5 },
+    ops: [
+      {
+        op: 'addBlock',
+        blockId: 'character-astronaut',
+        durationInFrames: 60,
+        scale: 0.5,
+        idPrefix: 'hero',
+      },
+      { op: 'attachToSlot', idPrefix: 'hero', slotId: 'hand', itemId: 'text-1', scale: 0.5 },
+    ],
+    assert: (project) => {
+      const attached = item(project, 'text-1')
+      // Parented to the glove, so the label travels with the arm.
+      assert.equal(attached?.transformParent?.parentItemId, 'hero-glove-near')
+      // Slot 'hand' is at [110, 282] in a 200x400 block, so at scale 0.5 the
+      // offset from the block centre is (5, 41).
+      assert.deepEqual([attached?.transform?.x, attached?.transform?.y], [5, 41])
+    },
+    failure: { op: 'attachToSlot', idPrefix: 'not-placed', slotId: 'hand', itemId: 'text-1' },
+  },
+  {
+    name: 'importSvg',
+    op: {
+      op: 'importSvg',
+      source: '<svg viewBox="0 0 20 20"><path d="M 0 0 L 20 0 L 20 20 Z" fill="#ff0000"/></svg>',
+      name: 'Wedge',
+      idPrefix: 'art',
+      size: 240,
+    },
+    assert: (project) => {
+      const imported = project.timeline.items.filter((candidate) => candidate.id.startsWith('art-'))
+      assert.equal(imported.length, 1)
+      assert.equal(imported[0].shapeType, 'path')
+      assert.equal(imported[0].pathVertices.length > 0, true)
+    },
+    // A document with no drawable geometry is schema-valid and must fail loudly
+    // rather than silently adding nothing.
+    failure: { op: 'importSvg', source: '<svg viewBox="0 0 10 10"></svg>' },
+  },
+  {
+    name: 'morphPath',
+    op: {
+      op: 'morphPath',
+      itemId: 'art-0-0',
+      fromFrame: 0,
+      toFrame: 30,
+      targetPathData: 'M 0 0 L 20 0 L 20 20 L 0 20 Z',
+    },
+    ops: [
+      {
+        op: 'importSvg',
+        source: '<svg viewBox="0 0 20 20"><path d="M 0 0 L 20 0 L 20 20 Z"/></svg>',
+        idPrefix: 'art',
+        size: 240,
+      },
+      {
+        op: 'morphPath',
+        itemId: 'art-0-0',
+        fromFrame: 0,
+        toFrame: 30,
+        targetPathData: 'M 0 0 L 20 0 L 20 20 L 0 20 Z',
+        easing: 'ease-in-out',
+      },
+    ],
+    assert: (project) => {
+      const animated = project.timeline.keyframes.find((entry) => entry.itemId === 'art-0-0')
+      assert.equal(animated.properties.length > 0, true)
+      // Vertex lanes are keyed at both ends of the morph window.
+      const frames = new Set(
+        animated.properties.flatMap((entry) => entry.keyframes.map((key) => key.frame)),
+      )
+      assert.deepEqual(
+        [...frames].sort((a, b) => a - b),
+        [0, 30],
+      )
+    },
+    failure: {
+      op: 'morphPath',
+      itemId: 'missing-path',
+      fromFrame: 0,
+      toFrame: 30,
+      targetPathData: 'M 0 0 L 1 1',
+    },
+  },
 ]
 
 async function edit(page, project, ops, media) {

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vite-plus/test'
 import { ASTRONAUT_BLOCK, IDLE_BREATH_GESTURE, WALK_GESTURE } from './character-astronaut'
 import { instantiateBlock } from './instantiate'
 import { DEEP_SPACE_PALETTE, DEFAULT_SCENE_PALETTE } from './scene-palette'
-import type { BlockDefinition } from './types'
+import type { BlockDefinition, GestureDefinition } from './types'
 import { MOON_SURFACE_BLOCK, PARALLAX_PAN_GESTURE } from './world-moon'
 
 /** 100x100 block with one 50x50 square at the origin. */
@@ -223,7 +223,11 @@ describe('gesture application', () => {
   })
 
   it('leaves undriven parts with no animation data', () => {
-    expect(walking().keyframes.some((entry) => entry.itemId.endsWith('visor-glint'))).toBe(false)
+    // `visor-glint` is deliberately not used here: the walk turns the helmet, and
+    // the block's secondary links derive a glint slide from that, so the only
+    // genuinely untouched parts are the ones no gesture and no link reaches.
+    expect(walking().keyframes.some((entry) => entry.itemId.endsWith('chest-panel'))).toBe(false)
+    expect(walking().keyframes.some((entry) => entry.itemId.endsWith('glove-near'))).toBe(false)
   })
 
   it('adds positional contributions to the part rest pose, in canvas pixels', () => {
@@ -383,5 +387,124 @@ describe('an astronaut walking on the moon', () => {
     }
     expect(travel('rock-near')).toBeGreaterThan(travel('ground'))
     expect(travel('ground')).toBeGreaterThan(travel('sky'))
+  })
+})
+
+describe('non-uniform scale channels', () => {
+  /** A squash that flattens and widens by the same factor. */
+  const squash: GestureDefinition = {
+    id: 'squash',
+    name: 'Squash',
+    loop: false,
+    tracks: [
+      {
+        partId: 'body',
+        channel: 'scaleY',
+        keyframes: [
+          { at: 0, value: 0, easing: 'linear' },
+          { at: 1, value: -0.5, easing: 'linear' },
+        ],
+      },
+      {
+        partId: 'body',
+        channel: 'scaleX',
+        keyframes: [
+          { at: 0, value: 0, easing: 'linear' },
+          { at: 1, value: 0.5, easing: 'linear' },
+        ],
+      },
+    ],
+  }
+
+  const lane = (result: ReturnType<typeof instantiateBlock>, property: string) =>
+    result.keyframes[0]?.properties.find((entry) => entry.property === property)
+
+  it('writes width and height independently', () => {
+    const result = instantiateBlock({ ...base, block: simple, gestures: [{ gesture: squash }] })
+    // The part is 50x50 at scale 1, so a -0.5/+0.5 pair lands on 25 and 75.
+    expect(lane(result, 'height')?.keyframes.at(-1)?.value).toBeCloseTo(25, 6)
+    expect(lane(result, 'width')?.keyframes.at(-1)?.value).toBeCloseTo(75, 6)
+  })
+
+  it('sums a uniform scale and an axis scale on the same part', () => {
+    const uniform: GestureDefinition = {
+      id: 'shrink',
+      name: 'Shrink',
+      loop: false,
+      tracks: [
+        {
+          partId: 'body',
+          channel: 'scale',
+          keyframes: [
+            { at: 0, value: 0, easing: 'linear' },
+            { at: 1, value: -0.2, easing: 'linear' },
+          ],
+        },
+      ],
+    }
+    const result = instantiateBlock({
+      ...base,
+      block: simple,
+      gestures: [{ gesture: squash }, { gesture: uniform }],
+    })
+    // width: 1 + 0.5 - 0.2 = 1.3; height: 1 - 0.5 - 0.2 = 0.3. A per-channel
+    // emit would have let one of the two silently replace the other.
+    expect(lane(result, 'width')?.keyframes.at(-1)?.value).toBeCloseTo(65, 6)
+    expect(lane(result, 'height')?.keyframes.at(-1)?.value).toBeCloseTo(15, 6)
+  })
+
+  it('marks the scale lanes as separated so the dopesheet shows both', () => {
+    const result = instantiateBlock({ ...base, block: simple, gestures: [{ gesture: squash }] })
+    expect(result.keyframes[0]?.separatedVectorProperties).toContain('scale')
+  })
+})
+
+describe('secondary motion', () => {
+  const walking = (overrides: Partial<Parameters<typeof instantiateBlock>[0]> = {}) =>
+    instantiateBlock({
+      ...base,
+      block: ASTRONAUT_BLOCK,
+      fps: 30,
+      gestures: [{ gesture: WALK_GESTURE, cycles: 2 }],
+      ...overrides,
+    })
+
+  const forItem = (result: ReturnType<typeof instantiateBlock>, suffix: string) =>
+    result.keyframes.find((entry) => entry.itemId.endsWith(suffix))
+
+  it('drives the backpack even though no gesture names it', () => {
+    // The walk moves the torso; the backpack is derived from that.
+    expect(WALK_GESTURE.tracks.some((track) => track.partId === 'backpack')).toBe(false)
+    expect(forItem(walking(), 'backpack')).toBeDefined()
+  })
+
+  it('writes every channel its links declare', () => {
+    const backpack = forItem(walking(), 'backpack')
+    expect(backpack?.properties.map((entry) => entry.property).sort()).toEqual(['rotation', 'y'])
+  })
+
+  it('trails the driver instead of matching it frame for frame', () => {
+    const result = walking()
+    const torso = forItem(result, '-torso')?.properties.find((e) => e.property === 'y')
+    const backpack = forItem(result, 'backpack')?.properties.find((e) => e.property === 'y')
+    expect(torso?.keyframes[0]?.value).not.toBeCloseTo(backpack?.keyframes[0]?.value ?? 0, 3)
+  })
+
+  it('can be switched off, leaving only the authored gestures', () => {
+    expect(forItem(walking({ disableSecondaryMotion: true }), 'backpack')).toBeUndefined()
+  })
+
+  it('produces the same keyframes on every run', () => {
+    expect(walking().keyframes).toEqual(walking().keyframes)
+  })
+
+  it('does not fire when the block is inserted without gestures', () => {
+    expect(instantiateBlock({ ...base, block: ASTRONAUT_BLOCK, fps: 30 }).keyframes).toEqual([])
+  })
+
+  it('skips a link whose driver part was left out of a partial insert', () => {
+    // `helmet` drives the glint, so a torso-only insert must not invent one.
+    const partial = walking({ partIds: ['backpack'] })
+    expect(forItem(partial, 'visor-glint')).toBeUndefined()
   })
 })
