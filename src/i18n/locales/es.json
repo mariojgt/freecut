@@ -70,7 +70,11 @@
     "saveAria": "Guardar proyecto",
     "export": "Exportar",
     "exportVideo": "Exportar vídeo",
-    "downloadProjectZip": "Descargar proyecto (.zip)"
+    "downloadProjectZip": "Descargar proyecto (.zip)",
+    "sendToMcp": "Enviar al espacio de trabajo MCP",
+    "sendToMcpSuccess": "Proyecto enviado al espacio de trabajo MCP",
+    "sendToMcpFailed": "No se pudo enviar el proyecto al espacio de trabajo MCP",
+    "copyLiveLink": "Copiar enlace en vivo"
   },
   "unsavedChanges": {
     "title": "Cambios sin guardar",
@@ -182,5 +186,13 @@
       "couldntProcessItems_other": "{{action}}: couldn't process {{count}} items{{detail}}",
       "partialOutcome": "{{action}}: {{succeeded}}/{{total}} done. Needs attention: {{failed}}."
     }
+  },
+  "live": {
+    "banner": "EN VIVO — siguiendo el espacio de trabajo MCP",
+    "readOnly": "Solo lectura",
+    "loading": "Cargando el proyecto desde el espacio de trabajo MCP…",
+    "notFound": "Este proyecto aún no está en el espacio de trabajo MCP. Envíalo desde el editor o pide a tu agente que lo cree.",
+    "error": "No se puede acceder al espacio de trabajo MCP",
+    "scrubberAria": "Desplazar la línea de tiempo"
   }
 }

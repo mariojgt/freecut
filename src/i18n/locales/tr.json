@@ -70,7 +70,11 @@
     "saveAria": "Projeyi kaydet",
     "export": "Dışa Aktar",
     "exportVideo": "Videoyu Dışa Aktar",
-    "downloadProjectZip": "Projeyi İndir (.zip)"
+    "downloadProjectZip": "Projeyi İndir (.zip)",
+    "sendToMcp": "MCP çalışma alanına gönder",
+    "sendToMcpSuccess": "Proje MCP çalışma alanına gönderildi",
+    "sendToMcpFailed": "Proje MCP çalışma alanına gönderilemedi",
+    "copyLiveLink": "Canlı bağlantıyı kopyala"
   },
   "unsavedChanges": {
     "title": "Kaydedilmemiş Değişiklikler",
@@ -182,5 +186,13 @@
       "actionRegenerateThumbnails": "Küçük resimleri yeniden oluştur",
       "actionDeleteProxies": "Proxy'leri sil"
     }
+  },
+  "live": {
+    "banner": "CANLI — MCP çalışma alanı takip ediliyor",
+    "readOnly": "Salt okunur",
+    "loading": "Proje MCP çalışma alanından yükleniyor…",
+    "notFound": "Bu proje henüz MCP çalışma alanında değil. Editörden gönderin veya ajanınızdan oluşturmasını isteyin.",
+    "error": "MCP çalışma alanına ulaşılamıyor",
+    "scrubberAria": "Zaman çizelgesinde gezin"
   }
 }

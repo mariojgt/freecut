@@ -70,7 +70,11 @@
     "saveAria": "Save project",
     "export": "Export",
     "exportVideo": "Export Video",
-    "downloadProjectZip": "Download Project (.zip)"
+    "downloadProjectZip": "Download Project (.zip)",
+    "sendToMcp": "Send to MCP Workspace",
+    "sendToMcpSuccess": "Project sent to the MCP workspace",
+    "sendToMcpFailed": "Couldn't send the project to the MCP workspace",
+    "copyLiveLink": "Copy live link"
   },
   "unsavedChanges": {
     "title": "Unsaved Changes",
@@ -182,5 +186,13 @@
       "actionRegenerateThumbnails": "Regenerate thumbnails",
       "actionDeleteProxies": "Delete proxies"
     }
+  },
+  "live": {
+    "banner": "LIVE — following the MCP workspace",
+    "readOnly": "Read-only",
+    "loading": "Loading project from the MCP workspace…",
+    "notFound": "This project isn't in the MCP workspace yet. Send it from the editor, or ask your agent to create it.",
+    "error": "Can't reach the MCP workspace",
+    "scrubberAria": "Scrub timeline"
   }
 }

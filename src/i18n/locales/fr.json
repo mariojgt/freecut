@@ -70,7 +70,11 @@
     "saveAria": "Enregistrer le projet",
     "export": "Exporter",
     "exportVideo": "Exporter la vidéo",
-    "downloadProjectZip": "Télécharger le projet (.zip)"
+    "downloadProjectZip": "Télécharger le projet (.zip)",
+    "sendToMcp": "Envoyer vers l'espace de travail MCP",
+    "sendToMcpSuccess": "Projet envoyé vers l'espace de travail MCP",
+    "sendToMcpFailed": "Impossible d'envoyer le projet vers l'espace de travail MCP",
+    "copyLiveLink": "Copier le lien live"
   },
   "unsavedChanges": {
     "title": "Modifications non enregistrées",
@@ -182,5 +186,13 @@
       "couldntProcessItems_other": "{{action}}: couldn't process {{count}} items{{detail}}",
       "partialOutcome": "{{action}}: {{succeeded}}/{{total}} done. Needs attention: {{failed}}."
     }
+  },
+  "live": {
+    "banner": "LIVE — suit l'espace de travail MCP",
+    "readOnly": "Lecture seule",
+    "loading": "Chargement du projet depuis l'espace de travail MCP…",
+    "notFound": "Ce projet n'est pas encore dans l'espace de travail MCP. Envoyez-le depuis l'éditeur ou demandez à votre agent de le créer.",
+    "error": "Impossible de joindre l'espace de travail MCP",
+    "scrubberAria": "Parcourir la timeline"
   }
 }

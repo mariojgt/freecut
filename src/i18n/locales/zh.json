@@ -70,7 +70,11 @@
     "saveAria": "保存项目",
     "export": "导出",
     "exportVideo": "导出视频",
-    "downloadProjectZip": "下载项目 (.zip)"
+    "downloadProjectZip": "下载项目 (.zip)",
+    "sendToMcp": "发送到 MCP 工作区",
+    "sendToMcpSuccess": "项目已发送到 MCP 工作区",
+    "sendToMcpFailed": "无法将项目发送到 MCP 工作区",
+    "copyLiveLink": "复制实时链接"
   },
   "unsavedChanges": {
     "title": "未保存的更改",
@@ -182,5 +186,13 @@
       "couldntProcessItems_other": "{{action}}: couldn't process {{count}} items{{detail}}",
       "partialOutcome": "{{action}}: {{succeeded}}/{{total}} done. Needs attention: {{failed}}."
     }
+  },
+  "live": {
+    "banner": "LIVE — 正在跟随 MCP 工作区",
+    "readOnly": "只读",
+    "loading": "正在从 MCP 工作区加载项目…",
+    "notFound": "该项目尚未在 MCP 工作区中。请从编辑器发送，或让你的智能体创建它。",
+    "error": "无法连接 MCP 工作区",
+    "scrubberAria": "拖动时间轴"
   }
 }

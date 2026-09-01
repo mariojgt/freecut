@@ -70,7 +70,11 @@
     "saveAria": "Salvar projeto",
     "export": "Exportar",
     "exportVideo": "Exportar vídeo",
-    "downloadProjectZip": "Baixar projeto (.zip)"
+    "downloadProjectZip": "Baixar projeto (.zip)",
+    "sendToMcp": "Enviar para o workspace MCP",
+    "sendToMcpSuccess": "Projeto enviado para o workspace MCP",
+    "sendToMcpFailed": "Não foi possível enviar o projeto para o workspace MCP",
+    "copyLiveLink": "Copiar link ao vivo"
   },
   "unsavedChanges": {
     "title": "Alterações não salvas",
@@ -182,5 +186,13 @@
       "couldntProcessItems_other": "{{action}}: couldn't process {{count}} items{{detail}}",
       "partialOutcome": "{{action}}: {{succeeded}}/{{total}} done. Needs attention: {{failed}}."
     }
+  },
+  "live": {
+    "banner": "AO VIVO — seguindo o workspace MCP",
+    "readOnly": "Somente leitura",
+    "loading": "Carregando o projeto do workspace MCP…",
+    "notFound": "Este projeto ainda não está no workspace MCP. Envie-o pelo editor ou peça ao seu agente para criá-lo.",
+    "error": "Não foi possível acessar o workspace MCP",
+    "scrubberAria": "Navegar pela linha do tempo"
   }
 }

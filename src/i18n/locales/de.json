@@ -70,7 +70,11 @@
     "saveAria": "Projekt speichern",
     "export": "Exportieren",
     "exportVideo": "Video exportieren",
-    "downloadProjectZip": "Projekt herunterladen (.zip)"
+    "downloadProjectZip": "Projekt herunterladen (.zip)",
+    "sendToMcp": "An MCP-Workspace senden",
+    "sendToMcpSuccess": "Projekt an den MCP-Workspace gesendet",
+    "sendToMcpFailed": "Projekt konnte nicht an den MCP-Workspace gesendet werden",
+    "copyLiveLink": "Live-Link kopieren"
   },
   "unsavedChanges": {
     "title": "Nicht gespeicherte Änderungen",
@@ -182,5 +186,13 @@
       "couldntProcessItems_other": "{{action}}: couldn't process {{count}} items{{detail}}",
       "partialOutcome": "{{action}}: {{succeeded}}/{{total}} done. Needs attention: {{failed}}."
     }
+  },
+  "live": {
+    "banner": "LIVE — folgt dem MCP-Workspace",
+    "readOnly": "Schreibgeschützt",
+    "loading": "Projekt wird aus dem MCP-Workspace geladen…",
+    "notFound": "Dieses Projekt ist noch nicht im MCP-Workspace. Sende es aus dem Editor oder lass es deinen Agenten erstellen.",
+    "error": "MCP-Workspace ist nicht erreichbar",
+    "scrubberAria": "Zeitleiste scrubben"
   }
 }

@@ -70,7 +70,11 @@
     "saveAria": "プロジェクトを保存",
     "export": "書き出し",
     "exportVideo": "動画を書き出し",
-    "downloadProjectZip": "プロジェクトをダウンロード (.zip)"
+    "downloadProjectZip": "プロジェクトをダウンロード (.zip)",
+    "sendToMcp": "MCPワークスペースへ送信",
+    "sendToMcpSuccess": "プロジェクトをMCPワークスペースへ送信しました",
+    "sendToMcpFailed": "プロジェクトをMCPワークスペースへ送信できませんでした",
+    "copyLiveLink": "ライブリンクをコピー"
   },
   "unsavedChanges": {
     "title": "未保存の変更",
@@ -182,5 +186,13 @@
       "couldntProcessItems_other": "{{action}}: couldn't process {{count}} items{{detail}}",
       "partialOutcome": "{{action}}: {{succeeded}}/{{total}} done. Needs attention: {{failed}}."
     }
+  },
+  "live": {
+    "banner": "LIVE — MCPワークスペースを追従中",
+    "readOnly": "読み取り専用",
+    "loading": "MCPワークスペースからプロジェクトを読み込み中…",
+    "notFound": "このプロジェクトはまだMCPワークスペースにありません。エディターから送信するか、エージェントに作成を依頼してください。",
+    "error": "MCPワークスペースに接続できません",
+    "scrubberAria": "タイムラインをスクラブ"
   }
 }

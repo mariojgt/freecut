@@ -70,7 +70,11 @@
     "saveAria": "프로젝트 저장",
     "export": "내보내기",
     "exportVideo": "동영상 내보내기",
-    "downloadProjectZip": "프로젝트 다운로드 (.zip)"
+    "downloadProjectZip": "프로젝트 다운로드 (.zip)",
+    "sendToMcp": "MCP 워크스페이스로 보내기",
+    "sendToMcpSuccess": "프로젝트를 MCP 워크스페이스로 보냈습니다",
+    "sendToMcpFailed": "프로젝트를 MCP 워크스페이스로 보내지 못했습니다",
+    "copyLiveLink": "라이브 링크 복사"
   },
   "unsavedChanges": {
     "title": "저장하지 않은 변경 사항",
@@ -182,5 +186,13 @@
       "couldntProcessItems_other": "{{action}}: couldn't process {{count}} items{{detail}}",
       "partialOutcome": "{{action}}: {{succeeded}}/{{total}} done. Needs attention: {{failed}}."
     }
+  },
+  "live": {
+    "banner": "LIVE — MCP 워크스페이스 팔로우 중",
+    "readOnly": "읽기 전용",
+    "loading": "MCP 워크스페이스에서 프로젝트를 불러오는 중…",
+    "notFound": "이 프로젝트는 아직 MCP 워크스페이스에 없습니다. 에디터에서 보내거나 에이전트에게 생성을 요청하세요.",
+    "error": "MCP 워크스페이스에 연결할 수 없습니다",
+    "scrubberAria": "타임라인 스크럽"
   }
 }

@@ -16,6 +16,7 @@ import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as ProjectsNewRouteImport } from './routes/projects/new'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
+import { Route as LiveProjectIdRouteImport } from './routes/live/$projectId'
 import { Route as EditorProjectIdRouteImport } from './routes/editor/$projectId'
 import { Route as DocsSlugRouteImport } from './routes/docs/$slug'
 
@@ -54,6 +55,13 @@ const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   path: '/projects/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LiveProjectIdRoute = LiveProjectIdRouteImport.update({
+  id: '/live/$projectId',
+  path: '/live/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/live/$projectId.lazy').then((d) => d.Route),
+)
 const EditorProjectIdRoute = EditorProjectIdRouteImport.update({
   id: '/editor/$projectId',
   path: '/editor/$projectId',
@@ -73,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/mcp': typeof McpRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/editor/$projectId': typeof EditorProjectIdRoute
+  '/live/$projectId': typeof LiveProjectIdRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/docs/': typeof DocsIndexRoute
@@ -84,6 +93,7 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/editor/$projectId': typeof EditorProjectIdRoute
+  '/live/$projectId': typeof LiveProjectIdRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/docs': typeof DocsIndexRoute
@@ -96,6 +106,7 @@ export interface FileRoutesById {
   '/mcp': typeof McpRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/editor/$projectId': typeof EditorProjectIdRoute
+  '/live/$projectId': typeof LiveProjectIdRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/docs/': typeof DocsIndexRoute
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/docs/$slug'
     | '/editor/$projectId'
+    | '/live/$projectId'
     | '/projects/$projectId'
     | '/projects/new'
     | '/docs/'
@@ -120,6 +132,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/docs/$slug'
     | '/editor/$projectId'
+    | '/live/$projectId'
     | '/projects/$projectId'
     | '/projects/new'
     | '/docs'
@@ -131,6 +144,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/docs/$slug'
     | '/editor/$projectId'
+    | '/live/$projectId'
     | '/projects/$projectId'
     | '/projects/new'
     | '/docs/'
@@ -143,6 +157,7 @@ export interface RootRouteChildren {
   McpRoute: typeof McpRoute
   DocsSlugRoute: typeof DocsSlugRoute
   EditorProjectIdRoute: typeof EditorProjectIdRoute
+  LiveProjectIdRoute: typeof LiveProjectIdRoute
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
   ProjectsNewRoute: typeof ProjectsNewRoute
   DocsIndexRoute: typeof DocsIndexRoute
@@ -200,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/live/$projectId': {
+      id: '/live/$projectId'
+      path: '/live/$projectId'
+      fullPath: '/live/$projectId'
+      preLoaderRoute: typeof LiveProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/editor/$projectId': {
       id: '/editor/$projectId'
       path: '/editor/$projectId'
@@ -223,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpRoute: McpRoute,
   DocsSlugRoute: DocsSlugRoute,
   EditorProjectIdRoute: EditorProjectIdRoute,
+  LiveProjectIdRoute: LiveProjectIdRoute,
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,
   ProjectsNewRoute: ProjectsNewRoute,
   DocsIndexRoute: DocsIndexRoute,
