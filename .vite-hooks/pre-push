@@ -3,28 +3,56 @@
 
 set -e
 
+# Checks 1-6 read the feature import graph under src/. A push that changes only
+# deployment or documentation files - docker/, the compose files, README - can
+# not move a seam, so running them there decides the push on whatever drift
+# already exists on the target branch rather than on anything being pushed.
+# `vp run check` is deliberately left outside this guard: it lints and
+# typechecks docker/, headless/, and mcp/ as well as src/.
+push_base() {
+  git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null && return 0
+  for candidate in origin/main origin/develop; do
+    if git rev-parse --verify --quiet "$candidate" >/dev/null 2>&1; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+source_changed=true
+if base=$(push_base); then
+  if [ -z "$(git diff --name-only "$base...HEAD" -- src)" ]; then
+    source_changed=false
+  fi
+fi
+
 echo "Running quality checks before push..."
 
-echo "  [1/7] check:boundaries"
-vp run check:boundaries --silent
+if [ "$source_changed" = false ]; then
+  echo "  no src/ changes versus $base - skipping feature-graph checks [1-6/7]"
+else
+  echo "  [1/7] check:boundaries"
+  vp run check:boundaries --silent
 
-echo "  [2/7] check:deps-contracts"
-vp run check:deps-contracts --silent
+  echo "  [2/7] check:deps-contracts"
+  vp run check:deps-contracts --silent
 
-echo "  [3/7] check:legacy-lib-imports"
-vp run check:legacy-lib-imports --silent
+  echo "  [3/7] check:legacy-lib-imports"
+  vp run check:legacy-lib-imports --silent
 
-echo "  [4/7] check:deps-wrapper-health"
-vp run check:deps-wrapper-health --silent
+  echo "  [4/7] check:deps-wrapper-health"
+  vp run check:deps-wrapper-health --silent
 
-echo "  [5/7] check:changed-health"
-vp run check:changed-health
+  echo "  [5/7] check:changed-health"
+  vp run check:changed-health
 
-echo "  [6/7] check:edge-budgets"
-EDGE_REPORT=$(mktemp)
-trap 'rm -f "$EDGE_REPORT"' EXIT
-node scripts/report-feature-edges.mjs --json > "$EDGE_REPORT"
-node scripts/check-feature-edge-budgets.mjs --input "$EDGE_REPORT"
+  echo "  [6/7] check:edge-budgets"
+  EDGE_REPORT=$(mktemp)
+  trap 'rm -f "$EDGE_REPORT"' EXIT
+  node scripts/report-feature-edges.mjs --json > "$EDGE_REPORT"
+  node scripts/check-feature-edge-budgets.mjs --input "$EDGE_REPORT"
+fi
 
 echo "  [7/7] check"
 vp run check --silent
