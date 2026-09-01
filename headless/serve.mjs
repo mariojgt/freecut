@@ -56,6 +56,7 @@ import {
   HttpError,
   readJsonBody,
   readJsonBodyWithBytes,
+  serveFile,
   setHttpTimeouts,
 } from './lib/http-security.mjs'
 import {
@@ -346,6 +347,19 @@ async function main() {
       apiVersion: HEADLESS_API_VERSION,
       projects,
       nextCursor,
+    })
+  }
+
+  const handleV1MediaSource = async (req, res, id) => {
+    const resource = await getMediaResource(workspace, id)
+    const sourcePath = resolveMediaFile(workspace, id)
+    if (!sourcePath) {
+      throw new HttpError(404, 'MEDIA_SOURCE_NOT_FOUND', 'Media source not found')
+    }
+    res.setHeader('Cache-Control', 'no-store')
+    await serveFile(req, res, sourcePath, {
+      contentType: resource.metadata.mimeType || 'application/octet-stream',
+      allowRange: true,
     })
   }
 
@@ -697,6 +711,9 @@ async function main() {
       url.pathname,
     )
     const mediaMatch = /^\/v1\/media\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})$/.exec(url.pathname)
+    const mediaSourceMatch = /^\/v1\/media\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/source$/.exec(
+      url.pathname,
+    )
     const mediaProbeMatch = /^\/v1\/media\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/probe$/.exec(
       url.pathname,
     )
@@ -811,11 +828,20 @@ async function main() {
                                                 : route === 'POST /v1/contact-sheet'
                                                   ? () => handleContactSheet(req, res)
                                                   : null
-    if (!handler) {
+    const resolvedHandler =
+      mediaSourceMatch && (req.method === 'GET' || req.method === 'HEAD')
+        ? () =>
+            handleV1MediaSource(
+              req,
+              res,
+              assertPortableId(mediaSourceMatch[1], 'media id'),
+            )
+        : handler
+    if (!resolvedHandler) {
       sendJson(res, 404, { error: `No route: ${route}` })
       return
     }
-    handler().catch((e) => {
+    resolvedHandler().catch((e) => {
       console.error(`${route} failed:`, e.message ?? e)
       if (!res.headersSent) {
         const validation = e instanceof ContractValidationError

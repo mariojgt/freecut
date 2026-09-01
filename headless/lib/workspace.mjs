@@ -15,6 +15,11 @@ const NON_SOURCE_NAMES = new Set([
   'cache',
 ])
 
+/** Finder metadata and AppleDouble sidecars are never playable media bytes. */
+function isFilesystemMetadata(name) {
+  return name === '.DS_Store' || name.startsWith('._')
+}
+
 const MEDIA_ITEM_TYPES = new Set(['video', 'audio', 'image'])
 
 function readProject(projectJsonPath) {
@@ -150,7 +155,7 @@ export function resolveMediaFile(workspaceDir, mediaId) {
   if (!fs.existsSync(mediaDir)) return null
   for (const entry of fs.readdirSync(mediaDir, { withFileTypes: true })) {
     if (!entry.isFile()) continue
-    if (NON_SOURCE_NAMES.has(entry.name)) continue
+    if (NON_SOURCE_NAMES.has(entry.name) || isFilesystemMetadata(entry.name)) continue
     return resolveContained(mediaRoot, path.join(mediaId, entry.name))
   }
   return null

@@ -81,6 +81,23 @@ test('ids reject both separator styles and workspace lookups remain contained', 
   }
 })
 
+test('media resolution ignores macOS metadata sidecars', () => {
+  const { root, workspace } = fixture()
+  const mediaDir = path.join(workspace, 'media', 'appledouble-media')
+  fs.mkdirSync(mediaDir, { recursive: true })
+  try {
+    fs.writeFileSync(path.join(mediaDir, '._clip.svg'), 'apple-double')
+    fs.writeFileSync(path.join(mediaDir, '.DS_Store'), 'finder-metadata')
+    assert.equal(resolveMediaFile(workspace, 'appledouble-media'), null)
+
+    const sourcePath = path.join(mediaDir, 'clip.svg')
+    fs.writeFileSync(sourcePath, '<svg xmlns="http://www.w3.org/2000/svg"/>')
+    assert.equal(resolveMediaFile(workspace, 'appledouble-media'), sourcePath)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('canonical containment rejects traversal and sibling-prefix paths', () => {
   const { root, dist } = fixture()
   try {

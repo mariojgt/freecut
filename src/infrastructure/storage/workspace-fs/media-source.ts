@@ -31,6 +31,11 @@ const NON_SOURCE_NAMES = new Set([
   'cache',
 ])
 
+/** Finder metadata and AppleDouble sidecars are never media source bytes. */
+function isFilesystemMetadata(name: string): boolean {
+  return name === '.DS_Store' || name.startsWith('._')
+}
+
 /**
  * Locate the source file for a media entry by scanning the media dir.
  * Returns the segments of the first file that isn't a reserved sibling
@@ -44,7 +49,7 @@ async function findSourceSegments(
   const entries = await listDirectory(root, mediaDir(mediaId))
   for (const entry of entries) {
     if (entry.kind !== 'file') continue
-    if (NON_SOURCE_NAMES.has(entry.name)) continue
+    if (NON_SOURCE_NAMES.has(entry.name) || isFilesystemMetadata(entry.name)) continue
     return [...mediaDir(mediaId), entry.name]
   }
   return null
