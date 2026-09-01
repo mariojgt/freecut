@@ -41,6 +41,14 @@ describe('transform actions', () => {
   })
 
   describe('updateItemTransform', () => {
+    it('creates a transform for an item using renderer defaults', () => {
+      useItemsStore.getState().setItems([makeTimelineVideoItem({ id: 'bare' })])
+
+      updateItemTransform('bare', { x: 10, y: -5 })
+
+      expect(getTransform('bare')).toMatchObject({ x: 10, y: -5 })
+    })
+
     it('merges partial transforms into the existing transform', () => {
       updateItemTransform('a', { x: 10, y: -5 })
       updateItemTransform('a', { opacity: 0.5 })
@@ -89,10 +97,8 @@ describe('transform actions', () => {
 
       expect(useItemsStore.getState().items).toBe(itemsBefore)
       expect(
-        useKeyframesStore
-          .getState()
-          .getKeyframesForItem('a')
-          ?.vectorProperties?.[0]?.keyframes[0]?.value,
+        useKeyframesStore.getState().getKeyframesForItem('a')?.vectorProperties?.[0]?.keyframes[0]
+          ?.value,
       ).toEqual({ x: 40, y: 50 })
     })
 
@@ -119,10 +125,8 @@ describe('transform actions', () => {
 
       expect(useTimelineCommandStore.getState().undoStack.length).toBe(undoDepth + 1)
       expect(
-        useKeyframesStore
-          .getState()
-          .getKeyframesForItem('a')
-          ?.vectorProperties?.[0]?.keyframes[0]?.value,
+        useKeyframesStore.getState().getKeyframesForItem('a')?.vectorProperties?.[0]?.keyframes[0]
+          ?.value,
       ).toEqual({ x: 40, y: 50 })
       expect(getTransform('a').rotation).toBe(12)
 
@@ -133,6 +137,21 @@ describe('transform actions', () => {
   })
 
   describe('multi-item transforms', () => {
+    it('creates missing transforms in bulk and map updates', () => {
+      useItemsStore
+        .getState()
+        .setItems([
+          makeTimelineVideoItem({ id: 'bare-a' }),
+          makeTimelineVideoItem({ id: 'bare-b' }),
+        ])
+
+      updateItemsTransform(['bare-a'], { rotation: 12 })
+      updateItemsTransformMap(new Map([['bare-b', { x: 24 }]]))
+
+      expect(getTransform('bare-a').rotation).toBe(12)
+      expect(getTransform('bare-b').x).toBe(24)
+    })
+
     it('updateItemsTransform applies one transform to several items', () => {
       updateItemsTransform(['a', 'b'], { rotation: 45 })
 
@@ -190,6 +209,19 @@ describe('transform actions', () => {
   })
 
   describe('resetItemTransform', () => {
+    it('creates the reset transform for an item using renderer defaults', () => {
+      useItemsStore.getState().setItems([makeTimelineVideoItem({ id: 'bare' })])
+
+      resetItemTransform('bare')
+
+      expect(getTransform('bare')).toMatchObject({
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+      })
+    })
+
     it('zeroes position and rotation', () => {
       updateItemTransform('a', { x: 10, y: 20, rotation: 90 })
 
@@ -275,9 +307,7 @@ describe('transform actions', () => {
         timeOffsetFrames: 0,
       })
 
-      expect(
-        useKeyframesStore.getState().keyframesByItemId['b']?.propertyLinks,
-      ).toBeUndefined()
+      expect(useKeyframesStore.getState().keyframesByItemId['b']?.propertyLinks).toBeUndefined()
     })
 
     it('blocks parenting when the child already links transform channels to that parent', () => {
@@ -310,9 +340,7 @@ describe('transform actions', () => {
         timeOffsetFrames: 0,
       })
 
-      expect(
-        useKeyframesStore.getState().keyframesByItemId['a']?.propertyLinks,
-      ).toBeUndefined()
+      expect(useKeyframesStore.getState().keyframesByItemId['a']?.propertyLinks).toBeUndefined()
     })
 
     it('allows non-inherited property links to an existing parent', () => {

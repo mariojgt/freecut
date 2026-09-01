@@ -734,11 +734,10 @@ export const useItemsStore = create<ItemsState & ItemsActions>()((set, get) => (
     set((state) => {
       const nextItems = state.items.map((item) => {
         if (item.id !== id) return item
-        if (!('transform' in item)) return item
 
         return {
           ...item,
-          transform: { ...item.transform, ...transform },
+          transform: { ...(item.transform ?? {}), ...transform },
         } as typeof item
       })
       return withItemIndexes(nextItems, state)
@@ -750,7 +749,6 @@ export const useItemsStore = create<ItemsState & ItemsActions>()((set, get) => (
     set((state) => {
       const nextItems = state.items.map((item) => {
         if (item.id !== id) return item
-        if (!('transform' in item)) return item
 
         const updatedItem = {
           ...item,
@@ -773,11 +771,10 @@ export const useItemsStore = create<ItemsState & ItemsActions>()((set, get) => (
       const idsSet = new Set(ids)
       const nextItems = state.items.map((item) => {
         if (!idsSet.has(item.id)) return item
-        if (!('transform' in item)) return item
 
         return {
           ...item,
-          transform: { ...item.transform, ...transform },
+          transform: { ...(item.transform ?? {}), ...transform },
         } as typeof item
       })
       return withItemIndexes(nextItems, state)
@@ -794,11 +791,11 @@ export const useItemsStore = create<ItemsState & ItemsActions>()((set, get) => (
         const updatedItem = updates
           ? normalizeFrameFields({ ...item, ...normalizeItemUpdates(updates) } as typeof item)
           : item
-        if (!transform || !('transform' in item)) return updatedItem
+        if (!transform) return updatedItem
 
         return normalizeFrameFields({
           ...updatedItem,
-          transform: { ...item.transform, ...transform },
+          transform: { ...(updatedItem.transform ?? {}), ...transform },
         } as typeof item)
       })
       return withItemIndexes(nextItems, state)

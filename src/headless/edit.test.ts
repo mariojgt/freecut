@@ -227,6 +227,38 @@ describe('editProject', () => {
     })
   })
 
+  it('setTransform initializes an addClip image that has no stored transform', async () => {
+    const result = await editProject({
+      project: baseProject(),
+      ops: [
+        { op: 'addClip', mediaId: 'm-img', callerId: 'clip' } as EditOp,
+        {
+          op: 'setTransform',
+          id: { $ref: 'clip#/detail/created/0/id' },
+          transform: { x: 12, y: 34, width: 320, height: 480 },
+        } as EditOp,
+      ],
+      media: [
+        {
+          mediaId: 'm-img',
+          metadata: {
+            ...videoMedia,
+            id: 'm-img',
+            mimeType: 'image/png',
+            audioCodec: undefined,
+          } as MediaMetadata,
+        },
+      ],
+    })
+
+    expect(result.project.timeline!.items[0]?.transform).toMatchObject({
+      x: 12,
+      y: 34,
+      width: 320,
+      height: 480,
+    })
+  })
+
   const adjacentVideoTimeline = () => ({
     items: [
       {
