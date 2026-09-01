@@ -975,7 +975,25 @@
       "partCount_other": "{{count}} parties",
       "showParts": "Afficher les parties de {{name}}",
       "projectTitle": "Blocs du projet",
-      "remove": "Supprimer {{name}}"
+      "remove": "Supprimer {{name}}",
+      "edit": "Modifier {{name}}",
+      "export": "Exporter {{name}}",
+      "import": "Importer"
+    },
+    "rigEditor": {
+      "title": "Rig : {{name}}",
+      "description": "Choisis une partie, donne-lui un parent et clique sur l'aperçu pour placer son articulation.",
+      "blockName": "Nom du bloc",
+      "partLabel": "Nom de la partie",
+      "parent": "Parent",
+      "noParent": "Aucun (racine)",
+      "fill": "Remplissage",
+      "noFill": "Aucun",
+      "pivot": "Articulation",
+      "setPivot": "Définir l'articulation",
+      "clickPreview": "Cliquer sur l'aperçu",
+      "clearPivot": "Effacer",
+      "pivotHint": "Par défaut, le centre de la partie."
     }
   }
 }

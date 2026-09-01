@@ -975,7 +975,25 @@
       "partCount_other": "{{count}} パーツ",
       "showParts": "{{name}} のパーツを表示",
       "projectTitle": "プロジェクトのブロック",
-      "remove": "{{name}} を削除"
+      "remove": "{{name}} を削除",
+      "edit": "{{name}} を編集",
+      "export": "{{name}} をエクスポート",
+      "import": "インポート"
+    },
+    "rigEditor": {
+      "title": "リグ: {{name}}",
+      "description": "パーツを選び、親を設定し、プレビューをクリックして関節を配置します。",
+      "blockName": "ブロック名",
+      "partLabel": "パーツ名",
+      "parent": "親",
+      "noParent": "なし (ルート)",
+      "fill": "塗り",
+      "noFill": "なし",
+      "pivot": "関節",
+      "setPivot": "関節を設定",
+      "clickPreview": "プレビューをクリック",
+      "clearPivot": "クリア",
+      "pivotHint": "既定はパーツの中心です。"
     }
   }
 }

@@ -80,9 +80,12 @@ describe('BlockLibraryPanel', () => {
     expect(screen.getByText('Astronaut')).toBeTruthy()
   })
 
-  it('shows no project section when the project owns no blocks', () => {
+  it('offers import even when the project owns no blocks', () => {
+    // Otherwise there is no way to get the first one in.
     render(<BlockLibraryPanel />)
-    expect(screen.queryByText('Project blocks')).toBeNull()
+    expect(screen.getByText('Project blocks')).toBeTruthy()
+    expect(screen.getByText('Import')).toBeTruthy()
+    expect(screen.queryByTitle(/^Edit /)).toBeNull()
   })
 
   it('lists the project own blocks in their own section', () => {
@@ -118,5 +121,51 @@ describe('BlockLibraryPanel', () => {
   it('offers no remove control for committed artwork', () => {
     render(<BlockLibraryPanel />)
     expect(screen.queryByTitle('Remove Astronaut')).toBeNull()
+  })
+})
+
+describe('BlockLibraryPanel export and import', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    currentProject = makeProject([projectBlock('local-badge', 'Badge')])
+  })
+
+  it('downloads a block as a file named after it', () => {
+    const created: HTMLAnchorElement[] = []
+    const realCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const element = realCreate(tag) as HTMLAnchorElement
+      if (tag === 'a') {
+        element.click = vi.fn()
+        created.push(element)
+      }
+      return element
+    })
+    const objectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    render(<BlockLibraryPanel />)
+    fireEvent.click(screen.getByTitle('Export Badge'))
+
+    expect(created[0]?.download).toBe('badge.freecut-block.json')
+    expect(created[0]?.click).toHaveBeenCalled()
+    // The blob URL is released, or every export leaks one for the session.
+    expect(revoke).toHaveBeenCalledWith('blob:test')
+    objectUrl.mockRestore()
+    revoke.mockRestore()
+    vi.mocked(document.createElement).mockRestore()
+  })
+
+  it('offers edit, export and remove for a project block', () => {
+    render(<BlockLibraryPanel />)
+    expect(screen.getByTitle('Edit Badge')).toBeTruthy()
+    expect(screen.getByTitle('Export Badge')).toBeTruthy()
+    expect(screen.getByTitle('Remove Badge')).toBeTruthy()
+  })
+
+  it('opens the rig editor on edit', () => {
+    render(<BlockLibraryPanel />)
+    fireEvent.click(screen.getByTitle('Edit Badge'))
+    expect(screen.getByText('Rig: Badge')).toBeTruthy()
   })
 })

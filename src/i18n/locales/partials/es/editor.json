@@ -975,7 +975,25 @@
       "partCount_other": "{{count}} partes",
       "showParts": "Mostrar partes de {{name}}",
       "projectTitle": "Bloques del proyecto",
-      "remove": "Eliminar {{name}}"
+      "remove": "Eliminar {{name}}",
+      "edit": "Editar {{name}}",
+      "export": "Exportar {{name}}",
+      "import": "Importar"
+    },
+    "rigEditor": {
+      "title": "Rig: {{name}}",
+      "description": "Elige una parte, asígnale un padre y haz clic en la vista previa para colocar su articulación.",
+      "blockName": "Nombre del bloque",
+      "partLabel": "Nombre de la parte",
+      "parent": "Padre",
+      "noParent": "Ninguno (raíz)",
+      "fill": "Relleno",
+      "noFill": "Ninguno",
+      "pivot": "Articulación",
+      "setPivot": "Definir articulación",
+      "clickPreview": "Haz clic en la vista previa",
+      "clearPivot": "Borrar",
+      "pivotHint": "Por defecto, el centro de la parte."
     }
   }
 }

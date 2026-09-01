@@ -975,7 +975,25 @@
       "partCount_other": "{{count}} Teile",
       "showParts": "Teile von {{name}} anzeigen",
       "projectTitle": "Projekt-Blöcke",
-      "remove": "{{name}} entfernen"
+      "remove": "{{name}} entfernen",
+      "edit": "{{name}} bearbeiten",
+      "export": "{{name}} exportieren",
+      "import": "Importieren"
+    },
+    "rigEditor": {
+      "title": "Rig: {{name}}",
+      "description": "Wähle ein Teil, gib ihm ein übergeordnetes Teil und klicke in die Vorschau, um das Gelenk zu setzen.",
+      "blockName": "Blockname",
+      "partLabel": "Teilname",
+      "parent": "Übergeordnet",
+      "noParent": "Keins (Wurzel)",
+      "fill": "Füllung",
+      "noFill": "Keine",
+      "pivot": "Gelenk",
+      "setPivot": "Gelenk setzen",
+      "clickPreview": "In Vorschau klicken",
+      "clearPivot": "Löschen",
+      "pivotHint": "Standard ist die Mitte des Teils."
     }
   }
 }

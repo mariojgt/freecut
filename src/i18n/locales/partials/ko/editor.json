@@ -975,7 +975,25 @@
       "partCount_other": "{{count}}개 파트",
       "showParts": "{{name}}의 파트 표시",
       "projectTitle": "프로젝트 블록",
-      "remove": "{{name}} 제거"
+      "remove": "{{name}} 제거",
+      "edit": "{{name}} 편집",
+      "export": "{{name}} 내보내기",
+      "import": "가져오기"
+    },
+    "rigEditor": {
+      "title": "리그: {{name}}",
+      "description": "파트를 선택하고 부모를 지정한 뒤, 미리보기를 클릭해 관절을 배치하세요.",
+      "blockName": "블록 이름",
+      "partLabel": "파트 이름",
+      "parent": "부모",
+      "noParent": "없음 (루트)",
+      "fill": "채우기",
+      "noFill": "없음",
+      "pivot": "관절",
+      "setPivot": "관절 설정",
+      "clickPreview": "미리보기 클릭",
+      "clearPivot": "지우기",
+      "pivotHint": "기본값은 파트의 중심입니다."
     }
   }
 }

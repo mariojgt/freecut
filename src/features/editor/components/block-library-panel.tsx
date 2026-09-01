@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Trash2 } from 'lucide-react'
+import { ChevronRight, Download, Pencil, Trash2, Upload } from 'lucide-react'
 import { cn } from '@/shared/ui/cn'
 import { createLogger } from '@/shared/logging/logger'
 import { usePlaybackStore } from '@/shared/state/playback'
@@ -16,6 +16,14 @@ import { resolveGeneratedLayerCanvasSize } from '../utils/generated-layer-canvas
 import { getGesture, listBlocks } from '@/shared/graphics/blocks/registry'
 import { DEEP_SPACE_PALETTE, resolvePaletteRole } from '@/shared/graphics/blocks/scene-palette'
 import type { BlockDefinition } from '@/shared/graphics/blocks/types'
+import type { ProjectBlock } from '@/types/project'
+import {
+  availableBlockId,
+  blockFileName,
+  parseBlockFile,
+  serializeBlockFile,
+} from '@/shared/graphics/blocks/block-file'
+import { BlockRigEditor } from './block-rig-editor'
 
 const logger = createLogger('BlockLibraryPanel')
 
@@ -67,6 +75,69 @@ export function BlockLibraryPanel() {
   // changes while the panel is open, when a rig is defined or removed.
   const projectBlocks = useProjectStore((state) => state.currentProject?.blocks)
   const projectId = useProjectStore((state) => state.currentProject?.id)
+
+  const [editing, setEditing] = useState<ProjectBlock | null>(null)
+
+  const writeBlocks = useCallback(
+    async (next: ProjectBlock[]) => {
+      if (!projectId) return
+      try {
+        await useProjectStore.getState().setProjectBlocks(projectId, next)
+      } catch (error) {
+        logger.warn('Could not save project blocks', { error })
+      }
+    },
+    [projectId],
+  )
+
+  const exportBlock = useCallback((entry: ProjectBlock) => {
+    const blob = new Blob([serializeBlockFile(entry)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = blockFileName(entry.definition)
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+  }, [])
+
+  const importBlock = useCallback(
+    async (file: File) => {
+      const owned = useProjectStore.getState().currentProject?.blocks ?? []
+      try {
+        const parsed = parseBlockFile(await file.text())
+        // Importing the same rig twice is normal — a variant built from the
+        // first — so a collision takes a new id rather than replacing.
+        const id = availableBlockId(
+          parsed.definition.id,
+          new Set(owned.map((entry) => entry.definition.id)),
+        )
+        await writeBlocks([...owned, { ...parsed, definition: { ...parsed.definition, id } }])
+      } catch (error) {
+        logger.warn('Could not import block', {
+          fileName: file.name,
+          error: error instanceof Error ? error.message : error,
+        })
+      }
+    },
+    [writeBlocks],
+  )
+
+  const saveEditedBlock = useCallback(
+    async (definition: BlockDefinition) => {
+      const owned = useProjectStore.getState().currentProject?.blocks ?? []
+      await writeBlocks(
+        owned.map((entry) =>
+          entry.definition.id === definition.id
+            ? { ...entry, definition, updatedAt: Date.now() }
+            : entry,
+        ),
+      )
+      setEditing(null)
+    },
+    [writeBlocks],
+  )
 
   const removeProjectBlock = useCallback(
     async (blockId: string) => {
@@ -140,11 +211,31 @@ export function BlockLibraryPanel() {
 
   return (
     <div className="space-y-2">
+      {projectId && (
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t('editor.blockLibrary.projectTitle')}
+          </span>
+          <label className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground">
+            <Upload className="h-3 w-3" />
+            {t('editor.blockLibrary.import')}
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                // Cleared so choosing the same file twice still fires a change.
+                event.target.value = ''
+                if (file) void importBlock(file)
+              }}
+            />
+          </label>
+        </div>
+      )}
+
       {projectBlocks && projectBlocks.length > 0 && (
         <>
-          <div className="px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('editor.blockLibrary.projectTitle')}
-          </div>
           {projectBlocks.map((entry) => (
             <div
               key={entry.definition.id}
@@ -172,15 +263,35 @@ export function BlockLibraryPanel() {
                   </div>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => void removeProjectBlock(entry.definition.id)}
-                  aria-label={t('editor.blockLibrary.remove', { name: entry.definition.name })}
-                  title={t('editor.blockLibrary.remove', { name: entry.definition.name })}
-                  className="flex w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/20 hover:text-destructive"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                <div className="flex shrink-0 flex-col justify-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(entry)}
+                    aria-label={t('editor.blockLibrary.edit', { name: entry.definition.name })}
+                    title={t('editor.blockLibrary.edit', { name: entry.definition.name })}
+                    className="flex h-6 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportBlock(entry)}
+                    aria-label={t('editor.blockLibrary.export', { name: entry.definition.name })}
+                    title={t('editor.blockLibrary.export', { name: entry.definition.name })}
+                    className="flex h-6 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+                  >
+                    <Download className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void removeProjectBlock(entry.definition.id)}
+                    aria-label={t('editor.blockLibrary.remove', { name: entry.definition.name })}
+                    title={t('editor.blockLibrary.remove', { name: entry.definition.name })}
+                    className="flex h-6 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/20 hover:text-destructive"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -190,6 +301,12 @@ export function BlockLibraryPanel() {
       <div className="px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         {t('editor.blockLibrary.title')}
       </div>
+
+      <BlockRigEditor
+        entry={editing}
+        onClose={() => setEditing(null)}
+        onSave={(definition) => void saveEditedBlock(definition)}
+      />
 
       {blocks.map((block) => {
         const expanded = expandedBlockId === block.id

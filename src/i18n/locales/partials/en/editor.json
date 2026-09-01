@@ -977,7 +977,25 @@
       "partCount_other": "{{count}} parts",
       "showParts": "Show parts of {{name}}",
       "projectTitle": "Project blocks",
-      "remove": "Remove {{name}}"
+      "remove": "Remove {{name}}",
+      "edit": "Edit {{name}}",
+      "export": "Export {{name}}",
+      "import": "Import"
+    },
+    "rigEditor": {
+      "title": "Rig: {{name}}",
+      "description": "Choose a part, give it a parent, and click the preview to place its joint.",
+      "blockName": "Block name",
+      "partLabel": "Part name",
+      "parent": "Parent",
+      "noParent": "None (root)",
+      "fill": "Fill",
+      "noFill": "None",
+      "pivot": "Joint",
+      "setPivot": "Set joint",
+      "clickPreview": "Click the preview",
+      "clearPivot": "Clear",
+      "pivotHint": "Defaults to the centre of the part."
     }
   }
 }

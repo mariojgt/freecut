@@ -975,7 +975,25 @@
       "partCount_other": "{{count}} parça",
       "showParts": "{{name}} parçalarını göster",
       "projectTitle": "Proje blokları",
-      "remove": "{{name}} öğesini kaldır"
+      "remove": "{{name}} öğesini kaldır",
+      "edit": "{{name}} öğesini düzenle",
+      "export": "{{name}} öğesini dışa aktar",
+      "import": "İçe aktar"
+    },
+    "rigEditor": {
+      "title": "Rig: {{name}}",
+      "description": "Bir parça seç, ona bir üst öğe ver ve eklemini yerleştirmek için önizlemeye tıkla.",
+      "blockName": "Blok adı",
+      "partLabel": "Parça adı",
+      "parent": "Üst öğe",
+      "noParent": "Yok (kök)",
+      "fill": "Dolgu",
+      "noFill": "Yok",
+      "pivot": "Eklem",
+      "setPivot": "Eklemi ayarla",
+      "clickPreview": "Önizlemeye tıkla",
+      "clearPivot": "Temizle",
+      "pivotHint": "Varsayılan, parçanın merkezidir."
     }
   }
 }

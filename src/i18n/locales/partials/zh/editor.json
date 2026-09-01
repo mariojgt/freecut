@@ -975,7 +975,25 @@
       "partCount_other": "{{count}} 个部件",
       "showParts": "显示 {{name}} 的部件",
       "projectTitle": "项目积木",
-      "remove": "移除 {{name}}"
+      "remove": "移除 {{name}}",
+      "edit": "编辑 {{name}}",
+      "export": "导出 {{name}}",
+      "import": "导入"
+    },
+    "rigEditor": {
+      "title": "绑定：{{name}}",
+      "description": "选择一个部件，为它指定父级，然后点击预览放置关节。",
+      "blockName": "积木名称",
+      "partLabel": "部件名称",
+      "parent": "父级",
+      "noParent": "无（根）",
+      "fill": "填充",
+      "noFill": "无",
+      "pivot": "关节",
+      "setPivot": "设置关节",
+      "clickPreview": "点击预览",
+      "clearPivot": "清除",
+      "pivotHint": "默认为部件的中心。"
     }
   }
 }
