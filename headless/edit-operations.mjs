@@ -614,6 +614,76 @@ const cases = [
     failure: { op: 'setCamera', itemId: 'missing-item', intent: 'push' },
   },
   {
+    name: 'defineBlock',
+    op: {
+      op: 'defineBlock',
+      blockId: 'local-figure',
+      name: 'Figure',
+      category: 'character',
+      source:
+        '<svg viewBox="0 0 200 400"><rect id="torso" x="70" y="100" width="60" height="140" ' +
+        'fill="#47f"/><rect id="arm" x="120" y="110" width="24" height="90" fill="#235"/></svg>',
+      parts: [
+        { id: 'torso', fill: 'primary' },
+        { id: 'arm', parent: 'torso', pivot: [130, 115], fill: 'ink' },
+      ],
+    },
+    ops: [
+      {
+        op: 'defineBlock',
+        blockId: 'local-figure',
+        name: 'Figure',
+        category: 'character',
+        source:
+          '<svg viewBox="0 0 200 400"><rect id="torso" x="70" y="100" width="60" height="140" ' +
+          'fill="#47f"/><rect id="arm" x="120" y="110" width="24" height="90" fill="#235"/></svg>',
+        parts: [
+          { id: 'torso', fill: 'primary' },
+          { id: 'arm', parent: 'torso', pivot: [130, 115], fill: 'ink' },
+        ],
+      },
+      {
+        op: 'addBlock',
+        blockId: 'local-figure',
+        from: 0,
+        durationInFrames: 60,
+        scale: 1,
+        idPrefix: 'fig',
+      },
+      {
+        op: 'directAction',
+        idPrefix: 'fig',
+        action: 'enter',
+        direction: 'left',
+        from: 0,
+        durationInFrames: 20,
+      },
+    ],
+    assert: (project) => {
+      const items = project.timeline.items.filter((item) => item.id.startsWith('fig-'))
+      assert.equal(items.length, 2)
+      // Rigged, not a pile of paths: the arm hangs off the torso and turns at
+      // the joint the caller named rather than at its own centre.
+      const arm = items.find((item) => item.id === 'fig-arm')
+      assert.equal(arm.transformParent?.parentItemId, 'fig-torso')
+      assert.ok(Math.abs(arm.transform.anchorX - 10) < 0.001, `anchorX ${arm.transform.anchorX}`)
+      // And generated art takes the same intent vocabulary as committed art.
+      const xs = project.timeline.keyframes
+        .find((entry) => entry.itemId === 'fig-torso')
+        .properties.find((entry) => entry.property === 'x')
+        .keyframes.map((entry) => entry.value)
+      assert.ok(xs[0] < 0, `expected an off-screen start, got ${xs[0]}`)
+      assert.equal(xs.at(-1), 0)
+    },
+    failure: {
+      op: 'defineBlock',
+      blockId: 'local-broken',
+      name: 'Broken',
+      source: '<svg viewBox="0 0 10 10"><rect id="a" width="4" height="4" fill="#fff"/></svg>',
+      parts: [{ id: 'a', parent: 'ghost' }],
+    },
+  },
+  {
     name: 'importSvg',
     op: {
       op: 'importSvg',

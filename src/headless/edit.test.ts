@@ -1031,3 +1031,223 @@ describe('directed actions and camera moves', () => {
     expect(after?.transform?.width).toBe(before?.transform?.width)
   })
 })
+
+describe('rigging art the caller just drew', () => {
+  const FIGURE = [
+    '<svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">',
+    '  <rect id="torso" x="70" y="100" width="60" height="140" fill="#4477ff"/>',
+    '  <rect id="arm" x="120" y="110" width="24" height="90" fill="#223355"/>',
+    '  <circle id="head" cx="100" cy="70" r="34" fill="#4477ff"/>',
+    '</svg>',
+  ].join('\n')
+
+  const define = (overrides: Record<string, unknown> = {}): EditOp => ({
+    op: 'defineBlock',
+    blockId: 'local-figure',
+    name: 'Figure',
+    category: 'character',
+    source: FIGURE,
+    parts: [
+      { id: 'torso', fill: 'primary' },
+      { id: 'arm', parent: 'torso', pivot: [130, 115], fill: 'ink' },
+      { id: 'head', parent: 'torso', fill: 'highlight' },
+    ],
+    ...overrides,
+  })
+
+  it('defines and places a rig in one call', async () => {
+    const { project, results } = await editProject({
+      project: baseProject(),
+      ops: [
+        define(),
+        {
+          op: 'addBlock',
+          blockId: 'local-figure',
+          from: 0,
+          durationInFrames: 60,
+          scale: 1,
+          idPrefix: 'fig',
+        },
+      ],
+    })
+    expect((results[0] as { detail: { parts: number } }).detail.parts).toBe(3)
+    const items = project.timeline?.items?.filter((item) => item.id.startsWith('fig-'))
+    expect(items?.length).toBe(3)
+    // Rigged, not a pile of paths: the arm hangs off the torso.
+    const arm = items?.find((item) => item.id === 'fig-arm')
+    expect(arm?.transformParent?.parentItemId).toBe('fig-torso')
+  })
+
+  it('animates generated art with the same intent vocabulary', async () => {
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [
+        define(),
+        {
+          op: 'addBlock',
+          blockId: 'local-figure',
+          from: 0,
+          durationInFrames: 60,
+          idPrefix: 'fig',
+        },
+        {
+          op: 'directAction',
+          idPrefix: 'fig',
+          action: 'enter',
+          direction: 'left',
+          from: 0,
+          durationInFrames: 20,
+        },
+      ],
+    })
+    const xs = project.timeline?.keyframes
+      ?.find((entry) => entry.itemId === 'fig-torso')
+      ?.properties.find((entry) => entry.property === 'x')
+      ?.keyframes.map((entry) => entry.value)
+    expect(xs?.[0]).toBeLessThan(0)
+    expect(xs?.at(-1)).toBe(0)
+    // Only the root travels; the rig holds together.
+    expect(
+      project.timeline?.keyframes
+        ?.find((entry) => entry.itemId === 'fig-arm')
+        ?.properties.some((entry) => entry.property === 'x'),
+    ).toBeFalsy()
+  })
+
+  it('attaches to a slot on a generated block', async () => {
+    const scene = await editProject({
+      project: baseProject(),
+      ops: [
+        define({ slots: [{ id: 'hand', label: 'Hand', at: [132, 195], partId: 'arm' }] }),
+        {
+          op: 'addBlock',
+          blockId: 'local-figure',
+          from: 0,
+          durationInFrames: 60,
+          scale: 1,
+          idPrefix: 'fig',
+        },
+        { op: 'addText', text: 'prop', from: 0, durationInFrames: 60, trackId: 't_v' },
+      ],
+    })
+    const propId = (scene.results[2] as { detail: { id: string } }).detail.id
+    const { project } = await editProject({
+      project: scene.project,
+      ops: [
+        // The definition is re-sent because it lives for one call; this is the
+        // cost of not persisting it, stated plainly.
+        define({ slots: [{ id: 'hand', label: 'Hand', at: [132, 195], partId: 'arm' }] }),
+        { op: 'attachToSlot', idPrefix: 'fig', slotId: 'hand', itemId: propId, scale: 1 },
+      ],
+    })
+    const prop = project.timeline?.items?.find((item) => item.id === propId)
+    expect(prop?.transformParent?.parentItemId).toBe('fig-arm')
+    // Slot [132, 195] in a 200x400 viewport is (32, -5) from the block centre.
+    expect({ x: prop?.transform?.x, y: prop?.transform?.y }).toEqual({ x: 32, y: -5 })
+  })
+
+  it('picks the right block when part ids collide with committed artwork', async () => {
+    // `character-astronaut` also has a part called `torso`. Matching on "any part
+    // id in common" resolved a three-part generated figure to the seventeen-part
+    // astronaut and then silently parented nothing.
+    const scene = await editProject({
+      project: baseProject(),
+      ops: [
+        define({ slots: [{ id: 'hand', label: 'Hand', at: [132, 195], partId: 'arm' }] }),
+        { op: 'addBlock', blockId: 'local-figure', durationInFrames: 60, idPrefix: 'fig' },
+        { op: 'addText', text: 'prop', from: 0, durationInFrames: 60, trackId: 't_v' },
+        {
+          op: 'attachToSlot',
+          idPrefix: 'fig',
+          slotId: 'hand',
+          itemId: { $ref: 'prop#/detail/id' } as unknown as string,
+        },
+      ].map((op, index) => (index === 2 ? { ...op, callerId: 'prop' } : op)) as EditOp[],
+    })
+    const propId = (scene.results[2] as { detail: { id: string } }).detail.id
+    const prop = scene.project.timeline?.items?.find((item) => item.id === propId)
+    expect(prop?.transformParent?.parentItemId).toBe('fig-arm')
+  })
+
+  it('lets the caller name the block when inference would be ambiguous', async () => {
+    const scene = await editProject({
+      project: baseProject(),
+      ops: [
+        define({ slots: [{ id: 'hand', label: 'Hand', at: [132, 195], partId: 'arm' }] }),
+        { op: 'addBlock', blockId: 'local-figure', durationInFrames: 60, idPrefix: 'fig' },
+        {
+          op: 'addText',
+          text: 'prop',
+          from: 0,
+          durationInFrames: 60,
+          trackId: 't_v',
+          callerId: 'p',
+        },
+        {
+          op: 'attachToSlot',
+          idPrefix: 'fig',
+          blockId: 'local-figure',
+          slotId: 'hand',
+          itemId: { $ref: 'p#/detail/id' } as unknown as string,
+        },
+      ] as EditOp[],
+    })
+    const propId = (scene.results[2] as { detail: { id: string } }).detail.id
+    expect(
+      scene.project.timeline?.items?.find((item) => item.id === propId)?.transformParent
+        ?.parentItemId,
+    ).toBe('fig-arm')
+  })
+
+  it('refuses a rig whose part names an element the drawing does not have', async () => {
+    await expect(
+      editProject({
+        project: baseProject(),
+        ops: [define({ parts: [{ id: 'torso' }, { id: 'tail' }] })],
+      }),
+    ).rejects.toThrow(/no element with id "tail"/)
+  })
+
+  it('refuses a rig that would not hold together', async () => {
+    await expect(
+      editProject({
+        project: baseProject(),
+        ops: [define({ parts: [{ id: 'torso', parent: 'ghost' }] })],
+      }),
+    ).rejects.toThrow(/not sound/)
+  })
+
+  it('refuses to shadow committed artwork', async () => {
+    await expect(
+      editProject({
+        project: baseProject(),
+        ops: [define({ blockId: 'character-astronaut' })],
+      }),
+    ).rejects.toThrow(/committed block/)
+  })
+
+  it('does not leak a definition into a later call', async () => {
+    // Generated rigs are scoped to the call that authored them; the alternative
+    // is a schema change for something the caller can simply re-send.
+    const first = await editProject({ project: baseProject(), ops: [define()] })
+    await expect(
+      editProject({
+        project: first.project,
+        ops: [{ op: 'addBlock', blockId: 'local-figure', durationInFrames: 60 }],
+      }),
+    ).rejects.toThrow(/defineBlock it in this same call/)
+  })
+
+  it('places one definition more than once', async () => {
+    const { project } = await editProject({
+      project: baseProject(),
+      ops: [
+        define(),
+        { op: 'addBlock', blockId: 'local-figure', durationInFrames: 60, x: -300, idPrefix: 'a' },
+        { op: 'addBlock', blockId: 'local-figure', durationInFrames: 60, x: 300, idPrefix: 'b' },
+      ],
+    })
+    expect(project.timeline?.items?.filter((item) => item.id.startsWith('a-')).length).toBe(3)
+    expect(project.timeline?.items?.filter((item) => item.id.startsWith('b-')).length).toBe(3)
+  })
+})

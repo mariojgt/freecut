@@ -34,13 +34,22 @@ import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-se
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
 import { createClassicTrack } from '@/features/timeline/utils/classic-tracks'
 import { BLOCKS, getBlock, getGesture, getPose } from '@/shared/graphics/blocks/registry'
+import {
+  assertDefinedBlockIsSound,
+  buildBlockFromSvg,
+} from '@/shared/graphics/blocks/define-from-svg'
+import type { SvgPartSpec } from '@/shared/graphics/blocks/define-from-svg'
 import { instantiateBlock } from '@/shared/graphics/blocks/instantiate'
 import { bakeGesture } from '@/shared/graphics/blocks/gesture-bake'
 import type { BakedTrack } from '@/shared/graphics/blocks/gesture-bake'
 import { poseToGesture, posesToGesture } from '@/shared/graphics/blocks/poses'
 import type { PoseStep } from '@/shared/graphics/blocks/poses'
 import { resolveRigProperty, rigChannelProperties } from '@/shared/graphics/blocks/rig-channels'
-import type { GestureDefinition, PoseDefinition } from '@/shared/graphics/blocks/types'
+import type {
+  BlockDefinition,
+  GestureDefinition,
+  PoseDefinition,
+} from '@/shared/graphics/blocks/types'
 import { compileDirectedAction } from '@/shared/graphics/scene/direction'
 import type {
   DirectedKeyframe,
@@ -106,6 +115,7 @@ export type EditOperationName =
   | 'attachToSlot'
   | 'directAction'
   | 'setCamera'
+  | 'defineBlock'
   | 'importSvg'
   | 'morphPath'
 
@@ -415,6 +425,51 @@ function toItemRelative(
     byKey.set(`${keyframe.itemId}:${keyframe.property}:${keyframe.frame}`, keyframe)
   }
   return [...byKey.values()]
+}
+
+/**
+ * Blocks defined during this edit call.
+ *
+ * Deliberately call-scoped rather than persisted: a generated rig is a product of
+ * the request that authored it, and putting it in the project document would mean
+ * a schema change plus a migration for something the caller can simply re-send.
+ * The consequence is stated on the op — define and place in the same call — and
+ * one definition can be placed as many times as the call likes.
+ */
+const adHocBlocks = new Map<string, BlockDefinition>()
+
+/**
+ * Work out which block an instance came from, by how much of it each explains.
+ *
+ * Matching on "any part id in common" is ambiguous and picks wrong: several
+ * blocks have a part called `torso`, so a three-part generated figure would
+ * resolve to the seventeen-part astronaut and quietly fail to parent anything.
+ * Scoring by coverage makes the real block win, and ties break deterministically
+ * on the tighter fit so the same project always resolves the same way.
+ */
+function inferBlock(idPrefix: string, owned: readonly TimelineItem[]): BlockDefinition | undefined {
+  const ownedIds = new Set(owned.map((item) => item.id))
+  const scored = [...BLOCKS.values(), ...adHocBlocks.values()]
+    .map((block) => ({
+      block,
+      score: block.parts.filter((part) => ownedIds.has(`${idPrefix}-${part.id}`)).length,
+    }))
+    .filter((entry) => entry.score > 0)
+
+  // Most parts explained wins; ties go to the tighter fit, then to the id, so the
+  // same project always resolves to the same block.
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      a.block.parts.length - b.block.parts.length ||
+      a.block.id.localeCompare(b.block.id),
+  )
+  return scored[0]?.block
+}
+
+/** Committed blocks first; a generated one can never shadow reviewed artwork. */
+function lookupBlock(id: string): BlockDefinition | undefined {
+  return getBlock(id) ?? adHocBlocks.get(id)
 }
 
 function requireItem(id: string, field = 'id'): TimelineItem {
@@ -928,8 +983,15 @@ function applyOp(op: EditOp): unknown {
     case 'addBlock': {
       const blockId = asString(op.blockId)
       if (!blockId) throw new Error('addBlock requires `blockId`')
-      const block = getBlock(blockId)
-      if (!block) throw new Error(`addBlock: unknown block "${blockId}"`)
+      const block = lookupBlock(blockId)
+      if (!block) {
+        throw new Error(
+          `addBlock: unknown block "${blockId}"` +
+            (blockId.startsWith('local-')
+              ? '. Generated blocks live for one edit call — defineBlock it in this same call.'
+              : ''),
+        )
+      }
 
       const requested = Array.isArray(op.gestures) ? op.gestures : []
       const gestures = requested.map((entry) => {
@@ -1043,10 +1105,15 @@ function applyOp(op: EditOp): unknown {
       // caller naming it twice.
       const owned = all.filter((item) => item.id.startsWith(`${idPrefix}-`))
       if (owned.length === 0) throw new Error(`attachToSlot: no items with prefix "${idPrefix}"`)
-      const block = [...BLOCKS.values()].find((candidate) =>
-        candidate.parts.some((part) => owned.some((item) => item.id === `${idPrefix}-${part.id}`)),
-      )
-      if (!block) throw new Error(`attachToSlot: "${idPrefix}" is not a known block instance`)
+      const named = asString(op.blockId)
+      const block = named ? lookupBlock(named) : inferBlock(idPrefix, owned)
+      if (!block) {
+        throw new Error(
+          named
+            ? `attachToSlot: unknown block "${named}"`
+            : `attachToSlot: "${idPrefix}" is not a known block instance`,
+        )
+      }
 
       const slot = (block.slots ?? []).find((candidate) => candidate.id === slotId)
       if (!slot) {
@@ -1180,6 +1247,43 @@ function applyOp(op: EditOp): unknown {
         })),
       )
       return { intent, targets: targets.length, keyframes: relative.length }
+    }
+    case 'defineBlock': {
+      const blockId = asString(op.blockId)
+      const source = asString(op.source)
+      const name = asString(op.name)
+      if (!blockId || !source || !name) {
+        throw new Error('defineBlock requires `blockId`, `name` and `source`')
+      }
+      if (getBlock(blockId)) {
+        throw new Error(`defineBlock: "${blockId}" is a committed block and cannot be redefined`)
+      }
+
+      const document = importSvgSource(source, { idPrefix: blockId })
+      const { block, unusedElements } = buildBlockFromSvg(document, {
+        id: blockId,
+        name,
+        category: (asString(op.category) ?? 'prop') as BlockDefinition['category'],
+        parts: (Array.isArray(op.parts) ? op.parts : []) as SvgPartSpec[],
+        ...(Array.isArray(op.slots) && { slots: op.slots as BlockDefinition['slots'] }),
+        ...(Array.isArray(op.secondary) && {
+          secondary: op.secondary as BlockDefinition['secondary'],
+        }),
+      })
+      // Held to the same rules as committed artwork: a generated rig has no
+      // reviewer, so the validator is the only thing between a mistyped parent
+      // and a limb that silently never moves.
+      assertDefinedBlockIsSound(block)
+      adHocBlocks.set(blockId, block)
+
+      return {
+        blockId,
+        parts: block.parts.length,
+        width: block.width,
+        height: block.height,
+        unusedElements,
+        warnings: document.warnings,
+      }
     }
     case 'importSvg': {
       const source = asString(op.source)
@@ -1398,6 +1502,7 @@ export async function editProject(input: HeadlessEditInput): Promise<HeadlessEdi
   }
   await hydrateTimelineStoresFromProject(migrated)
   seedMediaLibrary(input.media)
+  adHocBlocks.clear()
 
   log.info('Headless edit starting', { ops: input.ops.length })
 

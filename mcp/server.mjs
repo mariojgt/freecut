@@ -58,7 +58,10 @@ export function createFreeCutMcpServer(options = {}) {
         'Prefer intent over coordinates: directAction (enter/exit/emphasize/moveTo/shake/reveal) ' +
         'and setCamera (push/pull/pan/rise/settle) choose distance, overshoot, arc and stagger ' +
         'for you, and attachToSlot with fit=contain keeps a child inside its container. Reach for ' +
-        'addKeyframe only when no recipe fits.',
+        'addKeyframe only when no recipe fits. ' +
+        'When the library has no block for the subject, draw one: give every shape an id in the ' +
+        'SVG, then defineBlock a rig over those ids with parents and pivots, and addBlock it in ' +
+        'the SAME call — a generated definition lives for one edit call.',
     },
   )
 
@@ -176,7 +179,8 @@ export function createFreeCutMcpServer(options = {}) {
       title: 'Edit project timeline',
       description:
         'Apply validated timeline operations. Supports clips, tracks, titles, transforms, effects, ' +
-        'transitions and keyframes; rigged blocks (addBlock, applyGesture, applyPose, attachToSlot); ' +
+        'transitions and keyframes; rigged blocks (defineBlock, addBlock, applyGesture, applyPose, ' +
+        'attachToSlot); ' +
         'intent-driven motion (directAction, setCamera); and vector work (importSvg, morphPath). ' +
         'Call get_capabilities for every operation and its fields. Defaults to a dry run.',
       inputSchema: z.object({

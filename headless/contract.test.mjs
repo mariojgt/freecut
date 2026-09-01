@@ -127,6 +127,29 @@ const samples = {
     amount: 1,
     planes: [{ idPrefix: 'hero', plane: 0 }],
   },
+  defineBlock: {
+    op: 'defineBlock',
+    blockId: 'local-robot',
+    name: 'Robot',
+    category: 'character',
+    source: '<svg viewBox="0 0 100 200"><path id="torso" d="M 0 0 L 10 0 L 10 10 Z"/></svg>',
+    parts: [
+      { id: 'torso', fill: 'primary', z: 0 },
+      { id: 'arm', from: 'arm-left', parent: 'torso', pivot: [50, 60], fill: 'ink', z: 1 },
+    ],
+    slots: [{ id: 'hand', label: 'Hand', at: [50, 120], partId: 'arm' }],
+    secondary: [
+      {
+        id: 'antenna',
+        driverPartId: 'torso',
+        driverChannel: 'y',
+        followerPartId: 'arm',
+        followerChannel: 'rotation',
+        gain: -0.5,
+        lagSeconds: 0.08,
+      },
+    ],
+  },
   importSvg: { op: 'importSvg', source: '<svg/>', size: 480 },
   morphPath: {
     op: 'morphPath',
@@ -256,6 +279,52 @@ test('directed actions and camera moves need exactly one target form', () => {
   )
 })
 
+test('generated block ids are namespaced away from committed ones', () => {
+  const ok = (value) => editOpSchema.safeParse(value).success
+  const base = {
+    op: 'defineBlock',
+    name: 'Robot',
+    source: '<svg/>',
+    parts: [{ id: 'torso' }],
+  }
+  assert.equal(ok({ ...base, blockId: 'local-robot' }), true)
+  // A generated block must not be able to take a committed id, or reviewed
+  // artwork could be shadowed by something invented at request time.
+  assert.equal(ok({ ...base, blockId: 'character-astronaut' }), false)
+  assert.equal(ok({ ...base, blockId: 'robot' }), false)
+  assert.equal(ok({ ...base, parts: [] }), false)
+
+  // addBlock accepts both namespaces and nothing else.
+  const add = { op: 'addBlock' }
+  assert.equal(ok({ ...add, blockId: 'character-astronaut' }), true)
+  assert.equal(ok({ ...add, blockId: 'local-robot' }), true)
+  assert.equal(ok({ ...add, blockId: 'made-up' }), false)
+
+  // Rig fields are bounded: a depth outside the parallax planes, an unknown
+  // palette role or a negative follower lag are all refused at the wire.
+  assert.equal(ok({ ...base, blockId: 'local-a', parts: [{ id: 'p', depth: 9 }] }), false)
+  assert.equal(ok({ ...base, blockId: 'local-a', parts: [{ id: 'p', fill: 'neon' }] }), false)
+  assert.equal(ok({ ...base, blockId: 'local-a', parts: [{ id: 'p', pivot: [1] }] }), false)
+  assert.equal(
+    ok({
+      ...base,
+      blockId: 'local-a',
+      secondary: [
+        {
+          id: 's',
+          driverPartId: 'a',
+          followerPartId: 'b',
+          driverChannel: 'y',
+          followerChannel: 'rotation',
+          gain: 1,
+          lagSeconds: -1,
+        },
+      ],
+    }),
+    false,
+  )
+})
+
 test('attachToSlot can contain-fit an item inside its slot', () => {
   const ok = (value) => editOpSchema.safeParse(value).success
   const base = { op: 'attachToSlot', idPrefix: 'win', slotId: 'viewport', itemId: 'card' }
@@ -323,7 +392,17 @@ test('validation errors and capabilities are machine-readable and bounded', () =
   assert.ok(result.schemas.render)
   assert.ok(result.schemas.frame)
   assert.ok(result.schemas.layout)
-  assert.ok(JSON.stringify(result).length < 32_000)
+  // Guards against an unbounded capabilities document, which every client fetches
+  // and which an agent reads into its context. The op union is what grows: it is
+  // ~20KB across 28 operations and gains ~1KB per operation added. Emitting it
+  // with `reused: 'ref'` was measured LARGER (24KB vs 20KB) — the shared
+  // sub-schemas are not repeated enough to pay for the $defs indirection. If this
+  // is reached again, move `schemas.edit` behind an explicit request rather than
+  // raising the number a second time.
+  assert.ok(
+    JSON.stringify(result).length < 48_000,
+    `capabilities is ${JSON.stringify(result).length} bytes`,
+  )
 })
 
 test('CLI rejects unknown options and normalizes aliases', () => {

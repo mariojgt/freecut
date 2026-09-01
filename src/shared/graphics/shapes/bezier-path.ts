@@ -18,8 +18,13 @@ type Point = [number, number]
 const DEFAULT_FLATNESS_TOLERANCE = 0.35
 const MAX_SUBDIVISION_DEPTH = 12
 
-function scaledPosition(vertex: MaskVertex, width: number, height: number): Point {
-  return [vertex.position[0] * width, vertex.position[1] * height]
+function scaledPosition(
+  vertex: MaskVertex,
+  width: number,
+  height: number,
+  origin: Point = [0, 0],
+): Point {
+  return [origin[0] + vertex.position[0] * width, origin[1] + vertex.position[1] * height]
 }
 
 function scaledHandle(
@@ -27,10 +32,11 @@ function scaledHandle(
   handle: 'inHandle' | 'outHandle',
   width: number,
   height: number,
+  origin: Point = [0, 0],
 ): Point {
   return [
-    (vertex.position[0] + vertex[handle][0]) * width,
-    (vertex.position[1] + vertex[handle][1]) * height,
+    origin[0] + (vertex.position[0] + vertex[handle][0]) * width,
+    origin[1] + (vertex.position[1] + vertex[handle][1]) * height,
   ]
 }
 
@@ -78,16 +84,22 @@ export function buildBezierPathData(
   width: number,
   height: number,
   closed: boolean,
+  /**
+   * Top-left the normalized vertices are placed against. Shape items draw in
+   * their own box so the default origin is correct for them; rebuilding a path
+   * in a shared coordinate space — a block viewport, say — needs the offset.
+   */
+  origin: Point = [0, 0],
 ): string {
   if (vertices.length === 0) return ''
-  const first = scaledPosition(vertices[0]!, width, height)
+  const first = scaledPosition(vertices[0]!, width, height, origin)
   const parts = [`M ${first[0]} ${first[1]}`]
   const segmentCount = closed ? vertices.length : vertices.length - 1
 
   for (let index = 0; index < segmentCount; index++) {
     const current = vertices[index]!
     const next = vertices[(index + 1) % vertices.length]!
-    const end = scaledPosition(next, width, height)
+    const end = scaledPosition(next, width, height, origin)
     const isStraight =
       current.outHandle[0] === 0 &&
       current.outHandle[1] === 0 &&
@@ -97,8 +109,8 @@ export function buildBezierPathData(
       parts.push(`L ${end[0]} ${end[1]}`)
       continue
     }
-    const cp1 = scaledHandle(current, 'outHandle', width, height)
-    const cp2 = scaledHandle(next, 'inHandle', width, height)
+    const cp1 = scaledHandle(current, 'outHandle', width, height, origin)
+    const cp2 = scaledHandle(next, 'inHandle', width, height, origin)
     parts.push(`C ${cp1[0]} ${cp1[1]} ${cp2[0]} ${cp2[1]} ${end[0]} ${end[1]}`)
   }
 

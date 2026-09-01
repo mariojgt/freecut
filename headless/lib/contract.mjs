@@ -75,6 +75,25 @@ const GESTURE_IDS = [
   'shield-appear',
   'shield-seal',
 ]
+// Generated blocks live in their own namespace, so the committed enum keeps its
+// guarantee and a typo in a block id is still refused at the wire.
+const localBlockId = z.string().regex(/^local-[A-Za-z0-9_-]{1,48}$/)
+const anyBlockId = z.union([z.enum(BLOCK_IDS), localBlockId])
+const paletteRole = z.enum([
+  'ink',
+  'inkMuted',
+  'surface',
+  'surfaceDeep',
+  'primary',
+  'secondary',
+  'accent',
+  'highlight',
+  'glow',
+  'shadow',
+])
+const rigChannel = z.enum(['rotation', 'x', 'y', 'scale', 'scaleX', 'scaleY', 'opacity'])
+const point = z.tuple([finite, finite])
+
 const MOTION_ACTIONS = ['enter', 'exit', 'emphasize', 'moveTo', 'shake', 'reveal']
 const MOTION_DIRECTIONS = ['left', 'right', 'up', 'down', 'in', 'out']
 const CAMERA_INTENTS = ['push', 'pull', 'pan-left', 'pan-right', 'rise', 'settle']
@@ -356,7 +375,7 @@ const opSchemas = [
   z
     .object({
       op: z.literal('addBlock'),
-      blockId: z.enum(BLOCK_IDS),
+      blockId: anyBlockId,
       from: frame.optional(),
       durationInFrames: positiveFrames.optional(),
       x: finite.optional(),
@@ -422,6 +441,11 @@ const opSchemas = [
       op: z.literal('attachToSlot'),
       /** Block instance that owns the slot. */
       idPrefix: id,
+      /**
+       * Which block the instance came from. Normally inferred from the items;
+       * name it when two blocks share part ids and the guess could go either way.
+       */
+      blockId: anyBlockId.optional(),
       slotId: id,
       /** Existing item to move onto the slot. */
       itemId: id,
@@ -438,6 +462,74 @@ const opSchemas = [
       fit: z.enum(['contain']).optional(),
       /** Fraction of the container left as margin when fitting. */
       margin: finite.min(0).max(0.9).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('defineBlock'),
+      /** Namespaced so it cannot collide with or shadow a committed block. */
+      blockId: localBlockId,
+      name: z.string().min(1).max(120),
+      category: z.enum(['character', 'world', 'prop']).optional(),
+      source: z.string().min(1).max(4_000_000),
+      /**
+       * The rig. Parts take geometry from the SVG element whose `id` matches,
+       * and the parent/pivot pairs are what make the result a puppet rather than
+       * a pile of shapes.
+       */
+      parts: z
+        .array(
+          z
+            .object({
+              id: id,
+              /** SVG element id. Defaults to the part id. */
+              from: z.string().min(1).optional(),
+              label: z.string().min(1).max(120).optional(),
+              parent: id.optional(),
+              /** Joint in viewBox units. Without it a limb bends at its middle. */
+              pivot: point.optional(),
+              fill: paletteRole.optional(),
+              stroke: paletteRole.optional(),
+              strokeWidth: finite.positive().optional(),
+              z: finite.optional(),
+              depth: finite.min(0).max(5).optional(),
+              opacity: finite.min(0).max(1).optional(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(200),
+      slots: z
+        .array(
+          z
+            .object({
+              id: id,
+              label: z.string().min(1).max(120),
+              at: point,
+              partId: id.optional(),
+            })
+            .strict(),
+        )
+        .max(50)
+        .optional(),
+      secondary: z
+        .array(
+          z
+            .object({
+              id: id,
+              driverPartId: id,
+              followerPartId: id,
+              driverChannel: rigChannel,
+              followerChannel: rigChannel,
+              gain: finite,
+              lagSeconds: finite.min(0).max(5),
+              stiffness: finite.min(0.01).max(1).optional(),
+              damping: finite.min(0).max(1).optional(),
+            })
+            .strict(),
+        )
+        .max(50)
+        .optional(),
     })
     .strict(),
   z
@@ -581,6 +673,7 @@ export const EDIT_OPERATION_NAMES = [
   'attachToSlot',
   'directAction',
   'setCamera',
+  'defineBlock',
   'importSvg',
   'morphPath',
 ]
@@ -609,7 +702,11 @@ function samplesDescription(name) {
     addEffect: 'Add a registered GPU effect',
     removeEffect: 'Remove an existing item effect',
     setTransform: 'Update an item transform',
-    addBlock: `Add a rigged illustration block (${BLOCK_IDS.join(', ')}) with optional gestures (${GESTURE_IDS.join(', ')})`,
+    addBlock: `Add a rigged illustration block (${BLOCK_IDS.join(', ')}, or a local- id from defineBlock) with optional gestures (${GESTURE_IDS.join(', ')})`,
+    defineBlock:
+      'Rig an SVG into a placeable block: each part takes geometry from the element whose id ' +
+      'matches, and parent/pivot pairs make it a puppet. Validated like committed artwork. ' +
+      'The definition lives for this edit call, so defineBlock and addBlock it together.',
     applyGesture: 'Bake a gesture onto an existing block instance by its id prefix',
     applyPose: `Hold or sequence named poses (${POSE_IDS.join(', ')}) on a block instance`,
     attachToSlot: "Parent an item to a block instance's named slot so it travels with the rig",
