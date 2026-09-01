@@ -273,6 +273,66 @@ describe('useMcpProjectSync', () => {
     unmount()
   })
 
+  it('imports project-linked media the MCP tool has not placed on the timeline', async () => {
+    const uploaded = { ...remoteMedia, id: 'upload-1', fileName: 'moon.svg' }
+    mocks.listHeadlessMedia.mockResolvedValue([
+      { id: 'card-1', sourceAvailable: true, metadata: remoteMedia },
+      { id: 'upload-1', sourceAvailable: true, metadata: uploaded, projectIds: ['proj1'] },
+      { id: 'other-1', sourceAvailable: true, metadata: remoteMedia, projectIds: ['proj2'] },
+    ])
+    mocks.materializeMediaFromUrl.mockImplementation(
+      async (_url: string, _projectId: string, metadata: unknown) => metadata,
+    )
+
+    const { unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+
+    expect(mocks.materializeMediaFromUrl).toHaveBeenCalledWith(
+      '/api/headless/v1/media/upload-1/source',
+      'proj1',
+      uploaded,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+    expect(mocks.materializeMediaFromUrl).not.toHaveBeenCalledWith(
+      '/api/headless/v1/media/other-1/source',
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    )
+    expect(mocks.prependMediaItem).toHaveBeenCalledWith(uploaded)
+    expect(mocks.hydrate).toHaveBeenCalledTimes(1)
+    unmount()
+  })
+
+  it('still applies a revision when an unreferenced linked upload cannot be copied', async () => {
+    mocks.listHeadlessMedia.mockResolvedValue([
+      { id: 'card-1', sourceAvailable: true, metadata: remoteMedia },
+      {
+        id: 'upload-1',
+        sourceAvailable: true,
+        metadata: { ...remoteMedia, id: 'upload-1' },
+        projectIds: ['proj1'],
+      },
+    ])
+    mocks.materializeMediaFromUrl.mockImplementation(async (url: string) => {
+      if (url.includes('upload-1')) throw new Error('source vanished')
+      return remoteMedia
+    })
+
+    const { unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+
+    expect(mocks.hydrate).toHaveBeenCalledTimes(1)
+    expect(mocks.updateProject).toHaveBeenCalledTimes(1)
+    expect(mocks.prependMediaItem).toHaveBeenCalledTimes(1)
+    expect(mocks.prependMediaItem).toHaveBeenCalledWith(remoteMedia)
+    unmount()
+  })
+
   it('does not apply or persist a revision when required media cannot be materialized', async () => {
     mocks.materializeMediaFromUrl.mockRejectedValue(new Error('workspace permission denied'))
     const { unmount } = renderHook(() =>

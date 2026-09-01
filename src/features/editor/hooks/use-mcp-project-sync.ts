@@ -118,6 +118,67 @@ async function materializeReferencedMedia(
   )
 }
 
+/**
+ * Media the MCP tool uploaded into this project but has not placed on the
+ * timeline yet. Dropping these would silently lose an upload from the open
+ * scene's library, so they are pulled in too.
+ */
+function collectProjectLinkedMedia(
+  projectId: string,
+  resources: readonly HeadlessMediaResource[],
+  referenced: ReadonlySet<string>,
+): HeadlessMediaResource[] {
+  return resources.filter(
+    (resource) =>
+      resource.sourceAvailable &&
+      resource.metadata !== undefined &&
+      !referenced.has(resource.id) &&
+      (resource.projectIds?.includes(projectId) ?? false),
+  )
+}
+
+async function materializeLinkedMedia(
+  resource: HeadlessMediaResource,
+  projectId: string,
+  signal: AbortSignal,
+  bridge: ServerMediaBridge,
+): Promise<MediaMetadata | null> {
+  if (!resource.metadata) return null
+  try {
+    return await bridge.mediaLibraryService.materializeMediaFromUrl(
+      headlessMediaSourceUrl(resource.id),
+      projectId,
+      resource.metadata,
+      { signal },
+    )
+  } catch (error) {
+    if (signal.aborted) throw error
+    // No timeline item depends on this asset, so a failed copy must never
+    // block the revision the user is waiting for.
+    logger.warn(`Could not import project-linked media ${resource.id}:`, error)
+    return null
+  }
+}
+
+/**
+ * Deliberately sequential: source files may be large, and accepting the
+ * project waits for every required byte. This bounds browser memory while
+ * still making the operation abortable between and during downloads.
+ */
+async function materializeSequentially<T>(
+  entries: readonly T[],
+  signal: AbortSignal,
+  materialize: (entry: T) => Promise<MediaMetadata | null>,
+): Promise<MediaMetadata[]> {
+  const materialized: MediaMetadata[] = []
+  for (const entry of entries) {
+    signal.throwIfAborted()
+    const media = await materialize(entry)
+    if (media) materialized.push(media)
+  }
+  return materialized
+}
+
 async function syncMaterializedMediaStore(
   projectId: string,
   materialized: MediaMetadata[],
@@ -139,29 +200,20 @@ async function materializeServerMedia(
   project: Project,
   signal: AbortSignal,
 ): Promise<void> {
-  const mediaIds = collectHeadlessProjectMediaIds(project)
-  if (mediaIds.length === 0) return
-
+  const referencedIds = collectHeadlessProjectMediaIds(project)
   const resources = await listHeadlessMedia(signal)
   const resourcesById = new Map(resources.map((resource) => [resource.id, resource]))
   const bridge = await importServerMediaBridge()
-  const materialized: MediaMetadata[] = []
 
-  // Deliberately sequential: source files may be large, and accepting the
-  // project waits for every required byte. This bounds browser memory while
-  // still making the operation abortable between and during downloads.
-  for (const mediaId of mediaIds) {
-    signal.throwIfAborted()
-    const media = await materializeReferencedMedia(
-      mediaId,
-      projectId,
-      resourcesById.get(mediaId),
-      signal,
-      bridge,
-    )
-    if (media) materialized.push(media)
-  }
-  await syncMaterializedMediaStore(projectId, materialized, bridge)
+  const required = await materializeSequentially(referencedIds, signal, (mediaId) =>
+    materializeReferencedMedia(mediaId, projectId, resourcesById.get(mediaId), signal, bridge),
+  )
+  const linked = await materializeSequentially(
+    collectProjectLinkedMedia(projectId, resources, new Set(referencedIds)),
+    signal,
+    (resource) => materializeLinkedMedia(resource, projectId, signal, bridge),
+  )
+  await syncMaterializedMediaStore(projectId, [...required, ...linked], bridge)
 }
 
 async function persistAndHydrateRemoteProject(
