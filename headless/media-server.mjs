@@ -32,6 +32,11 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
+  // An <img> only renders SVG when the response says so; served without a
+  // Content-Type the browser refuses it and the frame comes back empty.
+  '.svg': 'image/svg+xml',
+  '.json': 'application/json',
+  '.lottie': 'application/json',
 }
 
 /**
