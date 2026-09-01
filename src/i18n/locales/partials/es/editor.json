@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "Asistente", "generate": "Generar", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "Asistente",
+        "generate": "Generar",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "Configurar MCP",
         "title": "Conectar un LLM",
@@ -68,7 +72,9 @@
         "infoLabel": "Acerca de este asistente",
         "intro": "Pide ediciones de la línea de tiempo con lenguaje natural. El modelo se ejecuta localmente en tu navegador o en el servidor local que elijas. Primero propone un plan; tú confirmas antes de que cambie nada."
       },
-      "composer": { "placeholder": "Describe una edición…" },
+      "composer": {
+        "placeholder": "Describe una edición…"
+      },
       "suggestions": {
         "transitions": "Añadir transiciones de fundido a todos los vídeos",
         "fades": "Fundir la entrada y salida de todos los vídeos",
@@ -967,7 +973,9 @@
       "insert": "Insertar {{name}}",
       "partCount_one": "{{count}} parte",
       "partCount_other": "{{count}} partes",
-      "showParts": "Mostrar partes de {{name}}"
+      "showParts": "Mostrar partes de {{name}}",
+      "projectTitle": "Bloques del proyecto",
+      "remove": "Eliminar {{name}}"
     }
   }
 }

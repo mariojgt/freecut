@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "Assistant", "generate": "Generate", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "Assistant",
+        "generate": "Generate",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "MCP setup",
         "title": "Connect an LLM",
@@ -68,7 +72,9 @@
         "infoLabel": "About this assistant",
         "intro": "Ask for timeline edits in plain language. The model runs locally in your browser or on the local server you choose. It proposes a plan first; you confirm before anything changes."
       },
-      "composer": { "placeholder": "Describe an edit…" },
+      "composer": {
+        "placeholder": "Describe an edit…"
+      },
       "suggestions": {
         "transitions": "Add fade transitions to all videos",
         "fades": "Fade every video in and out",
@@ -969,7 +975,9 @@
       "insert": "Insert {{name}}",
       "partCount_one": "{{count}} part",
       "partCount_other": "{{count}} parts",
-      "showParts": "Show parts of {{name}}"
+      "showParts": "Show parts of {{name}}",
+      "projectTitle": "Project blocks",
+      "remove": "Remove {{name}}"
     }
   }
 }

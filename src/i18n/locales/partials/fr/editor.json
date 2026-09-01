@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "Assistant", "generate": "Générer", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "Assistant",
+        "generate": "Générer",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "Configurer MCP",
         "title": "Connecter un LLM",
@@ -68,7 +72,9 @@
         "infoLabel": "À propos de cet assistant",
         "intro": "Demandez des montages de la timeline en langage naturel. Le modèle s’exécute localement dans votre navigateur ou sur le serveur local choisi. Il propose d’abord un plan ; vous confirmez avant toute modification."
       },
-      "composer": { "placeholder": "Décrivez un montage…" },
+      "composer": {
+        "placeholder": "Décrivez un montage…"
+      },
       "suggestions": {
         "transitions": "Ajouter des fondus entre toutes les vidéos",
         "fades": "Faire apparaître et disparaître chaque vidéo en fondu",
@@ -967,7 +973,9 @@
       "insert": "Insérer {{name}}",
       "partCount_one": "{{count}} partie",
       "partCount_other": "{{count}} parties",
-      "showParts": "Afficher les parties de {{name}}"
+      "showParts": "Afficher les parties de {{name}}",
+      "projectTitle": "Blocs du projet",
+      "remove": "Supprimer {{name}}"
     }
   }
 }

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Trash2 } from 'lucide-react'
 import { cn } from '@/shared/ui/cn'
 import { createLogger } from '@/shared/logging/logger'
 import { usePlaybackStore } from '@/shared/state/playback'
@@ -63,6 +63,25 @@ export function BlockLibraryPanel() {
   const { t } = useTranslation()
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null)
   const blocks = useMemo(() => listBlocks(), [])
+  // Subscribed, unlike the stores read inside the insert handler: this list
+  // changes while the panel is open, when a rig is defined or removed.
+  const projectBlocks = useProjectStore((state) => state.currentProject?.blocks)
+  const projectId = useProjectStore((state) => state.currentProject?.id)
+
+  const removeProjectBlock = useCallback(
+    async (blockId: string) => {
+      if (!projectId) return
+      const remaining = (useProjectStore.getState().currentProject?.blocks ?? []).filter(
+        (entry) => entry.definition.id !== blockId,
+      )
+      try {
+        await useProjectStore.getState().setProjectBlocks(projectId, remaining)
+      } catch (error) {
+        logger.warn('Could not remove project block', { blockId, error })
+      }
+    },
+    [projectId],
+  )
 
   const addBlock = useCallback((block: BlockDefinition, partIds?: readonly string[]) => {
     // Read from stores directly rather than subscribing: this panel re-renders
@@ -121,6 +140,53 @@ export function BlockLibraryPanel() {
 
   return (
     <div className="space-y-2">
+      {projectBlocks && projectBlocks.length > 0 && (
+        <>
+          <div className="px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t('editor.blockLibrary.projectTitle')}
+          </div>
+          {projectBlocks.map((entry) => (
+            <div
+              key={entry.definition.id}
+              className="rounded-lg border border-primary/30 bg-secondary/20"
+            >
+              <div className="flex items-stretch gap-2 p-2">
+                <button
+                  type="button"
+                  onClick={() => addBlock(entry.definition)}
+                  title={t('editor.blockLibrary.insert', { name: entry.definition.name })}
+                  className="flex flex-1 items-center gap-2 rounded-md p-1 text-left transition-[transform,background-color] duration-150 hover:bg-secondary/60 active:scale-[0.98]"
+                >
+                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded border border-border bg-background/60">
+                    <BlockThumbnail block={entry.definition} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-[11px] text-foreground">
+                      {entry.definition.name}
+                    </div>
+                    <div className="truncate text-[9px] text-muted-foreground">
+                      {t('editor.blockLibrary.partCount', {
+                        count: entry.definition.parts.length,
+                      })}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void removeProjectBlock(entry.definition.id)}
+                  aria-label={t('editor.blockLibrary.remove', { name: entry.definition.name })}
+                  title={t('editor.blockLibrary.remove', { name: entry.definition.name })}
+                  className="flex w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/20 hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
       <div className="px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         {t('editor.blockLibrary.title')}
       </div>

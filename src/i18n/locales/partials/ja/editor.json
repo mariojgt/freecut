@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "アシスタント", "generate": "生成", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "アシスタント",
+        "generate": "生成",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "MCP 設定",
         "title": "LLM を接続",
@@ -68,7 +72,9 @@
         "infoLabel": "このアシスタントについて",
         "intro": "タイムラインの編集内容を自然な言葉で依頼できます。モデルはブラウザ内、または選択したローカルサーバーで動作します。最初にプランを提示し、確認後に変更を行います。"
       },
-      "composer": { "placeholder": "編集内容を入力…" },
+      "composer": {
+        "placeholder": "編集内容を入力…"
+      },
       "suggestions": {
         "transitions": "すべての動画にフェードトランジションを追加",
         "fades": "すべての動画をフェードイン・アウト",
@@ -967,7 +973,9 @@
       "insert": "{{name}} を挿入",
       "partCount_one": "{{count}} パーツ",
       "partCount_other": "{{count}} パーツ",
-      "showParts": "{{name}} のパーツを表示"
+      "showParts": "{{name}} のパーツを表示",
+      "projectTitle": "プロジェクトのブロック",
+      "remove": "{{name}} を削除"
     }
   }
 }

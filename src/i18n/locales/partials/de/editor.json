@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "Assistent", "generate": "Generieren", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "Assistent",
+        "generate": "Generieren",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "MCP einrichten",
         "title": "LLM verbinden",
@@ -68,7 +72,9 @@
         "infoLabel": "Über diesen Assistenten",
         "intro": "Beschreibe Timeline-Bearbeitungen in Alltagssprache. Das Modell läuft lokal im Browser oder auf dem gewählten lokalen Server. Zuerst wird ein Plan vorgeschlagen; Änderungen erfolgen erst nach deiner Bestätigung."
       },
-      "composer": { "placeholder": "Bearbeitung beschreiben…" },
+      "composer": {
+        "placeholder": "Bearbeitung beschreiben…"
+      },
       "suggestions": {
         "transitions": "Überblendungen zwischen allen Videos hinzufügen",
         "fades": "Alle Videos ein- und ausblenden",
@@ -967,7 +973,9 @@
       "insert": "{{name}} einfügen",
       "partCount_one": "{{count}} Teil",
       "partCount_other": "{{count}} Teile",
-      "showParts": "Teile von {{name}} anzeigen"
+      "showParts": "Teile von {{name}} anzeigen",
+      "projectTitle": "Projekt-Blöcke",
+      "remove": "{{name}} entfernen"
     }
   }
 }

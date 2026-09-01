@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "Assistente", "generate": "Gerar", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "Assistente",
+        "generate": "Gerar",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "Configurar MCP",
         "title": "Conectar um LLM",
@@ -68,7 +72,9 @@
         "infoLabel": "Sobre este assistente",
         "intro": "Peça edições na timeline em linguagem natural. O modelo roda localmente no navegador ou no servidor local escolhido. Primeiro ele propõe um plano; você confirma antes de qualquer alteração."
       },
-      "composer": { "placeholder": "Descreva uma edição…" },
+      "composer": {
+        "placeholder": "Descreva uma edição…"
+      },
       "suggestions": {
         "transitions": "Adicionar transições suaves a todos os vídeos",
         "fades": "Aplicar fade de entrada e saída em todos os vídeos",
@@ -967,7 +973,9 @@
       "insert": "Inserir {{name}}",
       "partCount_one": "{{count}} parte",
       "partCount_other": "{{count}} partes",
-      "showParts": "Mostrar partes de {{name}}"
+      "showParts": "Mostrar partes de {{name}}",
+      "projectTitle": "Blocos do projeto",
+      "remove": "Remover {{name}}"
     }
   }
 }

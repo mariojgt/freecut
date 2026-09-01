@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "Asistan", "generate": "Üret", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "Asistan",
+        "generate": "Üret",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "MCP kurulumu",
         "title": "Bir LLM bağla",
@@ -68,7 +72,9 @@
         "infoLabel": "Bu asistan hakkında",
         "intro": "Zaman çizelgesi düzenlemelerini günlük dille isteyin. Model tarayıcınızda veya seçtiğiniz yerel sunucuda çalışır. Önce bir plan önerir; herhangi bir değişiklikten önce siz onaylarsınız."
       },
-      "composer": { "placeholder": "Bir düzenleme tarif edin…" },
+      "composer": {
+        "placeholder": "Bir düzenleme tarif edin…"
+      },
       "suggestions": {
         "transitions": "Tüm videolara yumuşak geçiş ekle",
         "fades": "Tüm videoları yumuşakça açıp kapat",
@@ -967,7 +973,9 @@
       "insert": "{{name}} ekle",
       "partCount_one": "{{count}} parça",
       "partCount_other": "{{count}} parça",
-      "showParts": "{{name}} parçalarını göster"
+      "showParts": "{{name}} parçalarını göster",
+      "projectTitle": "Proje blokları",
+      "remove": "{{name}} öğesini kaldır"
     }
   }
 }

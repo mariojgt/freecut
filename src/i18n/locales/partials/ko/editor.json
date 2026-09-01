@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "어시스턴트", "generate": "생성", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "어시스턴트",
+        "generate": "생성",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "MCP 설정",
         "title": "LLM 연결",
@@ -68,7 +72,9 @@
         "infoLabel": "이 어시스턴트 정보",
         "intro": "일상 언어로 타임라인 편집을 요청하세요. 모델은 브라우저 또는 선택한 로컬 서버에서 로컬로 실행됩니다. 먼저 계획을 제안하며 변경 전 사용자가 확인합니다."
       },
-      "composer": { "placeholder": "편집 내용 설명…" },
+      "composer": {
+        "placeholder": "편집 내용 설명…"
+      },
       "suggestions": {
         "transitions": "모든 비디오에 페이드 전환 추가",
         "fades": "모든 비디오에 페이드 인·아웃 적용",
@@ -967,7 +973,9 @@
       "insert": "{{name}} 삽입",
       "partCount_one": "{{count}}개 파트",
       "partCount_other": "{{count}}개 파트",
-      "showParts": "{{name}}의 파트 표시"
+      "showParts": "{{name}}의 파트 표시",
+      "projectTitle": "프로젝트 블록",
+      "remove": "{{name}} 제거"
     }
   }
 }

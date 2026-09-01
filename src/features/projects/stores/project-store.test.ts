@@ -97,3 +97,69 @@ describe('project-store deleteProject', () => {
     expect(useProjectStore.getState().currentProject).toBeNull()
   })
 })
+
+describe('project-store setProjectBlocks', () => {
+  const block = (id: string) => ({
+    definition: {
+      id,
+      name: id,
+      category: 'prop' as const,
+      width: 100,
+      height: 100,
+      parts: [{ id: 'body', label: 'Body', d: 'M 0 0 L 1 0 L 1 1 Z', fill: 'ink' as const, z: 0 }],
+    },
+    createdAt: 1,
+    updatedAt: 1,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    storageMocks.updateProject.mockImplementation(async (_id: string, project: Project) => project)
+    useProjectStore.setState({ projects: [], currentProject: null, error: null })
+  })
+
+  it('saves blocks onto the current project', async () => {
+    const project = makeProject('p1')
+    useProjectStore.setState({ projects: [project], currentProject: project })
+
+    await useProjectStore.getState().setProjectBlocks('p1', [block('local-a')])
+
+    expect(useProjectStore.getState().currentProject?.blocks).toHaveLength(1)
+    expect(storageMocks.updateProject).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops the key entirely when the last block goes', async () => {
+    // Absent and empty must not both occur, or a project churns between shapes
+    // on every save — the headless editor writes it the same way.
+    const project = { ...makeProject('p1'), blocks: [block('local-a')] }
+    useProjectStore.setState({ projects: [project], currentProject: project })
+
+    await useProjectStore.getState().setProjectBlocks('p1', [])
+
+    const saved = useProjectStore.getState().currentProject!
+    expect('blocks' in saved).toBe(false)
+  })
+
+  it('keeps the projects list in step with the current project', async () => {
+    const project = makeProject('p1')
+    useProjectStore.setState({ projects: [project, makeProject('p2')], currentProject: project })
+
+    await useProjectStore.getState().setProjectBlocks('p1', [block('local-a')])
+
+    const listed = useProjectStore.getState().projects.find((entry) => entry.id === 'p1')
+    expect(listed?.blocks).toHaveLength(1)
+    expect(useProjectStore.getState().projects.find((e) => e.id === 'p2')?.blocks).toBeUndefined()
+  })
+
+  it('updates a project that is not the open one', async () => {
+    useProjectStore.setState({ projects: [makeProject('p1')], currentProject: null })
+    await useProjectStore.getState().setProjectBlocks('p1', [block('local-a')])
+    expect(useProjectStore.getState().projects[0]?.blocks).toHaveLength(1)
+  })
+
+  it('refuses a project it does not know', async () => {
+    await expect(useProjectStore.getState().setProjectBlocks('missing', [])).rejects.toThrow(
+      /Project not found/,
+    )
+  })
+})

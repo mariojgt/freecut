@@ -47,6 +47,13 @@ interface ProjectActions {
   createProject: (data: ProjectFormData) => Promise<Project>
   updateProject: (id: string, data: Partial<ProjectFormData>) => Promise<Project>
   /**
+   * Replace a project's own rigged blocks.
+   *
+   * Separate from `updateProject`, which speaks in form fields — blocks are
+   * project content rather than settings, and go straight to the record.
+   */
+  setProjectBlocks: (id: string, blocks: Project['blocks']) => Promise<Project>
+  /**
    * Soft-delete: moves the project to the workspace trash (marker file;
    * content preserved). Returns the trash state so the caller can surface
    * an "Undo" toast. External-folder cleanup (`clearLocalFiles`) runs
@@ -161,6 +168,37 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
             set({ error: errorMessage })
             throw error
           }
+        },
+
+        setProjectBlocks: async (id: string, blocks: Project['blocks']) => {
+          const current = get().currentProject
+          const existing =
+            current?.id === id
+              ? current
+              : (get().projects.find((project) => project.id === id) ?? null)
+          if (!existing) throw new Error(`Project not found: ${id}`)
+
+          // Dropped from the spread rather than deleted afterwards, and absent
+          // rather than empty — matching what the headless editor writes, so a
+          // project that owns none does not churn between the two shapes.
+          const { blocks: _previous, ...withoutBlocks } = existing
+          const next: Project = {
+            ...withoutBlocks,
+            ...(blocks?.length ? { blocks } : {}),
+            updatedAt: Date.now(),
+          }
+
+          const applyLocally = (project: Project): void => {
+            if (get().currentProject?.id === id) set({ currentProject: project })
+            set({
+              projects: get().projects.map((entry) => (entry.id === id ? project : entry)),
+            })
+          }
+
+          applyLocally(next)
+          const saved = await updateProjectDB(id, next)
+          applyLocally(saved)
+          return saved
         },
 
         // Update an existing project with optimistic update

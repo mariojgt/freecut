@@ -1,7 +1,11 @@
 {
   "editor": {
     "agent": {
-      "tabs": { "assistant": "助手", "generate": "生成", "mcp": "MCP" },
+      "tabs": {
+        "assistant": "助手",
+        "generate": "生成",
+        "mcp": "MCP"
+      },
       "mcp": {
         "openSetup": "MCP 设置",
         "title": "连接 LLM",
@@ -68,7 +72,9 @@
         "infoLabel": "关于此助手",
         "intro": "使用自然语言提出时间线编辑要求。模型会在浏览器中或你选择的本地服务器上运行。它会先提出计划；你确认后才会进行更改。"
       },
-      "composer": { "placeholder": "描述编辑要求…" },
+      "composer": {
+        "placeholder": "描述编辑要求…"
+      },
       "suggestions": {
         "transitions": "为所有视频添加淡化转场",
         "fades": "为所有视频添加淡入淡出",
@@ -967,7 +973,9 @@
       "insert": "插入 {{name}}",
       "partCount_one": "{{count}} 个部件",
       "partCount_other": "{{count}} 个部件",
-      "showParts": "显示 {{name}} 的部件"
+      "showParts": "显示 {{name}} 的部件",
+      "projectTitle": "项目积木",
+      "remove": "移除 {{name}}"
     }
   }
 }
