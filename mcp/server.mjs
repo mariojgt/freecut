@@ -26,11 +26,37 @@ function success(data, summary) {
 }
 
 function failure(error) {
-  const message = error instanceof Error ? error.message : String(error)
+  const lines = [error instanceof Error ? error.message : String(error)]
+  const fields = error?.details?.error?.fields
+  if (Array.isArray(fields)) {
+    for (const field of fields) lines.push(`${field.path}: ${field.message}`)
+  }
   return {
-    content: [{ type: 'text', text: message }],
+    content: [{ type: 'text', text: lines.join('\n') }],
     isError: true,
   }
+}
+
+/**
+ * The edit contract wants a unique callerId per op so a later op can reference
+ * an earlier op's created ids by $ref. Fill in op1, op2, … positionally where
+ * the caller did not choose one, and never disturb the ids it did.
+ */
+function withCallerIds(operations) {
+  const taken = new Set(
+    operations.map((op) => op.callerId).filter((value) => typeof value === 'string'),
+  )
+  let next = 1
+  return operations.map((op) => {
+    if (typeof op.callerId === 'string') return op
+    let candidate
+    do {
+      candidate = `op${next}`
+      next += 1
+    } while (taken.has(candidate))
+    taken.add(candidate)
+    return { ...op, callerId: candidate }
+  })
 }
 
 function registerTool(server, name, config, handler) {
@@ -265,7 +291,9 @@ export function createFreeCutMcpServer(options = {}) {
         'transitions and keyframes; rigged blocks (defineBlock, addBlock, applyGesture, applyPose, ' +
         'attachToSlot); narration-cued timing (setNarration); ' +
         'intent-driven motion (directAction, setCamera); and vector work (importSvg, morphPath). ' +
-        'Call get_capabilities for every operation and its fields. Defaults to a dry run.',
+        'Call get_capabilities for every operation and its fields. Defaults to a dry run. ' +
+        'Ops without a callerId get op1, op2, … so a later op can reference an earlier ' +
+        "op's created ids via {\"$ref\":\"op1#/itemId\"}.",
       inputSchema: z.object({
         projectId,
         operations: z.array(editOperation).min(1),
@@ -279,7 +307,7 @@ export function createFreeCutMcpServer(options = {}) {
       success(
         await api.requestJson(`/v1/projects/${encodeURIComponent(id)}/edit`, {
           method: 'POST',
-          body: { ops: operations, persist, expectedRevision, force },
+          body: { ops: withCallerIds(operations), persist, expectedRevision, force },
         }),
         persist ? 'Edit applied and saved.' : 'Dry run complete; the workspace was not changed.',
       ),
