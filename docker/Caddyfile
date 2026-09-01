@@ -21,5 +21,18 @@
 
 {$FREECUT_PUBLIC_HOST:localhost} {
 	tls internal
-	reverse_proxy web:8080
+
+	# Same-origin path to the headless API, so the editor in a browser on
+	# another machine can read and write server-workspace projects without
+	# CORS or a second exposed port. The API itself stays loopback-bound on
+	# the host; this route widens it to whoever can reach the front door, so
+	# keep the front door on a network you trust (or set FREECUT_API_TOKEN
+	# and teach the client to send it before exposing this any wider).
+	handle_path /api/headless/* {
+		reverse_proxy headless:8787
+	}
+
+	handle {
+		reverse_proxy web:8080
+	}
 }
