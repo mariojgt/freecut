@@ -36,6 +36,7 @@ const remoteMedia = {
 
 const mocks = vi.hoisted(() => ({
   getHeadlessProject: vi.fn(),
+  publishActiveMcpSession: vi.fn(),
   listHeadlessMedia: vi.fn(),
   listHeadlessProjects: vi.fn(),
   materializeMediaFromUrl: vi.fn(),
@@ -62,6 +63,7 @@ vi.mock('@/shared/deployment/headless-api', async (importOriginal) => ({
   getHeadlessProject: (...args: unknown[]) => mocks.getHeadlessProject(...args) as never,
   listHeadlessMedia: (...args: unknown[]) => mocks.listHeadlessMedia(...args) as never,
   listHeadlessProjects: (...args: unknown[]) => mocks.listHeadlessProjects(...args) as never,
+  publishActiveMcpSession: (...args: unknown[]) => mocks.publishActiveMcpSession(...args) as never,
 }))
 
 vi.mock('@/shared/projects/migrations', () => ({
@@ -92,7 +94,10 @@ vi.mock('../deps/storage-contract', () => ({
 
 vi.mock('../deps/projects', () => ({
   useProjectStore: {
-    getState: () => ({ setCurrentProject: mocks.setCurrentProject }),
+    getState: () => ({
+      setCurrentProject: mocks.setCurrentProject,
+      currentProject: { id: 'proj1', name: 'Remote project' },
+    }),
   },
 }))
 
@@ -152,6 +157,7 @@ describe('useMcpProjectSync', () => {
     mocks.loadMediaItems.mockResolvedValue(undefined)
     mocks.refreshMediaValidation.mockResolvedValue(undefined)
     mocks.updateProject.mockResolvedValue(remoteProject)
+    mocks.publishActiveMcpSession.mockResolvedValue(true)
     mocks.hydrate.mockResolvedValue(true)
   })
 
@@ -330,6 +336,54 @@ describe('useMcpProjectSync', () => {
     expect(mocks.updateProject).toHaveBeenCalledTimes(1)
     expect(mocks.prependMediaItem).toHaveBeenCalledTimes(1)
     expect(mocks.prependMediaItem).toHaveBeenCalledWith(remoteMedia)
+    unmount()
+  })
+
+  it('announces the open project so an agent can find it without being told', async () => {
+    const { unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+
+    expect(mocks.publishActiveMcpSession).toHaveBeenCalledWith(
+      'proj1',
+      'Remote project',
+      'sha256:r1',
+      expect.any(AbortSignal),
+    )
+    unmount()
+  })
+
+  it('hands local work to the workspace instead of latching the link shut', async () => {
+    // A real publish saves first, which is what clears the dirty flag.
+    const publishLocal = vi.fn().mockImplementation(async () => {
+      setDirty(false)
+      return 'sha256:local'
+    })
+    const { result, unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive, publishLocal }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+    expect(mocks.hydrate).toHaveBeenCalledTimes(1)
+
+    // The user edits: the follower must stop applying remote revisions...
+    act(() => setDirty(true))
+    mocks.listHeadlessProjects.mockResolvedValue([{ id: 'proj1', revision: 'sha256:r2' }])
+    await act(async () => vi.advanceTimersByTimeAsync(1600))
+    expect(mocks.hydrate).toHaveBeenCalledTimes(1)
+    expect(publishLocal).not.toHaveBeenCalled()
+
+    // ...and once editing settles, publish that work as the new shared base.
+    await act(async () => vi.advanceTimersByTimeAsync(2000))
+    expect(publishLocal).toHaveBeenCalledWith('sha256:r1')
+    expect(result.current.getPushExpectedRevision()).toBe('sha256:local')
+    expect(window.localStorage.getItem(divergenceKey)).toBeNull()
+
+    // The link is open again: the next remote revision applies.
+    mocks.listHeadlessProjects.mockResolvedValue([{ id: 'proj1', revision: 'sha256:r3' }])
+    mocks.getHeadlessProject.mockResolvedValue({ project: remoteProject, revision: 'sha256:r3' })
+    await act(async () => vi.advanceTimersByTimeAsync(1600))
+    expect(mocks.hydrate).toHaveBeenCalledTimes(2)
     unmount()
   })
 

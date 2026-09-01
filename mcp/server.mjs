@@ -222,6 +222,19 @@ export function createFreeCutMcpServer(options = {}) {
 
   registerTool(
     server,
+    'get_active_project',
+    {
+      title: 'Get the project the user has open',
+      description:
+        'Return the project currently open in the editor, so edits land on the scene the user is actually looking at instead of an id they had to paste. Call this first when the user says "this project", "my scene", or "what I have open". Returns active:null when no editor is connected.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async () => success(await api.requestJson('/v1/session/active')),
+  )
+
+  registerTool(
+    server,
     'get_project',
     {
       title: 'Get project',

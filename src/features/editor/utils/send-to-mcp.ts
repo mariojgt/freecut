@@ -27,6 +27,31 @@ function isUnseenServerCopy(error: unknown): boolean {
   return error instanceof HeadlessApiError && error.code === UNSEEN_SERVER_COPY
 }
 
+/**
+ * Push the open project without any UI noise.
+ *
+ * The background link publishes on every settle, so a toast per push would be
+ * unusable; failures are logged and swallowed because a heartbeat the user
+ * never asked for must not interrupt editing.
+ */
+export async function publishProjectToMcpWorkspace(
+  projectId: string,
+  save: () => Promise<void>,
+  expectedRevision: string | null,
+): Promise<string | null> {
+  try {
+    await save()
+    const { getProject } = await import('@/infrastructure/storage')
+    const stored = await getProject(projectId)
+    if (!stored) return null
+    return await pushProjectToHeadlessWorkspace(stored, expectedRevision)
+  } catch (error) {
+    if (isUnseenServerCopy(error)) return null
+    logger.warn('Background publish to the MCP workspace failed:', error)
+    return null
+  }
+}
+
 async function pushAndAnnounce(
   projectId: string,
   save: () => Promise<void>,

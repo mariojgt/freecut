@@ -5,6 +5,8 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   acquireWriterLock,
+  getActiveSession,
+  publishActiveSession,
   atomicWriteFile,
   createProjectResource,
   getProjectResource,
@@ -155,4 +157,29 @@ test('media staging streams supported files and rejects traversal ids', async (t
     () => stageLocalMedia(root, source, '../escape'),
     (error) => error.code === 'INVALID_ID',
   )
+})
+
+test('active session reports the open project and expires when the editor goes away', async () => {
+  const root = tempWorkspace()
+  await publishActiveSession(root, {
+    projectId: 'openProj',
+    projectName: 'Open Scene',
+    revision: 'sha256:' + 'a'.repeat(64),
+  })
+
+  const live = await getActiveSession(root)
+  assert.equal(live.active.projectId, 'openProj')
+  assert.equal(live.active.projectName, 'Open Scene')
+
+  // A record older than the heartbeat window means nobody is editing; an agent
+  // must not be pointed at a project that was closed an hour ago.
+  const file = path.join(root, 'session', 'active.json')
+  const stale = JSON.parse(await fs.promises.readFile(file, 'utf8'))
+  stale.updatedAt = Date.now() - 120_000
+  await fs.promises.writeFile(file, JSON.stringify(stale))
+  assert.equal((await getActiveSession(root)).active, null)
+
+  // Nothing published at all is also "no active session", not an error.
+  const empty = tempWorkspace()
+  assert.equal((await getActiveSession(empty)).active, null)
 })

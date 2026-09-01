@@ -1310,6 +1310,8 @@ export function capabilities() {
         'PUT /v1/projects/:id',
         'PATCH /v1/projects/:id',
         'POST /v1/projects/:id/edit',
+        'PUT /v1/session/active',
+        'GET /v1/session/active',
         'GET /v1/media',
         'GET /v1/media/:id',
         'POST /v1/media/:id/probe',

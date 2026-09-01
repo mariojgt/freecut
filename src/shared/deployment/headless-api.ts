@@ -279,6 +279,32 @@ async function resolveExpectedRevision(
   }
 }
 
+/**
+ * Tell the workspace which project a human currently has open.
+ *
+ * Agents read this to act on the open scene rather than an id the user had to
+ * copy out of the URL. Best effort by design: a deployment without the
+ * headless API must not surface errors for a heartbeat nobody asked for.
+ */
+export async function publishActiveMcpSession(
+  projectId: string,
+  projectName: string,
+  revision: string | null,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (!PORTABLE_ID_PATTERN.test(projectId)) return false
+  try {
+    await requestJson('/v1/session/active', {
+      method: 'PUT',
+      body: JSON.stringify({ projectId, projectName, revision }),
+      signal,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function pushProjectToHeadlessWorkspace(
   project: Project,
   knownRevision?: string | null,

@@ -6,6 +6,7 @@ import {
   HeadlessApiError,
   listHeadlessMedia,
   listHeadlessProjects,
+  publishActiveMcpSession,
   type HeadlessMediaResource,
   type HeadlessProjectResource,
 } from '@/shared/deployment/headless-api'
@@ -24,6 +25,12 @@ import {
 import { useItemsStore, useTimelineSettingsStore } from '../deps/timeline-store'
 
 const POLL_INTERVAL_MS = 1500
+/**
+ * How long local editing must settle before the browser copy is published.
+ * Short enough that an agent reading the project sees current work, long
+ * enough that a drag does not push on every frame.
+ */
+const AUTO_PUBLISH_QUIET_MS = 1800
 const LOCAL_DIVERGENCE_KEY_PREFIX = 'freecut:mcp-local-diverged:'
 const APPLIED_REVISION_KEY_PREFIX = 'freecut:mcp-applied-revision:'
 const logger = createLogger('McpProjectSync')
@@ -31,6 +38,12 @@ const logger = createLogger('McpProjectSync')
 type EditorMutationRunner = <T>(operation: () => Promise<T>) => Promise<T>
 
 interface UseMcpProjectSyncOptions {
+  /**
+   * Save the open project into the server workspace and return its revision.
+   * Supplying this turns the link bidirectional: local edits stop blocking
+   * incoming agent work and instead become the new shared base.
+   */
+  publishLocal?: (expectedRevision: string | null) => Promise<string | null>
   projectId: string
   enabled: boolean
   runExclusive: EditorMutationRunner
@@ -268,7 +281,10 @@ export function useMcpProjectSync({
   projectId,
   enabled,
   runExclusive,
+  publishLocal,
 }: UseMcpProjectSyncOptions): McpProjectSyncControl {
+  const publishLocalRef = useRef(publishLocal)
+  publishLocalRef.current = publishLocal
   const observedRevisionRef = useRef<string | null>(null)
   const appliedRevisionRef = useRef<string | null>(null)
   const localDivergedRef = useRef(false)
@@ -296,12 +312,14 @@ export function useMcpProjectSync({
 
     const controller = new AbortController()
     let busy = false
+    let lastLocalChangeAt = 0
 
     const unsubscribe = useTimelineSettingsStore.subscribe((state, previous) => {
       if (state.isDirty && !previous.isDirty) {
         localDivergedRef.current = true
         persistDivergence(projectId, true)
       }
+      if (state.isDirty) lastLocalChangeAt = Date.now()
     })
 
     const applyResource = async (resource: HeadlessProjectResource) => {
@@ -353,11 +371,45 @@ export function useMcpProjectSync({
       await load()
     }
 
+    /**
+     * Hand local work to the workspace once editing settles. Without this the
+     * divergence guard is a one-way latch: the moment the user touches the
+     * timeline the agent's edits stop arriving and its reads go stale.
+     */
+    const publishLocalWork = async (): Promise<boolean> => {
+      const publish = publishLocalRef.current
+      if (!publish || !localDivergedRef.current) return false
+      if (useTimelineSettingsStore.getState().isTimelineLoading) return false
+      if (lastLocalChangeAt === 0 || Date.now() - lastLocalChangeAt < AUTO_PUBLISH_QUIET_MS) {
+        return false
+      }
+      const revision = await publish(appliedRevisionRef.current)
+      if (!revision) return false
+      observedRevisionRef.current = revision
+      appliedRevisionRef.current = revision
+      persistAppliedRevision(projectId, revision)
+      localDivergedRef.current = false
+      persistDivergence(projectId, false)
+      lastLocalChangeAt = 0
+      return true
+    }
+
+    const announce = () =>
+      publishActiveMcpSession(
+        projectId,
+        useProjectStore.getState().currentProject?.name ?? '',
+        appliedRevisionRef.current,
+        controller.signal,
+      )
+
     const sync = async () => {
       if (busy || controller.signal.aborted) return
       busy = true
       try {
-        await pollOnce()
+        // Publishing wins the tick: the poll would only read back what we are
+        // about to overwrite.
+        if (!(await publishLocalWork())) await pollOnce()
+        await announce()
       } catch (error) {
         if (
           !controller.signal.aborted &&

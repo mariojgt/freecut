@@ -120,6 +120,55 @@ async function rebuildIndex(workspace) {
   await atomicWriteFile(path.join(workspace, 'index.json'), index)
 }
 
+/**
+ * The project a human currently has open in the editor.
+ *
+ * Agents need to act on what the user is looking at, not on an id typed into
+ * a prompt. The editor heartbeats this while its MCP link is live; a stale
+ * record reads as "nobody is editing" rather than pointing an agent at a
+ * project that was closed an hour ago.
+ */
+const ACTIVE_SESSION_TTL_MS = 30_000
+
+function activeSessionFile(workspace) {
+  return path.join(workspace, 'session', 'active.json')
+}
+
+function normalizeSessionRecord({ projectId, projectName, revision }) {
+  return {
+    projectId: assertPortableId(String(projectId ?? ''), 'project id'),
+    projectName: typeof projectName === 'string' ? projectName.slice(0, 200) : '',
+    revision: typeof revision === 'string' ? revision : null,
+    updatedAt: Date.now(),
+  }
+}
+
+async function readActiveSessionRecord(workspace) {
+  try {
+    return JSON.parse(await fs.promises.readFile(activeSessionFile(workspace), 'utf8'))
+  } catch (error) {
+    if (error.code === 'ENOENT') return null
+    throw error
+  }
+}
+
+export async function publishActiveSession(workspace, payload) {
+  const record = normalizeSessionRecord(payload ?? {})
+  await atomicWriteFile(
+    activeSessionFile(workspace),
+    Buffer.from(`${JSON.stringify(record, null, 2)}\n`),
+  )
+  return record
+}
+
+export async function getActiveSession(workspace) {
+  const record = await readActiveSessionRecord(workspace)
+  if (!record) return { active: null }
+  const ageMs = Date.now() - Number(record.updatedAt ?? 0)
+  if (ageMs > ACTIVE_SESSION_TTL_MS) return { active: null, staleFor: ageMs }
+  return { active: record, ageMs }
+}
+
 export async function getProjectResource(workspace, id) {
   const resource = await readResource(
     projectFile(workspace, id),

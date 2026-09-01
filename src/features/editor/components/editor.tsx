@@ -28,7 +28,10 @@ import { toast } from 'sonner'
 import { useEditorHotkeys } from '@/features/editor/hooks/use-editor-hotkeys'
 import { useMcpWorkspaceAvailable } from '@/features/editor/hooks/use-mcp-workspace-available'
 import { useMcpProjectSync } from '@/features/editor/hooks/use-mcp-project-sync'
-import { sendProjectToMcpWorkspace } from '@/features/editor/utils/send-to-mcp'
+import {
+  publishProjectToMcpWorkspace,
+  sendProjectToMcpWorkspace,
+} from '@/features/editor/utils/send-to-mcp'
 import { useAutoSave } from '../hooks/use-auto-save'
 import {
   useTimelineShortcuts,
@@ -611,10 +614,19 @@ export const LoadedEditor = memo(function LoadedEditor({
     [projectId, runEditorMutation],
   )
 
+  // Keeps the workspace copy current so an agent reads what the user sees,
+  // and so local edits hand over the base instead of latching the link shut.
+  const publishLocalToMcp = useCallback(
+    (expectedRevision: string | null) =>
+      publishProjectToMcpWorkspace(projectId, handleSave, expectedRevision),
+    [handleSave, projectId],
+  )
+
   const { notePushedRevision, getPushExpectedRevision } = useMcpProjectSync({
     projectId,
     enabled: mcpWorkspaceAvailable,
     runExclusive: runEditorMutation,
+    publishLocal: publishLocalToMcp,
   })
 
   const handleExport = useCallback(() => {

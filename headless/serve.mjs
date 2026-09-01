@@ -82,9 +82,11 @@ import {
   assertAtomicReplace,
   assertPortableId,
   createProjectResource,
+  getActiveSession,
   getMediaResource,
   getProjectResource,
   listMediaResources,
+  publishActiveSession,
   listProjectResources,
   saveProjectResource,
   updateMediaMetadata,
@@ -398,6 +400,16 @@ async function main() {
     const project = await browserNormalize({ ...body.project, id })
     const resource = await saveProjectResource(workspace, id, project, body)
     sendJson(res, 200, resourceEnvelope(resource))
+  }
+
+  /**
+   * The editor announces which project a human is looking at. Agents read this
+   * so they can act on the open scene instead of asking for an id.
+   */
+  const handleV1SessionPublish = async (req, res) => {
+    const body = await readJsonBody(req, { maxBytes: 8 * 1024 })
+    const record = await publishActiveSession(workspace, body ?? {})
+    sendJson(res, 200, { ok: true, apiVersion: HEADLESS_API_VERSION, active: record })
   }
 
   const handleV1ProjectUpdate = async (req, res, id) => {
@@ -771,6 +783,15 @@ async function main() {
                                 res,
                                 assertPortableId(projectMatch[1], 'project id'),
                               )
+                          : route === 'PUT /v1/session/active'
+                            ? () => handleV1SessionPublish(req, res)
+                            : route === 'GET /v1/session/active'
+                              ? async () =>
+                                  sendJson(res, 200, {
+                                    ok: true,
+                                    apiVersion: HEADLESS_API_VERSION,
+                                    ...(await getActiveSession(workspace)),
+                                  })
                           : route === 'GET /v1/media'
                             ? async () =>
                                 sendJson(res, 200, {
