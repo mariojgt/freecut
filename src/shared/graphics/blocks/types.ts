@@ -65,6 +65,15 @@ export interface BlockPart {
    * scale by plane, which is what separates a real dolly from a flat slide.
    */
   depth?: number
+  /**
+   * Rest opacity, 0..1. Defaults to 1.
+   *
+   * Exists for parts that are part of the artwork but not of its default state —
+   * a focus ring, an error banner, the text in an empty field. Without it every
+   * state a block can express would be visible at once, and a pose could only
+   * ever hide things rather than reveal them.
+   */
+  opacity?: number
 }
 
 /** A named anchor other content can be placed at or aimed toward. */

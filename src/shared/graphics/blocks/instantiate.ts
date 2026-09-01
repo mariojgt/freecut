@@ -213,7 +213,9 @@ function placePart(
       anchorX: part.pivot ? (part.pivot[0] - bounds.minX) * scale : width / 2,
       anchorY: part.pivot ? (part.pivot[1] - bounds.minY) * scale : height / 2,
       rotation: 0,
-      opacity: 1,
+      // A part can be authored hidden — a focus ring, an error banner, the text
+      // in an empty field — so a pose can reveal it rather than only hide things.
+      opacity: Math.max(0, Math.min(1, part.opacity ?? 1)),
       cornerRadius: 0,
     },
   }

@@ -569,3 +569,171 @@ describe('rigged block ops', () => {
     ).rejects.toThrow(/has no slot "tail"/)
   })
 })
+
+describe('a login-page explainer, composed end to end', () => {
+  /**
+   * The scene the kit exists for: a browser window opens, a form assembles, a
+   * cursor clicks through the fields, the request reaches a server, the store is
+   * read and a verdict comes back.
+   *
+   * Asserted as one scene rather than per block because the interesting failures
+   * are compositional — a form that is not attached to the viewport it is
+   * supposed to sit in, or a cursor that never reaches the field it clicks.
+   */
+  const build = async () =>
+    editProject({
+      project: baseProject(),
+      ops: [
+        // --- Front end ---
+        {
+          op: 'addBlock',
+          blockId: 'ui-browser-window',
+          from: 0,
+          durationInFrames: 250,
+          scale: 0.6,
+          idPrefix: 'win',
+          gestures: [{ id: 'window-appear' }],
+        },
+        {
+          op: 'addBlock',
+          blockId: 'ui-login-form',
+          from: 20,
+          durationInFrames: 230,
+          // 0.45, not 0.62: the form is 900 units tall and the window viewport is
+          // 892 units at the window's own 0.6, so anything above ~0.47 overflows
+          // the container it was just attached to.
+          scale: 0.45,
+          idPrefix: 'form',
+          gestures: [{ id: 'form-reveal' }],
+        },
+        // The form rides in the window's page area, so a window move carries it.
+        {
+          op: 'attachToSlot',
+          idPrefix: 'win',
+          slotId: 'viewport',
+          itemId: 'form-card',
+          scale: 0.6,
+        },
+        {
+          op: 'applyPose',
+          idPrefix: 'form',
+          scale: 0.45,
+          durationInFrames: 230,
+          startFrame: 20,
+          poses: [
+            { id: 'form-empty', at: 0 },
+            { id: 'email-focused', at: 0.2 },
+            { id: 'email-entered', at: 0.35 },
+            { id: 'password-focused', at: 0.5 },
+            { id: 'credentials-entered', at: 0.62 },
+            { id: 'form-submitting', at: 0.75 },
+          ],
+        },
+        {
+          op: 'addBlock',
+          blockId: 'ui-cursor',
+          from: 40,
+          durationInFrames: 210,
+          scale: 0.5,
+          idPrefix: 'cur',
+          gestures: [{ id: 'cursor-click', startFrame: 30 }],
+        },
+
+        // --- Back end ---
+        {
+          op: 'addBlock',
+          blockId: 'infra-flow-arrow',
+          from: 170,
+          durationInFrames: 80,
+          scale: 0.4,
+          y: 420,
+          idPrefix: 'req',
+          gestures: [{ id: 'arrow-draw' }],
+        },
+        {
+          op: 'addBlock',
+          blockId: 'infra-server-rack',
+          from: 180,
+          durationInFrames: 70,
+          scale: 0.35,
+          x: 620,
+          y: 300,
+          idPrefix: 'srv',
+          gestures: [{ id: 'rack-appear' }, { id: 'rack-work', cycles: 3 }],
+        },
+        {
+          op: 'addBlock',
+          blockId: 'infra-database',
+          from: 195,
+          durationInFrames: 55,
+          scale: 0.3,
+          x: 620,
+          y: -300,
+          idPrefix: 'db',
+          gestures: [{ id: 'database-read' }],
+        },
+        {
+          op: 'addBlock',
+          blockId: 'infra-shield-badge',
+          from: 215,
+          durationInFrames: 35,
+          scale: 0.4,
+          x: -620,
+          y: 300,
+          idPrefix: 'verdict',
+          gestures: [{ id: 'shield-seal' }],
+        },
+        {
+          op: 'applyPose',
+          idPrefix: 'verdict',
+          scale: 0.4,
+          durationInFrames: 35,
+          startFrame: 215,
+          poses: [{ id: 'verdict-granted' }],
+        },
+      ],
+    })
+
+  it('composes without a single failed operation', async () => {
+    const { results } = await build()
+    expect(results.filter((entry) => !(entry as { ok: boolean }).ok)).toEqual([])
+  })
+
+  it('places every block of the scene', async () => {
+    const { project } = await build()
+    const prefixes = ['win', 'form', 'cur', 'req', 'srv', 'db', 'verdict']
+    for (const prefix of prefixes) {
+      const owned = project.timeline?.items?.filter((item) => item.id.startsWith(`${prefix}-`))
+      expect({ prefix, placed: (owned?.length ?? 0) > 0 }).toEqual({ prefix, placed: true })
+    }
+  })
+
+  it('parents the form into the browser viewport', async () => {
+    const { project } = await build()
+    const card = project.timeline?.items?.find((item) => item.id === 'form-card')
+    expect(card?.transformParent?.parentItemId).toBe('win-viewport')
+  })
+
+  it('animates the form state, the window and the back end', async () => {
+    const { project } = await build()
+    const keyed = new Set(project.timeline?.keyframes?.map((entry) => entry.itemId) ?? [])
+    // The focus ring only moves because a pose named it.
+    expect(keyed.has('form-email-focus')).toBe(true)
+    expect(keyed.has('form-password-focus')).toBe(true)
+    // The window fades and scales in.
+    expect(keyed.has('win-frame')).toBe(true)
+    // The verdict check is revealed by its pose.
+    expect(keyed.has('verdict-check')).toBe(true)
+  })
+
+  it('keeps the whole cast inside one timeline span', async () => {
+    const { project } = await build()
+    const items = project.timeline?.items ?? []
+    for (const item of items) {
+      expect({
+        id: item.id,
+        withinSpan: item.from >= 0 && item.from + item.durationInFrames <= 250,
+      }).toEqual({ id: item.id, withinSpan: true })
+    }
+  })
+})

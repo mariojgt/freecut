@@ -8,6 +8,8 @@ import {
   WAVE_GESTURE,
 } from './character-astronaut'
 import { MOON_SURFACE_BLOCK, PARALLAX_PAN_GESTURE, STAR_DRIFT_GESTURE } from './world-moon'
+import { UI_BLOCKS, UI_GESTURES, UI_POSES } from './explainer-ui'
+import { BACKEND_BLOCKS, BACKEND_GESTURES, BACKEND_POSES } from './explainer-backend'
 
 /**
  * The catalog a generated scene may draw from.
@@ -17,7 +19,12 @@ import { MOON_SURFACE_BLOCK, PARALLAX_PAN_GESTURE, STAR_DRIFT_GESTURE } from './
  * listed here simply cannot appear in a frame.
  */
 
-const BLOCK_LIST: BlockDefinition[] = [ASTRONAUT_BLOCK, MOON_SURFACE_BLOCK]
+const BLOCK_LIST: BlockDefinition[] = [
+  ASTRONAUT_BLOCK,
+  MOON_SURFACE_BLOCK,
+  ...UI_BLOCKS,
+  ...BACKEND_BLOCKS,
+]
 const GESTURE_LIST: GestureDefinition[] = [
   WALK_GESTURE,
   IDLE_BREATH_GESTURE,
@@ -25,8 +32,10 @@ const GESTURE_LIST: GestureDefinition[] = [
   LAND_SQUASH_GESTURE,
   PARALLAX_PAN_GESTURE,
   STAR_DRIFT_GESTURE,
+  ...UI_GESTURES,
+  ...BACKEND_GESTURES,
 ]
-const POSE_LIST: PoseDefinition[] = [...ASTRONAUT_POSES]
+const POSE_LIST: PoseDefinition[] = [...ASTRONAUT_POSES, ...UI_POSES, ...BACKEND_POSES]
 
 export const BLOCKS: ReadonlyMap<string, BlockDefinition> = new Map(
   BLOCK_LIST.map((block) => [block.id, block]),
@@ -90,7 +99,7 @@ export interface BlockValidationIssue {
   message: string
 }
 
-function validatePartIds(block: BlockDefinition, ids: Set<string>): BlockValidationIssue[] {
+function validateUniqueIds(block: BlockDefinition): BlockValidationIssue[] {
   const issues: BlockValidationIssue[] = []
   const seen = new Set<string>()
   for (const part of block.parts) {
@@ -99,7 +108,39 @@ function validatePartIds(block: BlockDefinition, ids: Set<string>): BlockValidat
     }
     seen.add(part.id)
   }
+  return issues
+}
 
+/**
+ * Whether each part would actually paint something.
+ *
+ * A part with neither fill nor stroke resolves to a correctly-sized, visible,
+ * completely unpainted item — it passes every geometry check and draws nothing,
+ * which is the hardest kind of missing artwork to notice.
+ */
+function validatePartPaint(block: BlockDefinition): BlockValidationIssue[] {
+  const issues: BlockValidationIssue[] = []
+  for (const part of block.parts) {
+    if (!part.fill && !part.stroke) {
+      issues.push({
+        blockId: block.id,
+        partId: part.id,
+        message: 'Part declares neither a fill nor a stroke, so it would draw nothing.',
+      })
+    }
+    if (part.opacity !== undefined && (part.opacity < 0 || part.opacity > 1)) {
+      issues.push({
+        blockId: block.id,
+        partId: part.id,
+        message: 'Rest opacity must be between 0 and 1.',
+      })
+    }
+  }
+  return issues
+}
+
+function validatePartPlacement(block: BlockDefinition, ids: Set<string>): BlockValidationIssue[] {
+  const issues: BlockValidationIssue[] = []
   for (const part of block.parts) {
     if (part.parent && !ids.has(part.parent)) {
       issues.push({
@@ -265,7 +306,9 @@ export function validateBlock(
 ): BlockValidationIssue[] {
   const ids = new Set(block.parts.map((part) => part.id))
   return [
-    ...validatePartIds(block, ids),
+    ...validateUniqueIds(block),
+    ...validatePartPaint(block),
+    ...validatePartPlacement(block, ids),
     ...validateHierarchy(block),
     ...validateGestures(block, ids, gestures),
     ...validatePoses(block, ids, poses),

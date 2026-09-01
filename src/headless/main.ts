@@ -1291,6 +1291,9 @@ function toPerceivedFrames(prepared: PreparedLayout, frames: readonly number[]):
       visible: item.visible,
       z: item.z,
       ...(item.text !== undefined && { text: item.text }),
+      // Whether anything was keyed for it, so "never moves" can be a fault
+      // rather than a description of most of the scene.
+      animated: prepared.keyframesMap.has(item.id),
     })),
   }))
 }

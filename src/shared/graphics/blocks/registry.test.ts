@@ -26,6 +26,9 @@ const part = (id: string, parent?: string): BlockDefinition['parts'][number] => 
   id,
   label: id,
   d: 'M 0 0 L 10 0 L 10 10 Z',
+  // Painted, because an unpainted part is its own validation issue and these
+  // fixtures are here to exercise the other rules in isolation.
+  fill: 'ink',
   z: 0,
   ...(parent ? { parent } : {}),
 })
@@ -56,8 +59,9 @@ describe('block registry', () => {
 describe('validateBlock', () => {
   it('rejects a parent that is not part of the block', () => {
     const issues = validateBlock(blockWith([part('arm', 'ghost')]))
-    expect(issues).toHaveLength(1)
-    expect(issues[0]?.message).toContain('ghost')
+    expect(issues.map((issue) => issue.message)).toEqual([
+      'Parent "ghost" is not a part of this block.',
+    ])
   })
 
   it('rejects duplicate part ids', () => {
@@ -83,9 +87,38 @@ describe('validateBlock', () => {
     expect(issues.some((issue) => issue.message.includes('unknown part'))).toBe(true)
   })
 
+  it('rejects a part that would draw nothing', () => {
+    // Correctly sized, correctly placed, visible — and completely unpainted.
+    const bare = { id: 'ghostly', label: 'Ghostly', d: 'M 0 0 L 10 0 L 10 10 Z', z: 0 }
+    expect(
+      validateBlock(blockWith([bare])).some((issue) => issue.message.includes('draw nothing')),
+    ).toBe(true)
+  })
+
+  it('accepts a part painted by stroke alone', () => {
+    const outlined = {
+      id: 'ring',
+      label: 'Ring',
+      d: 'M 0 0 L 10 0 L 10 10 Z',
+      stroke: 'accent' as const,
+      strokeWidth: 3,
+      z: 0,
+    }
+    expect(validateBlock(blockWith([outlined]))).toEqual([])
+  })
+
+  it('rejects a rest opacity outside 0..1', () => {
+    const block = blockWith([{ ...part('faded'), opacity: 4 }])
+    expect(validateBlock(block).some((issue) => issue.message.includes('between 0 and 1'))).toBe(
+      true,
+    )
+  })
+
   it('rejects a gesture id that is not registered', () => {
     const block: BlockDefinition = { ...blockWith([part('arm')]), gestures: ['moonwalk'] }
-    expect(validateBlock(block, allGestures)[0]?.message).toContain('not registered')
+    expect(
+      validateBlock(block, allGestures).some((issue) => issue.message.includes('not registered')),
+    ).toBe(true)
   })
 })
 
@@ -139,17 +172,53 @@ describe('block artwork', () => {
     }
   })
 
-  it('gives every rigged part an explicit joint to rotate around', () => {
-    // A limb pivoting on its bounding-box centre bends in the middle of the
-    // bone instead of at the joint, so anything in a chain must state its pivot.
-    for (const block of allBlocks) {
+  it('gives every articulated character part an explicit joint', () => {
+    // A limb pivoting on its bounding-box centre bends in the middle of the bone
+    // instead of at the joint, so every part of an armature must state its pivot.
+    // Props are held to the narrower rule below: for a card or a button the
+    // bounding-box centre IS the right pivot, and restating it by hand on fifty
+    // parts would be noise that hides the cases that matter.
+    for (const block of allBlocks.filter((candidate) => candidate.category === 'character')) {
       const parents = new Set(block.parts.map((item) => item.parent).filter(Boolean))
       for (const item of block.parts) {
         if (!item.parent && !parents.has(item.id)) continue
         expect({
-          part: item.id,
+          part: `${block.id}/${item.id}`,
           hasPivot: item.pivot !== undefined || item.depth !== undefined,
-        }).toEqual({ part: item.id, hasPivot: true })
+        }).toEqual({ part: `${block.id}/${item.id}`, hasPivot: true })
+      }
+    }
+  })
+
+  it('gives every rotated part in a chain an explicit joint', () => {
+    // The defect the rule above exists to catch, stated directly and applied to
+    // every category: a part that turns while parented to something else swings
+    // visibly wrong if its pivot was never chosen.
+    for (const block of allBlocks) {
+      // Scoped to the block's OWN gestures and poses: part ids are only unique
+      // within a block, so a global set would let one block's rotated `card`
+      // demand a pivot on an unrelated block's `card`.
+      const rotated = new Set<string>()
+      for (const gestureId of block.gestures ?? []) {
+        for (const track of allGestures.find((entry) => entry.id === gestureId)?.tracks ?? []) {
+          if (track.channel === 'rotation') rotated.add(track.partId)
+        }
+      }
+      for (const poseId of block.poses ?? []) {
+        for (const channel of allPoses.find((entry) => entry.id === poseId)?.channels ?? []) {
+          if (channel.channel === 'rotation') rotated.add(channel.partId)
+        }
+      }
+
+      const parents = new Set(block.parts.map((item) => item.parent).filter(Boolean))
+      for (const item of block.parts) {
+        // Only a part that both turns and sits in a hierarchy can swing wrong.
+        if (!rotated.has(item.id)) continue
+        if (!item.parent && !parents.has(item.id)) continue
+        expect({
+          part: `${block.id}/${item.id}`,
+          hasPivot: item.pivot !== undefined,
+        }).toEqual({ part: `${block.id}/${item.id}`, hasPivot: true })
       }
     }
   })

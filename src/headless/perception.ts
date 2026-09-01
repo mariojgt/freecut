@@ -25,6 +25,11 @@ export interface PerceivedBox {
   visible: boolean
   z: number
   text?: string
+  /**
+   * Whether the item carries keyframes at all. The static-range gate needs it:
+   * "does not move" is only a fault for something that was animated.
+   */
+  animated?: boolean
 }
 
 export interface PerceivedFrame {
@@ -279,7 +284,13 @@ class IssueLedger {
 /** Gates that only make sense within one frame. */
 function checkFrame(
   frame: PerceivedFrame,
-  scene: { canvas: PerceivedCanvas; canvasRect: Rect; settings: Required<CheckSceneOptions> },
+  scene: {
+    canvas: PerceivedCanvas
+    canvasRect: Rect
+    settings: Required<CheckSceneOptions>
+    /** False at the ends of the range, where a fade legitimately empties. */
+    interior: boolean
+  },
   ledger: IssueLedger,
 ): void {
   const { canvas, canvasRect, settings } = scene
@@ -296,7 +307,9 @@ function checkFrame(
     frame: frame.frame,
   }
 
-  if (frame.boxes.length > 0 && !frame.boxes.some((box) => box.visible)) {
+  // Only mid-range: an appear gesture starts from nothing and a dismiss ends
+  // there, so flagging the endpoints would fire on every correctly-faded shot.
+  if (scene.interior && frame.boxes.length > 0 && !frame.boxes.some((box) => box.visible)) {
     ledger.add({
       code: 'empty-frame',
       severity: 'warning',
@@ -311,7 +324,6 @@ function checkFrame(
     // An invisible item may sit anywhere; only what is drawn is judged.
     if (!box.visible) continue
     gateFraming(box, context, ledger)
-    gateGhostOpacity(box, context, ledger)
     gateTitleSafe(box, context, ledger)
     if (isBackdrop(box, context)) backdrops.push(box)
   }
@@ -330,24 +342,74 @@ function checkFrame(
   }
 }
 
-/** Gates that need more than one frame to mean anything. */
-function checkRange(
+/**
+ * An item that carries keyframes and still never changes.
+ *
+ * Scoped to animated items on purpose: most of a scene is deliberately static,
+ * so "does not move" is only news for something that was asked to.
+ */
+function gateStaticItems(
   frames: readonly PerceivedFrame[],
   canvas: PerceivedCanvas,
   ledger: IssueLedger,
 ): void {
-  if (frames.length <= 1) return
+  const animated = new Set(
+    frames.flatMap((frame) => frame.boxes.filter((box) => box.animated).map((box) => box.id)),
+  )
   for (const summary of summarizeMotion(frames, canvas).items) {
-    if (summary.samples.length > 1 && !summary.moved) {
-      ledger.add({
-        code: 'static-across-range',
-        severity: 'warning',
-        itemId: summary.id,
-        frame: frames[0]?.frame,
-        message: 'Present for the whole range and never changes; no animation resolved for it.',
-      })
+    if (summary.samples.length <= 1) continue
+    if (summary.moved || !animated.has(summary.id)) continue
+    ledger.add({
+      code: 'static-across-range',
+      severity: 'warning',
+      itemId: summary.id,
+      frame: frames[0]?.frame,
+      message: 'Carries keyframes but never changes across the range.',
+    })
+  }
+}
+
+/**
+ * A layer that never becomes visible.
+ *
+ * Judged across the range rather than per frame, because a fade legitimately
+ * passes through 2% opacity on its way somewhere. What is worth reporting is a
+ * layer that composites on every frame and is never actually seen.
+ */
+function gateNeverVisible(
+  frames: readonly PerceivedFrame[],
+  settings: Required<CheckSceneOptions>,
+  ledger: IssueLedger,
+): void {
+  const peaks = new Map<string, number>()
+  for (const frame of frames) {
+    for (const box of frame.boxes) {
+      peaks.set(box.id, Math.max(peaks.get(box.id) ?? 0, box.opacity))
     }
   }
+  for (const [itemId, peak] of peaks) {
+    // Zero throughout is a deliberate hide, not a mistake.
+    if (peak <= 0 || peak >= settings.ghostOpacity) continue
+    ledger.add({
+      code: 'ghost-opacity',
+      severity: 'warning',
+      itemId,
+      frame: frames[0]?.frame,
+      message: `Never rises above ${round(peak, 3)} opacity — it composites but reads as absent.`,
+    })
+  }
+}
+
+/** Gates that need the whole range to mean anything. */
+function checkRange(
+  frames: readonly PerceivedFrame[],
+  canvas: PerceivedCanvas,
+  settings: Required<CheckSceneOptions>,
+  ledger: IssueLedger,
+): void {
+  if (frames.length <= 1) return
+  gateStaticItems(frames, canvas, ledger)
+  gateNeverVisible(frames, settings, ledger)
 }
 
 /**
@@ -416,19 +478,6 @@ function gateFraming(box: PerceivedBox, context: GateContext, ledger: IssueLedge
   }
 }
 
-/** A layer that costs a composite but cannot be seen. */
-function gateGhostOpacity(box: PerceivedBox, context: GateContext, ledger: IssueLedger): void {
-  // Zero is a deliberate hide; a hair above zero is a mistake.
-  if (box.opacity <= 0 || box.opacity >= context.settings.ghostOpacity) return
-  ledger.add({
-    code: 'ghost-opacity',
-    severity: 'warning',
-    itemId: box.id,
-    frame: context.frame,
-    message: `Held at ${round(box.opacity, 3)} opacity — it composites but reads as absent.`,
-  })
-}
-
 /** On-screen copy has to survive overscan and platform-chrome cropping. */
 function gateTitleSafe(box: PerceivedBox, context: GateContext, ledger: IssueLedger): void {
   if (box.type !== 'text') return
@@ -466,10 +515,11 @@ export function checkScene(
   const ledger = new IssueLedger()
   const canvasRect = { x: 0, y: 0, width: canvas.width, height: canvas.height }
 
-  for (const frame of frames) {
-    checkFrame(frame, { canvas, canvasRect, settings }, ledger)
+  for (const [index, frame] of frames.entries()) {
+    const interior = index > 0 && index < frames.length - 1
+    checkFrame(frame, { canvas, canvasRect, settings, interior }, ledger)
   }
-  checkRange(frames, canvas, ledger)
+  checkRange(frames, canvas, settings, ledger)
 
   const issues = ledger.list()
   return {

@@ -44,3 +44,28 @@ export function ellipse(cx: number, cy: number, rx: number, ry: number): string 
 export function circle(cx: number, cy: number, r: number): string {
   return ellipse(cx, cy, r, r)
 }
+
+/**
+ * Closed polygon through the given points.
+ *
+ * Arrow heads, cursors and check marks are all straight-edged silhouettes that
+ * would be unreadable as a hand-written path string, and unlike `capsule` they
+ * have no repeating structure to parameterise.
+ */
+export function polygon(points: readonly [number, number][]): string {
+  if (points.length < 3) {
+    throw new Error(`A polygon needs at least three points, got ${points.length}.`)
+  }
+  const [first, ...rest] = points
+  return [`M ${first![0]} ${first![1]}`, ...rest.map(([x, y]) => `L ${x} ${y}`), 'Z'].join(' ')
+}
+
+/**
+ * Horizontal bar with fully rounded ends.
+ *
+ * The shape almost every UI block is made of — a field, a label, a line of
+ * placeholder copy — so it is worth not restating the radius each time.
+ */
+export function bar(x: number, y: number, width: number, height: number): string {
+  return capsule(x, y, width, height, height / 2)
+}

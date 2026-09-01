@@ -127,14 +127,26 @@ describe('checkScene', () => {
     expect(result.issues).toEqual([])
   })
 
-  it('catches a layer left at ghost opacity', () => {
-    const result = checkScene(frames([box({ opacity: 0.02 })]), canvas)
+  it('catches a layer that never rises above ghost opacity', () => {
+    const result = checkScene(frames([box({ opacity: 0.02 })], [box({ opacity: 0.03 })]), canvas)
     expect(codes(result)).toContain('ghost-opacity')
   })
 
+  it('does not call a fade through low opacity a ghost', () => {
+    // A fade-in legitimately passes through 2%; only a layer that never becomes
+    // visible is a fault, so this is judged across the range, not per frame.
+    const result = checkScene(
+      frames([box({ opacity: 0.02 })], [box({ opacity: 0.5 })], [box({ opacity: 1 })]),
+      canvas,
+    )
+    expect(codes(result)).not.toContain('ghost-opacity')
+  })
+
   it('does not call a fully transparent item a ghost', () => {
-    // Opacity 0 is a deliberate hide; 2% is a mistake that still costs a composite.
-    expect(codes(checkScene(frames([box({ opacity: 0 })]), canvas))).not.toContain('ghost-opacity')
+    // Opacity 0 is a deliberate hide; a hair above zero is a mistake.
+    expect(
+      codes(checkScene(frames([box({ opacity: 0 })], [box({ opacity: 0 })]), canvas)),
+    ).not.toContain('ghost-opacity')
   })
 
   it('warns when text leaves the title-safe area', () => {
@@ -185,18 +197,45 @@ describe('checkScene', () => {
     expect(codes(result)).not.toContain('stacked-backdrops')
   })
 
-  it('reports a frame where active items resolve to nothing drawn', () => {
-    const result = checkScene(frames([box({ visible: false })]), canvas)
+  it('reports a blank frame in the middle of a range', () => {
+    const result = checkScene(frames([box()], [box({ visible: false })], [box()]), canvas)
     expect(codes(result)).toContain('empty-frame')
   })
 
-  it('flags an item that is present across the range and never moves', () => {
-    const result = checkScene(frames([box()], [box()], [box()]), canvas)
+  it('does not report a blank frame at either end of the range', () => {
+    // An appear gesture starts from nothing and a dismiss ends there, so the
+    // endpoints are where a correct fade is legitimately empty.
+    const result = checkScene(
+      frames([box({ visible: false })], [box()], [box({ visible: false })]),
+      canvas,
+    )
+    expect(codes(result)).not.toContain('empty-frame')
+  })
+
+  it('flags a keyframed item that never changes', () => {
+    const keyed = box({ animated: true })
+    const result = checkScene(frames([keyed], [keyed], [keyed]), canvas)
     expect(codes(result)).toContain('static-across-range')
   })
 
+  it('does not flag an item that was never animated for holding still', () => {
+    // Most of a scene is deliberately static; only a broken animation is news.
+    const result = checkScene(frames([box()], [box()], [box()]), canvas)
+    expect(codes(result)).not.toContain('static-across-range')
+  })
+
+  it('does not flag a keyframed item that does move', () => {
+    const result = checkScene(
+      frames([box({ animated: true, x: 0 })], [box({ animated: true, x: 300 })]),
+      canvas,
+    )
+    expect(codes(result)).not.toContain('static-across-range')
+  })
+
   it('does not flag a static item when only one frame was sampled', () => {
-    expect(codes(checkScene(frames([box()]), canvas))).not.toContain('static-across-range')
+    expect(codes(checkScene(frames([box({ animated: true })]), canvas))).not.toContain(
+      'static-across-range',
+    )
   })
 
   it('collapses a repeated issue into one entry with a frame count', () => {

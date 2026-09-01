@@ -32,9 +32,66 @@ const hasExactlyOneProjectSource = (value) =>
 // that keeps generated animation on-style, so an unknown id is refused at the
 // wire rather than producing an empty scene. Kept in sync by
 // src/shared/graphics/blocks/catalog-contract.test.ts.
-const BLOCK_IDS = ['character-astronaut', 'world-moon-surface']
-const GESTURE_IDS = ['walk', 'idle-breath', 'wave', 'land-squash', 'parallax-pan', 'star-drift']
-const POSE_IDS = ['stand', 'point-forward', 'arms-raised', 'crouch', 'look-up']
+const BLOCK_IDS = [
+  'character-astronaut',
+  'world-moon-surface',
+  'ui-browser-window',
+  'ui-login-form',
+  'ui-cursor',
+  'infra-server-rack',
+  'infra-database',
+  'infra-token-card',
+  'infra-flow-arrow',
+  'infra-shield-badge',
+]
+const GESTURE_IDS = [
+  'walk',
+  'idle-breath',
+  'wave',
+  'land-squash',
+  'parallax-pan',
+  'star-drift',
+  'window-appear',
+  'window-dismiss',
+  'window-nudge',
+  'form-appear',
+  'form-reveal',
+  'submit-press',
+  'form-reject',
+  'cursor-click',
+  'cursor-appear',
+  'rack-appear',
+  'rack-work',
+  'rack-hum',
+  'database-appear',
+  'database-read',
+  'database-write',
+  'token-appear',
+  'token-issue',
+  'token-travel',
+  'arrow-appear',
+  'arrow-draw',
+  'arrow-pulse',
+  'shield-appear',
+  'shield-seal',
+]
+const POSE_IDS = [
+  'stand',
+  'point-forward',
+  'arms-raised',
+  'crouch',
+  'look-up',
+  'form-empty',
+  'email-focused',
+  'email-entered',
+  'password-focused',
+  'credentials-entered',
+  'form-submitting',
+  'form-rejected',
+  'verdict-pending',
+  'verdict-granted',
+  'verdict-denied',
+]
 const SCENE_PALETTE_IDS = ['brand', 'deep-space']
 
 const GPU_EFFECT_TYPES = [
