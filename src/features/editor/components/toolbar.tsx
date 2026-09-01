@@ -11,6 +11,7 @@ import {
   Github,
   Keyboard,
   ListVideo,
+  Radio,
   Save,
   Settings,
   Sparkles,
@@ -71,6 +72,8 @@ interface ToolbarProps {
   onSave?: () => Promise<void>
   onExport?: () => void
   onExportBundle?: () => void
+  /** Absent outside Docker deployments that front the headless API. */
+  onSendToMcp?: () => void
   onOpenRenderQueue?: () => void
   /** Number of queued + rendering jobs, shown as a badge on the queue button. */
   renderQueueCount?: number
@@ -82,6 +85,7 @@ export const Toolbar = memo(function Toolbar({
   onSave,
   onExport,
   onExportBundle,
+  onSendToMcp,
   onOpenRenderQueue,
   renderQueueCount = 0,
 }: ToolbarProps) {
@@ -367,6 +371,12 @@ export const Toolbar = memo(function Toolbar({
               <FolderArchive className="h-4 w-4" />
               {t('toolbar.downloadProjectZip')}
             </DropdownMenuItem>
+            {onSendToMcp && (
+              <DropdownMenuItem onClick={onSendToMcp} className="gap-2">
+                <Radio className="h-4 w-4" />
+                {t('toolbar.sendToMcp')}
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

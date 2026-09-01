@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback, memo, lazy, Suspense } from '
 import { useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { createLogger, createOperationId } from '@/shared/logging/logger'
+import { detectHeadlessApi, pushProjectToHeadlessWorkspace } from '@/shared/deployment/headless-api'
 import { i18n } from '@/i18n'
 import type { ImperativePanelHandle } from 'react-resizable-panels'
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable'
@@ -388,6 +389,15 @@ export const LoadedEditor = memo(function LoadedEditor({
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [bundleExportDialogOpen, setBundleExportDialogOpen] = useState(false)
   const [renderQueueOpen, setRenderQueueOpen] = useState(false)
+  // Only Docker deployments front the headless API; elsewhere the action hides.
+  const [mcpWorkspaceAvailable, setMcpWorkspaceAvailable] = useState(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    void detectHeadlessApi(controller.signal).then((available) => {
+      if (!controller.signal.aborted) setMcpWorkspaceAvailable(available)
+    })
+    return () => controller.abort()
+  }, [])
   const renderQueueActiveCount = useRenderQueueStore(
     (s) => s.jobs.filter((j) => j.status === 'queued' || j.status === 'rendering').length,
   )
@@ -650,6 +660,26 @@ export const LoadedEditor = memo(function LoadedEditor({
     setBundleExportDialogOpen(true)
   }, [project.name])
 
+  const handleSendToMcp = useCallback(async () => {
+    try {
+      await handleSave()
+      const { getProject } = await import('@/infrastructure/storage')
+      const stored = await getProject(projectId)
+      if (!stored) throw new Error(`Project ${projectId} is missing from the workspace`)
+      await pushProjectToHeadlessWorkspace(stored)
+      const liveUrl = `${window.location.origin}/live/${projectId}`
+      toast.success(i18n.t('toolbar.sendToMcpSuccess'), {
+        action: {
+          label: i18n.t('toolbar.copyLiveLink'),
+          onClick: () => void navigator.clipboard.writeText(liveUrl),
+        },
+      })
+    } catch (error) {
+      logger.error('Failed to send project to the MCP workspace:', error)
+      toast.error(i18n.t('toolbar.sendToMcpFailed'))
+    }
+  }, [handleSave, projectId])
+
   // Enable keyboard shortcuts
   useEditorHotkeys({
     onSave: handleSave,
@@ -684,6 +714,7 @@ export const LoadedEditor = memo(function LoadedEditor({
           onSave={handleSave}
           onExport={handleExport}
           onExportBundle={handleExportBundle}
+          onSendToMcp={mcpWorkspaceAvailable ? handleSendToMcp : undefined}
           onOpenRenderQueue={handleOpenRenderQueue}
           renderQueueCount={renderQueueActiveCount}
         />
