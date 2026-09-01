@@ -885,7 +885,9 @@ function samplesDescription(name) {
     defineBlock:
       'Rig an SVG into a placeable block: each part takes geometry from the element whose id ' +
       'matches, and parent/pivot pairs make it a puppet. Validated like committed artwork. ' +
-      'The definition lives for this edit call, so defineBlock and addBlock it together.',
+      'Without persist the definition lives for this edit call, so defineBlock and addBlock it ' +
+      'together; with persist:true it is saved on the project, listed by listBlocks, editable ' +
+      'with updateBlock and copyable to another project.',
     applyGesture: 'Bake a gesture onto an existing block instance by its id prefix',
     applyPose: `Hold or sequence named poses (${POSE_IDS.join(', ')}) on a block instance`,
     attachToSlot: "Parent an item to a block instance's named slot so it travels with the rig",
