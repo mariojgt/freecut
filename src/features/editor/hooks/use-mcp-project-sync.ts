@@ -31,6 +31,8 @@ const POLL_INTERVAL_MS = 1500
  * enough that a drag does not push on every frame.
  */
 const AUTO_PUBLISH_QUIET_MS = 1800
+/** Backoff between attempts to seed a project the workspace has never seen. */
+const SEED_RETRY_MS = 10_000
 const LOCAL_DIVERGENCE_KEY_PREFIX = 'freecut:mcp-local-diverged:'
 const APPLIED_REVISION_KEY_PREFIX = 'freecut:mcp-applied-revision:'
 const logger = createLogger('McpProjectSync')
@@ -313,6 +315,7 @@ export function useMcpProjectSync({
     const controller = new AbortController()
     let busy = false
     let lastLocalChangeAt = 0
+    let lastSeedAt = 0
 
     const unsubscribe = useTimelineSettingsStore.subscribe((state, previous) => {
       if (state.isDirty && !previous.isDirty) {
@@ -402,19 +405,36 @@ export function useMcpProjectSync({
         controller.signal,
       )
 
+    /**
+     * The workspace has never seen this project. Seed it so an agent can act on
+     * what the user just opened instead of waiting for a manual push.
+     */
+    const seedRemoteProject = async () => {
+      const publish = publishLocalRef.current
+      if (!publish || Date.now() - lastSeedAt < SEED_RETRY_MS) return
+      lastSeedAt = Date.now()
+      const revision = await publish(null)
+      if (!revision) return
+      observedRevisionRef.current = revision
+      appliedRevisionRef.current = revision
+      persistAppliedRevision(projectId, revision)
+    }
+
     const sync = async () => {
       if (busy || controller.signal.aborted) return
       busy = true
       try {
+        // Announce first and unconditionally: a project the workspace has not
+        // seen yet is exactly the one an agent most needs pointing at, and the
+        // poll below throws 404 for it.
+        await announce()
         // Publishing wins the tick: the poll would only read back what we are
         // about to overwrite.
         if (!(await publishLocalWork())) await pollOnce()
-        await announce()
       } catch (error) {
-        if (
-          !controller.signal.aborted &&
-          !(error instanceof HeadlessApiError && error.status === 404)
-        ) {
+        if (error instanceof HeadlessApiError && error.status === 404) {
+          await seedRemoteProject()
+        } else if (!controller.signal.aborted) {
           logger.warn('Failed to follow the MCP project revision', error)
         }
       } finally {

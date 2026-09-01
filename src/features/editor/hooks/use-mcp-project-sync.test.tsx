@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { HeadlessApiError } from '@/shared/deployment/headless-api'
 import { useMcpProjectSync } from './use-mcp-project-sync'
 
 const remoteProject = {
@@ -345,7 +346,18 @@ describe('useMcpProjectSync', () => {
     )
     await act(async () => vi.advanceTimersByTimeAsync(0))
 
+    // The first beat lands before any revision is applied — announcing the
+    // open project must not wait on the workspace knowing about it.
     expect(mocks.publishActiveMcpSession).toHaveBeenCalledWith(
+      'proj1',
+      'Remote project',
+      null,
+      expect.any(AbortSignal),
+    )
+
+    // Once a revision is applied, later beats carry it.
+    await act(async () => vi.advanceTimersByTimeAsync(1600))
+    expect(mocks.publishActiveMcpSession).toHaveBeenLastCalledWith(
       'proj1',
       'Remote project',
       'sha256:r1',
@@ -384,6 +396,22 @@ describe('useMcpProjectSync', () => {
     mocks.getHeadlessProject.mockResolvedValue({ project: remoteProject, revision: 'sha256:r3' })
     await act(async () => vi.advanceTimersByTimeAsync(1600))
     expect(mocks.hydrate).toHaveBeenCalledTimes(2)
+    unmount()
+  })
+
+  it('seeds a project the workspace has never seen so an agent can act on it', async () => {
+    mocks.getHeadlessProject.mockRejectedValue(new HeadlessApiError('missing', 404))
+    mocks.listHeadlessProjects.mockResolvedValue([])
+    const publishLocal = vi.fn().mockResolvedValue('sha256:seeded')
+
+    const { result, unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive, publishLocal }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+
+    expect(publishLocal).toHaveBeenCalledWith(null)
+    expect(result.current.getPushExpectedRevision()).toBe('sha256:seeded')
+    expect(mocks.publishActiveMcpSession).toHaveBeenCalled()
     unmount()
   })
 
