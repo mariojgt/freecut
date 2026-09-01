@@ -5,6 +5,7 @@ import {
   checkScene,
   planContactSheet,
   planSampleFrames,
+  summarizeAudio,
   summarizeMotion,
   type PerceivedBox,
   type PerceivedFrame,
@@ -433,5 +434,45 @@ describe('planSampleFrames', () => {
 
   it('samples every frame of a range shorter than the default', () => {
     expect(planSampleFrames({ from: 0, to: 3, defaultTo: 3 })).toEqual([0, 1, 2, 3])
+  })
+})
+
+describe('summarizeAudio', () => {
+  const fps = 30
+  /** One second of silence, then a loud burst, then silence again. */
+  function mixWithBurstAt(startSec: number, endSec: number, amplitude = 0.8) {
+    const sampleRate = 1000
+    const total = sampleRate * 4
+    const channel = new Float32Array(total)
+    for (let i = Math.floor(startSec * sampleRate); i < Math.floor(endSec * sampleRate); i++) {
+      channel[i] = i % 2 === 0 ? amplitude : -amplitude
+    }
+    return { samples: [channel], sampleRate, channels: 1 }
+  }
+
+  it('reports the loudest window so a cue can be checked against its beat', () => {
+    // Burst lives at 2.0-2.5s, which at 30fps is frame 60.
+    const report = summarizeAudio(mixWithBurstAt(2, 2.5), [0, 30, 60, 90], fps, 119)
+    expect(report.peakFrame).toBe(60)
+    expect(report.peakDb).toBeGreaterThan(-3)
+    expect(report.windows).toHaveLength(4)
+  })
+
+  it('names the silent windows rather than only the loud one', () => {
+    const report = summarizeAudio(mixWithBurstAt(2, 2.5), [0, 30, 60, 90], fps, 119)
+    // Frame 60 carries the burst; every other window is dead.
+    expect(report.silentWindows).toEqual([0, 30, 90])
+  })
+
+  it('flags a clipped mix', () => {
+    const report = summarizeAudio(mixWithBurstAt(0, 4, 1), [0, 60], fps, 119)
+    expect(report.clippedWindows).toContain(0)
+  })
+
+  it('treats a project with no audio as empty rather than failing', () => {
+    const report = summarizeAudio(null, [0, 30], fps, 59)
+    expect(report.windows).toEqual([])
+    expect(report.peakFrame).toBeNull()
+    expect(report.silentWindows).toEqual([])
   })
 })

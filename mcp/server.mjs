@@ -10,6 +10,13 @@ import { ApiSupervisor } from './api-autostart.mjs'
 
 const projectId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/)
 const revision = z.string().regex(/^sha256:[0-9a-f]{64}$/)
+/** Frame-range inputs shared by every perception tool. */
+const rangeInput = {
+  projectId,
+  from: z.number().int().nonnegative().optional(),
+  to: z.number().int().nonnegative().optional(),
+  samples: z.number().int().min(1).max(600).default(24),
+}
 const editOperation = z.record(z.string(), z.unknown()).refine((value) => 'op' in value, {
   message: 'Each operation needs an op field.',
 })
@@ -435,10 +442,7 @@ export function createFreeCutMcpServer(options = {}) {
         'Use this to confirm keyframes you just wrote actually animate something, and how far. ' +
         'Costs no render: it is transform maths, so it is cheap enough to run after every edit.',
       inputSchema: z.object({
-        projectId,
-        from: z.number().int().nonnegative().optional(),
-        to: z.number().int().nonnegative().optional(),
-        samples: z.number().int().min(1).max(600).default(24),
+        ...rangeInput,
         itemIds: z.array(z.string()).max(500).optional(),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false },
@@ -446,6 +450,24 @@ export function createFreeCutMcpServer(options = {}) {
     async ({ projectId: id, ...range }) =>
       success(
         await api.requestJson('/v1/motion', { method: 'POST', body: { project: id, ...range } }),
+      ),
+  )
+
+  registerTool(
+    server,
+    'sample_audio',
+    {
+      title: 'Sample the audio mix',
+      description:
+        'Report where the mix actually has energy across a frame range: per-window RMS and peak in dBFS, the loudest frame, silent windows and clipping. Use it after scoring to confirm a cue lands on the beat you wrote it for — a generated "rising" sound often front-loads its energy instead, leaving the beat silent. Costs a mixdown, not a render.',
+      inputSchema: z.object({
+        ...rangeInput,
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ projectId: id, ...range }) =>
+      success(
+        await api.requestJson('/v1/audio', { method: 'POST', body: { project: id, ...range } }),
       ),
   )
 
@@ -461,10 +483,7 @@ export function createFreeCutMcpServer(options = {}) {
         'full-frame backdrops ghosting over each other, frames with nothing drawn, and ' +
         'items that never move. Run this before rendering; errors mean the frame is broken.',
       inputSchema: z.object({
-        projectId,
-        from: z.number().int().nonnegative().optional(),
-        to: z.number().int().nonnegative().optional(),
-        samples: z.number().int().min(1).max(600).default(24),
+        ...rangeInput,
         titleSafe: z.number().min(0.1).max(1).optional(),
         ghostOpacity: z.number().min(0).max(1).optional(),
         offCanvasTolerance: z.number().min(0).max(1).optional(),

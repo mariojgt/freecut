@@ -70,6 +70,7 @@ import {
   frameRequestSchema,
   layoutRequestSchema,
   motionRequestSchema,
+  audioRequestSchema,
   lifecycleEditRequestSchema,
   mediaProbeRequestSchema,
   projectCreateRequestSchema,
@@ -891,7 +892,15 @@ async function main() {
                                           ? () => handleFrame(req, res)
                                           : route === 'POST /layout'
                                             ? () => handleLayout(req, res)
-                                            : route === 'POST /v1/motion'
+                                            : route === 'POST /v1/audio'
+                                              ? () =>
+                                                  handleRange(
+                                                    req,
+                                                    res,
+                                                    audioRequestSchema,
+                                                    'sampleAudio',
+                                                  )
+                                              : route === 'POST /v1/motion'
                                               ? () =>
                                                   handleRange(
                                                     req,

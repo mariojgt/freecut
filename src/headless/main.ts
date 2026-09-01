@@ -65,7 +65,7 @@ import {
   collectTransformParentFindings,
   hasAudioCapableItems,
 } from './validation'
-import { hasAudioContent } from '@/features/export/utils/canvas-audio'
+import { hasAudioContent, processAudio } from '@/features/export/utils/canvas-audio'
 import { ensureFontsLoaded } from '@/shared/typography/font-loader'
 import {
   collectVisibleTextFontFamilies,
@@ -76,7 +76,13 @@ import { layoutTextBlock, lineInkWidth } from '@/shared/typography/text-block-la
 import { createCanvasTextMeasurer } from '@/shared/typography/text-measurer'
 import { resolveAnimatedTextItem } from '@/features/keyframes/utils/animated-text-item'
 import { buildBlockCatalog, type BlockCatalog } from '@/shared/graphics/blocks/catalog'
-import { checkScene, planContactSheet, planSampleFrames, summarizeMotion } from './perception'
+import {
+  checkScene,
+  planContactSheet,
+  planSampleFrames,
+  summarizeAudio,
+  summarizeMotion,
+} from './perception'
 import type {
   CheckSceneOptions,
   ContactSheetPlan,
@@ -1316,6 +1322,25 @@ async function sampleMotion(
   return { ...report, warnings: prepared.warnings }
 }
 
+/**
+ * Report where the mix actually has energy across a range.
+ *
+ * The audio counterpart to sampleMotion: cheap enough to run after every
+ * scoring edit, so a cue can be checked against the beat it was written for
+ * instead of being trusted until someone watches the render.
+ */
+async function sampleAudio(
+  input: HeadlessRangeInput,
+): Promise<ReturnType<typeof summarizeAudio> & { warnings: HeadlessRenderWarning[] }> {
+  const prepared = await prepareLayout(input)
+  const endFrame = lastActiveFrame(prepared.view)
+  const frames = planSampleFrames({ ...input, defaultTo: endFrame })
+  const composition = buildComposition(prepared.view)
+  const mix = await processAudio(composition)
+  const report = summarizeAudio(mix, frames, prepared.canvas.fps, endFrame)
+  return { ...report, warnings: prepared.warnings }
+}
+
 /** Run the semantic gates over a range and report named failures. */
 async function checkSceneRange(
   input: HeadlessRangeInput & CheckSceneOptions,
@@ -1481,6 +1506,8 @@ interface FreecutHeadlessApi {
   dumpLayout: typeof dumpLayout
   /** Perception surface: measure, gate and contact-sheet a range of frames. */
   sampleMotion: typeof sampleMotion
+  /** Where the mix has energy, so a cue can be checked against its beat. */
+  sampleAudio: typeof sampleAudio
   checkScene: typeof checkSceneRange
   renderContactSheet: typeof renderContactSheet
   editProject: typeof editProject
@@ -1573,6 +1600,7 @@ window.freecut = {
   renderFrame,
   dumpLayout,
   sampleMotion,
+  sampleAudio,
   checkScene: checkSceneRange,
   renderContactSheet,
   editProject,

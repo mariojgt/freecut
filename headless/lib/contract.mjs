@@ -1208,6 +1208,17 @@ export const motionRequestSchema = z
     path: ['project'],
   })
 
+export const audioRequestSchema = z
+  .object({
+    ...rangeFields,
+    samples: z.number().int().min(1).max(600).optional(),
+  })
+  .strict()
+  .refine(hasExactlyOneProjectSource, {
+    message: 'provide exactly one of project or projectObject',
+    path: ['project'],
+  })
+
 export const checkRequestSchema = z
   .object({
     ...rangeFields,
@@ -1287,6 +1298,7 @@ export function capabilities() {
       frame: z.toJSONSchema(frameRequestSchema, { target: 'draft-7' }),
       layout: z.toJSONSchema(layoutRequestSchema, { target: 'draft-7' }),
       motion: z.toJSONSchema(motionRequestSchema, { target: 'draft-7' }),
+      audio: z.toJSONSchema(audioRequestSchema, { target: 'draft-7' }),
       check: z.toJSONSchema(checkRequestSchema, { target: 'draft-7' }),
       contactSheet: z.toJSONSchema(contactSheetRequestSchema, { target: 'draft-7' }),
       // `reused: 'ref'` only for this one: the op union repeats large shapes (a
@@ -1318,6 +1330,7 @@ export function capabilities() {
         'POST /v1/media/:id/probe',
         'POST /v1/render',
         'POST /v1/motion',
+        'POST /v1/audio',
         'POST /v1/check',
         'POST /v1/contact-sheet',
       ],

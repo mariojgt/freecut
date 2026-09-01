@@ -583,6 +583,131 @@ export function checkScene(
  * an unsettled title shows up, so a sampler that stopped short of it would
  * report a clean scene for exactly the case worth catching.
  */
+export interface AudioWindow {
+  frame: number
+  /** Window end, exclusive, so windows tile the range without overlap. */
+  toFrame: number
+  /** RMS level in dBFS, or null when the window is digital silence. */
+  rmsDb: number | null
+  /** Loudest sample in the window, in dBFS. */
+  peakDb: number | null
+  /** True when any sample reaches full scale — a clipped mix. */
+  clipped: boolean
+}
+
+export interface AudioReport {
+  sampleRate: number
+  channels: number
+  windows: AudioWindow[]
+  /** Loudest window, so a caller can ask "did the hit land where I put it?". */
+  peakFrame: number | null
+  peakDb: number | null
+  /** Windows with no audible content, useful for spotting dead beats. */
+  silentWindows: number[]
+  clippedWindows: number[]
+}
+
+const SILENCE_FLOOR_DB = -60
+const AMPLITUDE_EPSILON = 1e-6
+const CLIP_THRESHOLD = 0.999
+
+function toDb(amplitude: number): number | null {
+  if (!(amplitude > AMPLITUDE_EPSILON)) return null
+  return Math.round(20 * Math.log10(amplitude) * 10) / 10
+}
+
+function emptyAudioReport(sampleRate: number, channels: number): AudioReport {
+  return {
+    sampleRate,
+    channels,
+    windows: [],
+    peakFrame: null,
+    peakDb: null,
+    silentWindows: [],
+    clippedWindows: [],
+  }
+}
+
+/** RMS and peak amplitude across every channel for one sample span. */
+function measureSpan(
+  samples: readonly Float32Array[],
+  startSample: number,
+  stopSample: number,
+): { rms: number; peak: number } {
+  let sumSquares = 0
+  let counted = 0
+  let peak = 0
+  for (const channel of samples) {
+    const end = Math.min(stopSample, channel.length)
+    for (let i = startSample; i < end; i++) {
+      const value = channel[i] ?? 0
+      sumSquares += value * value
+      if (Math.abs(value) > peak) peak = Math.abs(value)
+      counted++
+    }
+  }
+  return { rms: counted > 0 ? Math.sqrt(sumSquares / counted) : 0, peak }
+}
+
+function loudestWindow(windows: readonly AudioWindow[]): {
+  peakFrame: number | null
+  peakDb: number | null
+} {
+  let peakFrame: number | null = null
+  let peakDb: number | null = null
+  for (const window of windows) {
+    if (window.peakDb === null) continue
+    if (peakDb === null || window.peakDb > peakDb) {
+      peakDb = window.peakDb
+      peakFrame = window.frame
+    }
+  }
+  return { peakFrame, peakDb }
+}
+
+/**
+ * Summarize a rendered mix as a loudness envelope over frame windows.
+ *
+ * Placing a cue by duration alone is guesswork — a generated "rising" sound may
+ * front-load its energy and leave the beat it was meant to hit in silence. This
+ * reports where the energy actually is, so placement can be checked without
+ * rendering and listening to a whole video.
+ */
+export function summarizeAudio(
+  mix: { samples: Float32Array[]; sampleRate: number; channels: number } | null,
+  frames: readonly number[],
+  fps: number,
+  endFrame: number,
+): AudioReport {
+  if (!mix || mix.samples.length === 0 || fps <= 0) {
+    return emptyAudioReport(mix?.sampleRate ?? 0, mix?.channels ?? 0)
+  }
+
+  const windows = frames.map((frame, index): AudioWindow => {
+    const toFrame = index + 1 < frames.length ? frames[index + 1]! : endFrame + 1
+    const startSample = Math.max(0, Math.floor((frame / fps) * mix.sampleRate))
+    const stopSample = Math.max(startSample + 1, Math.floor((toFrame / fps) * mix.sampleRate))
+    const { rms, peak } = measureSpan(mix.samples, startSample, stopSample)
+    return {
+      frame,
+      toFrame,
+      rmsDb: toDb(rms),
+      peakDb: toDb(peak),
+      clipped: peak >= CLIP_THRESHOLD,
+    }
+  })
+
+  return {
+    ...emptyAudioReport(mix.sampleRate, mix.channels),
+    windows,
+    ...loudestWindow(windows),
+    silentWindows: windows
+      .filter((w) => w.rmsDb === null || w.rmsDb < SILENCE_FLOOR_DB)
+      .map((w) => w.frame),
+    clippedWindows: windows.filter((w) => w.clipped).map((w) => w.frame),
+  }
+}
+
 export function planSampleFrames(input: {
   from?: number
   to?: number
