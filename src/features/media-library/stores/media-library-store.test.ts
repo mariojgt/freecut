@@ -284,4 +284,19 @@ describe('useMediaLibraryStore', () => {
     enhancementServiceListeners.upscaleMedia?.(upscaled, 'project-b')
     expect(useMediaLibraryStore.getState().mediaItems).toEqual([upscaled, interpolated])
   })
+
+  it('upserts a materialized media item without duplicating its id', () => {
+    const stale = makeMedia({ id: 'server-media', fileName: 'stale.svg' })
+    const fresh = makeMedia({ id: 'server-media', fileName: 'fresh.svg' })
+    const other = makeMedia({ id: 'other' })
+    useMediaLibraryStore.setState({
+      mediaItems: [stale, other],
+      mediaById: { [stale.id]: stale, [other.id]: other },
+    })
+
+    useMediaLibraryStore.getState().prependMediaItem(fresh)
+
+    expect(useMediaLibraryStore.getState().mediaItems).toEqual([fresh, other])
+    expect(useMediaLibraryStore.getState().mediaById['server-media']).toBe(fresh)
+  })
 })

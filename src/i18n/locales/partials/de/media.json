@@ -248,6 +248,11 @@
     },
     "orphanedClips": {
       "autoMatch": "Automatisch zuordnen",
+      "clipMediaDeleted": {
+        "audio": "Die Quellaudiodatei fehlt in diesem Workspace.",
+        "image": "Das Quellbild fehlt in diesem Workspace.",
+        "video": "Das Quellvideo fehlt in diesem Workspace."
+      },
       "description": "{{count}} Clip(s) verweisen auf Medien, die nicht mehr gefunden werden können. Ersetze oder entferne sie, um fortzufahren.",
       "keepAsBroken": "Als defekt behalten",
       "removeAll": "Alle entfernen",

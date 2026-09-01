@@ -233,6 +233,42 @@ async function commitTmpFile(
   }
 }
 
+async function commitTmpBlob(
+  root: FileSystemDirectoryHandle,
+  parent: FileSystemDirectoryHandle,
+  tmpHandle: FileSystemFileHandle,
+  tmpName: string,
+  fileName: string,
+): Promise<void> {
+  const movable = tmpHandle as MovableHandle
+  if (!rootsRejectingMove.has(root) && typeof movable.move === 'function') {
+    try {
+      await movable.move(parent, fileName)
+      return
+    } catch (error) {
+      if (!isNotSupported(error)) throw error
+      rootsRejectingMove.add(root)
+      logger.warn(
+        'writeBlobAtomic: FileSystemFileHandle.move() rejected as unsupported — ' +
+          'falling back to a non-atomic copy+delete for this workspace',
+        { environment: describeStorageEnvironment() },
+        error,
+      )
+    }
+  }
+
+  const source = await tmpHandle.getFile()
+  const targetHandle = await parent.getFileHandle(fileName, { create: true })
+  const targetWritable = await targetHandle.createWritable()
+  await targetWritable.write(source)
+  await targetWritable.close()
+  try {
+    await parent.removeEntry(tmpName)
+  } catch (error) {
+    if (!isNotFound(error)) throw error
+  }
+}
+
 export async function writeJsonAtomic(
   root: FileSystemDirectoryHandle,
   segments: string[],
@@ -274,6 +310,39 @@ export async function writeBlob(
       const writable = await fh.createWritable()
       await writable.write(data as FileSystemWriteChunkType)
       await writable.close()
+    }),
+  )
+}
+
+/**
+ * Atomic binary write for durable source media. The temporary file is hidden
+ * from media discovery and removed on ordinary failures; a process crash may
+ * leave it behind, but readers deliberately ignore the `.freecut-tmp` suffix.
+ */
+export async function writeBlobAtomic(
+  root: FileSystemDirectoryHandle,
+  segments: string[],
+  data: Blob | ArrayBuffer | Uint8Array | string,
+): Promise<void> {
+  return wrap('writeBlobAtomic', () =>
+    withKeyLock(`writeBlobAtomic:${segments.join('/')}`, async () => {
+      const { parent, fileName } = await resolveFileParent(root, segments, true)
+      const tmpName = `.${fileName}.freecut-tmp`
+      try {
+        const tmpHandle = await parent.getFileHandle(tmpName, { create: true })
+        const writable = await tmpHandle.createWritable()
+        await writable.write(data as FileSystemWriteChunkType)
+        await writable.close()
+        await commitTmpBlob(root, parent, tmpHandle, tmpName, fileName)
+      } finally {
+        try {
+          await parent.removeEntry(tmpName)
+        } catch (error) {
+          if (!isNotFound(error)) {
+            logger.warn(`writeBlobAtomic: failed to remove temporary file ${tmpName}`, error)
+          }
+        }
+      }
     }),
   )
 }

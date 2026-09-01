@@ -27,7 +27,7 @@ const indexedDbMocks = vi.hoisted(() => ({
   deleteCaptions: vi.fn(async () => undefined),
   deleteScenes: vi.fn(async () => undefined),
   hasMediaSource: vi.fn(async () => false),
-  readMediaSource: vi.fn(async () => null),
+  readMediaSource: vi.fn<() => Promise<Blob | null>>(async () => null),
   writeMediaSource: vi.fn(async () => undefined),
 }))
 
@@ -632,6 +632,148 @@ describe('MediaLibraryService', () => {
           'project-1',
         ),
       ).rejects.toThrow(/YouTube and similar page URLs/)
+    })
+  })
+
+  describe('materializeMediaFromUrl', () => {
+    const svgText = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+
+    function remoteSvgMetadata(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
+      return makeMediaMetadata({
+        id: 'server-svg',
+        storageType: 'workspace',
+        fileName: 'server-card.svg',
+        fileSize: new Blob([svgText]).size,
+        mimeType: 'image/svg+xml',
+        duration: 0,
+        width: 100,
+        height: 140,
+        fps: 0,
+        codec: 'unknown',
+        bitrate: 0,
+        ...overrides,
+      })
+    }
+
+    function mockSvgDownload(): void {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        url: '/api/headless/v1/media/server-svg/source',
+        headers: new Headers({ 'content-type': 'image/svg+xml' }),
+        blob: vi.fn().mockResolvedValue(new Blob([svgText], { type: 'image/svg+xml' })),
+      } satisfies Partial<Response>)
+    }
+
+    it('downloads with the server id and persists source, metadata, and project link', async () => {
+      const remote = remoteSvgMetadata()
+      mockSvgDownload()
+      indexedDbMocks.getMedia.mockResolvedValue(undefined)
+
+      const result = await mediaLibraryService.materializeMediaFromUrl(
+        '/api/headless/v1/media/server-svg/source',
+        'project-1',
+        remote,
+      )
+
+      expect(result).toMatchObject({
+        id: 'server-svg',
+        storageType: 'workspace',
+        fileName: 'server-card.svg',
+      })
+      expect(indexedDbMocks.writeMediaSource).toHaveBeenCalledWith(
+        'server-svg',
+        expect.any(File),
+        'server-card.svg',
+        { strict: true },
+      )
+      expect(indexedDbMocks.createMedia).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'server-svg', storageType: 'workspace' }),
+      )
+      expect(indexedDbMocks.associateMediaWithProject).toHaveBeenCalledWith(
+        'project-1',
+        'server-svg',
+      )
+    })
+
+    it('reuses compatible local bytes without downloading or overwriting them', async () => {
+      const remote = remoteSvgMetadata()
+      indexedDbMocks.getMedia.mockResolvedValue(remote)
+      indexedDbMocks.readMediaSource.mockResolvedValue(
+        new Blob([svgText], { type: 'image/svg+xml' }),
+      )
+
+      await expect(
+        mediaLibraryService.materializeMediaFromUrl(
+          '/api/headless/v1/media/server-svg/source',
+          'project-1',
+          remote,
+        ),
+      ).resolves.toBe(remote)
+
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(indexedDbMocks.writeMediaSource).not.toHaveBeenCalled()
+      expect(indexedDbMocks.associateMediaWithProject).toHaveBeenCalledWith(
+        'project-1',
+        'server-svg',
+      )
+    })
+
+    it('repairs a metadata-only local entry while preserving its identity', async () => {
+      const remote = remoteSvgMetadata()
+      indexedDbMocks.getMedia.mockResolvedValue(remote)
+      indexedDbMocks.readMediaSource.mockResolvedValue(null)
+      mockSvgDownload()
+
+      await expect(
+        mediaLibraryService.materializeMediaFromUrl(
+          '/api/headless/v1/media/server-svg/source',
+          'project-1',
+          remote,
+        ),
+      ).resolves.toBe(remote)
+
+      expect(indexedDbMocks.writeMediaSource).toHaveBeenCalledWith(
+        'server-svg',
+        expect.any(File),
+        'server-card.svg',
+        { strict: true },
+      )
+      expect(indexedDbMocks.createMedia).not.toHaveBeenCalled()
+    })
+
+    it('blocks a same-id local media collision without dialing out', async () => {
+      const remote = remoteSvgMetadata()
+      indexedDbMocks.getMedia.mockResolvedValue(
+        remoteSvgMetadata({ fileSize: remote.fileSize + 1 }),
+      )
+
+      await expect(
+        mediaLibraryService.materializeMediaFromUrl(
+          '/api/headless/v1/media/server-svg/source',
+          'project-1',
+          remote,
+        ),
+      ).rejects.toThrow(/different local source/)
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(indexedDbMocks.writeMediaSource).not.toHaveBeenCalled()
+    })
+
+    it('rejects a truncated or changed download before writing the workspace', async () => {
+      const remote = remoteSvgMetadata({ fileSize: 999 })
+      indexedDbMocks.getMedia.mockResolvedValue(undefined)
+      mockSvgDownload()
+
+      await expect(
+        mediaLibraryService.materializeMediaFromUrl(
+          '/api/headless/v1/media/server-svg/source',
+          'project-1',
+          remote,
+        ),
+      ).rejects.toThrow(/expected 999/)
+      expect(indexedDbMocks.writeMediaSource).not.toHaveBeenCalled()
+      expect(indexedDbMocks.createMedia).not.toHaveBeenCalled()
     })
   })
 

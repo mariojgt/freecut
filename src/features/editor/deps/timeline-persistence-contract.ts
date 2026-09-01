@@ -1,3 +1,6 @@
-/** Timeline hydration used by the normal editor's server-revision follower. */
+/** Timeline hydration and media validation used by the normal editor follower. */
 
-export { hydrateTimelineStoresFromProject } from '@/features/timeline/stores/timeline-persistence'
+export {
+  hydrateTimelineStoresFromProject,
+  refreshLoadedProjectMediaValidation,
+} from '@/features/timeline/stores/timeline-persistence'

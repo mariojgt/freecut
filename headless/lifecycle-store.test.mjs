@@ -50,6 +50,54 @@ test('project writes return exact-byte revisions and reject stale saves', async 
   )
 })
 
+test('persistent project writes backfill referenced media links without pruning library items', async (t) => {
+  const root = tempWorkspace()
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  for (const id of ['media-1', 'library-only', 'media-2']) {
+    const dir = path.join(root, 'media', id)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'metadata.json'),
+      JSON.stringify({ id, fileName: `${id}.svg`, mimeType: 'image/svg+xml' }),
+    )
+  }
+
+  const created = await createProjectResource(root, {
+    ...project(),
+    timeline: {
+      tracks: [],
+      items: [{ id: 'clip-1', type: 'image', mediaId: 'media-1' }],
+    },
+  })
+  const linksFile = path.join(root, 'projects', 'p1', 'media-links.json')
+  let links = JSON.parse(fs.readFileSync(linksFile, 'utf8'))
+  assert.deepEqual(
+    links.mediaIds.map((entry) => entry.id),
+    ['media-1'],
+  )
+
+  links.mediaIds.push({ id: 'library-only', addedAt: 1 })
+  fs.writeFileSync(linksFile, JSON.stringify(links))
+  await saveProjectResource(
+    root,
+    'p1',
+    {
+      ...project(),
+      timeline: {
+        tracks: [],
+        items: [{ id: 'clip-2', type: 'image', mediaId: 'media-2' }],
+      },
+    },
+    { expectedRevision: created.revision },
+  )
+
+  links = JSON.parse(fs.readFileSync(linksFile, 'utf8'))
+  assert.deepEqual(
+    links.mediaIds.map((entry) => entry.id),
+    ['media-1', 'library-only', 'media-2'],
+  )
+})
+
 test('atomic pre-commit failure preserves live bytes and removes temp files', async (t) => {
   const root = tempWorkspace()
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))

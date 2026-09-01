@@ -9,6 +9,7 @@
  */
 
 import type { Project } from '@/types/project'
+import type { MediaMetadata } from '@/types/storage'
 
 const HEADLESS_API_BASE = '/api/headless'
 const PORTABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
@@ -132,13 +133,32 @@ export interface HeadlessProjectResource {
 
 export interface HeadlessMediaResource {
   id: string
+  revision?: string
+  metadata?: MediaMetadata
   sourceAvailable: boolean
+  projectIds?: string[]
+}
+
+function isHeadlessMediaMetadata(value: unknown, mediaId: string): value is MediaMetadata {
+  if (!value || typeof value !== 'object') return false
+  const metadata = value as Record<string, unknown>
+  return (
+    metadata.id === mediaId &&
+    typeof metadata.fileName === 'string' &&
+    typeof metadata.fileSize === 'number' &&
+    typeof metadata.mimeType === 'string'
+  )
 }
 
 function isHeadlessMediaResource(value: unknown): value is HeadlessMediaResource {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
-  return typeof candidate.id === 'string' && typeof candidate.sourceAvailable === 'boolean'
+  if (typeof candidate.id !== 'string' || typeof candidate.sourceAvailable !== 'boolean') {
+    return false
+  }
+  return (
+    candidate.metadata === undefined || isHeadlessMediaMetadata(candidate.metadata, candidate.id)
+  )
 }
 
 export async function listHeadlessMedia(signal?: AbortSignal): Promise<HeadlessMediaResource[]> {
@@ -241,14 +261,21 @@ async function resolveExpectedRevision(
 
 export async function pushProjectToHeadlessWorkspace(
   project: Project,
-  knownRevision?: string,
+  knownRevision?: string | null,
 ): Promise<string | null> {
   const portable = toPortableProject(project)
   if (!PORTABLE_ID_PATTERN.test(portable.id)) {
     throw new HeadlessApiError(`Project id "${portable.id}" is not portable`, 400)
   }
 
-  const expectedRevision = await resolveExpectedRevision(portable, knownRevision)
+  // null is an explicit "this browser has never applied a server copy" base:
+  // create-only semantics prevent an unknown existing project from being
+  // overwritten with a freshly fetched revision. undefined retains the
+  // legacy discover-or-create behavior for non-editor callers.
+  const expectedRevision =
+    knownRevision === null
+      ? await createPortableProject(portable)
+      : await resolveExpectedRevision(portable, knownRevision)
   const payload = await requestJson(`/v1/projects/${encodeURIComponent(portable.id)}`, {
     method: 'PUT',
     body: JSON.stringify({ project: portable, expectedRevision, force: false }),

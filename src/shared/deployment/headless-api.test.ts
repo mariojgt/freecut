@@ -142,6 +142,23 @@ describe('pushProjectToHeadlessWorkspace', () => {
     expect(body).toMatchObject({ expectedRevision: 'sha256:known', force: false })
   })
 
+  it('uses create-only semantics when the caller has no applied server base', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ revision: 'sha256:created' }, 201))
+      .mockResolvedValueOnce(jsonResponse({ revision: 'sha256:saved' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(pushProjectToHeadlessWorkspace(storedProject, null)).resolves.toBe('sha256:saved')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/headless/v1/projects')
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('POST')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/headless/v1/projects/proj1')
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      expectedRevision: 'sha256:created',
+    })
+  })
+
   it('rejects ids the server would refuse instead of dialing out', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -159,14 +176,38 @@ describe('headless media helpers', () => {
       vi.fn().mockResolvedValue(
         jsonResponse({
           media: [
-            { id: 'card-1', sourceAvailable: true },
+            {
+              id: 'card-1',
+              revision: 'sha256:media',
+              sourceAvailable: true,
+              projectIds: ['proj1'],
+              metadata: {
+                id: 'card-1',
+                storageType: 'workspace',
+                fileName: 'card.svg',
+                fileSize: 42,
+                mimeType: 'image/svg+xml',
+              },
+            },
             { id: 42, sourceAvailable: true },
           ],
         }),
       ),
     )
 
-    await expect(listHeadlessMedia()).resolves.toEqual([{ id: 'card-1', sourceAvailable: true }])
+    await expect(listHeadlessMedia()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'card-1',
+        revision: 'sha256:media',
+        sourceAvailable: true,
+        projectIds: ['proj1'],
+        metadata: expect.objectContaining({
+          id: 'card-1',
+          fileName: 'card.svg',
+          mimeType: 'image/svg+xml',
+        }),
+      }),
+    ])
     expect(headlessMediaSourceUrl('card-1')).toBe('/api/headless/v1/media/card-1/source')
     expect(() => headlessMediaSourceUrl('../escape')).toThrow(/not portable/)
   })

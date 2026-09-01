@@ -248,6 +248,11 @@
     },
     "orphanedClips": {
       "autoMatch": "Otomatik eşleştir",
+      "clipMediaDeleted": {
+        "audio": "Kaynak ses bu çalışma alanında bulunamadı.",
+        "image": "Kaynak görsel bu çalışma alanında bulunamadı.",
+        "video": "Kaynak video bu çalışma alanında bulunamadı."
+      },
       "description": "{{count}} klip artık bulunamayan medyaya başvuruyor. Devam etmek için değiştirin veya kaldırın.",
       "keepAsBroken": "Bozuk olarak tut",
       "removeAll": "Tümünü kaldır",

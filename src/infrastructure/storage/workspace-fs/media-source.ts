@@ -17,7 +17,7 @@
 import { createLogger } from '@/shared/logging/logger'
 
 import { requireWorkspaceRoot } from './root'
-import { listDirectory, readBlob, writeBlob } from './fs-primitives'
+import { listDirectory, readBlob, writeBlobAtomic } from './fs-primitives'
 import { mediaDir, mediaSourceByFileName } from './paths'
 
 const logger = createLogger('WorkspaceFS:MediaSource')
@@ -33,7 +33,7 @@ const NON_SOURCE_NAMES = new Set([
 
 /** Finder metadata and AppleDouble sidecars are never media source bytes. */
 function isFilesystemMetadata(name: string): boolean {
-  return name === '.DS_Store' || name.startsWith('._')
+  return name === '.DS_Store' || name.startsWith('._') || name.endsWith('.freecut-tmp')
 }
 
 /**
@@ -106,7 +106,7 @@ export async function writeMediaSource(
     if (await findSourceSegments(root, mediaId)) return
 
     const path = mediaSourceByFileName(mediaId, fileName ?? 'source.bin')
-    await writeBlob(root, path, blob)
+    await writeBlobAtomic(root, path, blob)
     logger.info(
       `Wrote media source to workspace: ${mediaId} (${path[path.length - 1]}, ${blob.size} bytes)`,
     )

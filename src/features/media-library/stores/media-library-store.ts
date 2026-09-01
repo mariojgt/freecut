@@ -317,7 +317,13 @@ const newStore: MediaLibraryStoreApi =
         },
 
         prependMediaItem: (media) => {
-          set((state) => ({ mediaItems: [media, ...state.mediaItems] }))
+          set((state) => {
+            const mediaItems = [media, ...state.mediaItems.filter((item) => item.id !== media.id)]
+            return {
+              mediaItems,
+              mediaById: buildMediaById(mediaItems),
+            }
+          })
         },
 
         // Selection management

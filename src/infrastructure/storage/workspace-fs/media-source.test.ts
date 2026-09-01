@@ -27,6 +27,28 @@ describe('workspace-fs media sources', () => {
     })
     expect(await hasMediaSource('m1')).toBe(true)
     expect(await readFileText(root, 'media', 'm1', 'clip.svg')).toBe('<svg/>')
+    expect(await readFileText(root, 'media', 'm1', '.clip.svg.freecut-tmp')).toBeNull()
     expect(await (await readMediaSource('m1'))?.text()).toBe('<svg/>')
+  })
+
+  it('ignores an interrupted atomic-write temporary file', async () => {
+    const root = createRoot()
+    const handle = asHandle(root)
+    setWorkspaceRoot(handle)
+    await writeBlob(handle, ['media', 'm1', '.clip.svg.freecut-tmp'], new Blob(['partial']))
+
+    expect(await hasMediaSource('m1')).toBe(false)
+    expect(await readMediaSource('m1')).toBeNull()
+  })
+
+  it('commits source bytes when the selected filesystem cannot rename files', async () => {
+    const root = createRoot('workspace', 'NotSupportedError')
+    const handle = asHandle(root)
+    setWorkspaceRoot(handle)
+
+    await writeMediaSource('m1', new Blob(['durable']), 'clip.svg', { strict: true })
+
+    expect(await readFileText(root, 'media', 'm1', 'clip.svg')).toBe('durable')
+    expect(await readFileText(root, 'media', 'm1', '.clip.svg.freecut-tmp')).toBeNull()
   })
 })

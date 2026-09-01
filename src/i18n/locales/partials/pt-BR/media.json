@@ -248,6 +248,11 @@
     },
     "orphanedClips": {
       "autoMatch": "Correspondencia automatica",
+      "clipMediaDeleted": {
+        "audio": "O áudio de origem não está neste workspace.",
+        "image": "A imagem de origem não está neste workspace.",
+        "video": "O vídeo de origem não está neste workspace."
+      },
       "description": "{{count}} clipe(s) referenciam mídia que não pode mais ser encontrada. Substitua ou remova para continuar.",
       "keepAsBroken": "Manter como quebrado",
       "removeAll": "Remover tudo",

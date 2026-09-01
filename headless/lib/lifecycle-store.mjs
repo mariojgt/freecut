@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { HttpError, assertSinglePathComponent, resolveContained } from './http-security.mjs'
-import { resolveMediaFile } from './workspace.mjs'
+import { collectMediaIds, resolveMediaFile } from './workspace.mjs'
 
 const locks = new Map()
 const PORTABLE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
@@ -178,6 +178,11 @@ export async function createProjectResource(workspace, project) {
     })
     const warnings = []
     try {
+      await associateMediaResourcesWithProject(workspace, project.id, collectMediaIds(project))
+    } catch {
+      warnings.push('MEDIA_LINK_REPAIR_REQUIRED')
+    }
+    try {
       await withResourceLock('projects:index', () => rebuildIndex(workspace))
     } catch {
       warnings.push('INDEX_REPAIR_REQUIRED')
@@ -204,6 +209,11 @@ export async function saveProjectResource(
       },
     })
     const warnings = []
+    try {
+      await associateMediaResourcesWithProject(workspace, id, collectMediaIds(next))
+    } catch {
+      warnings.push('MEDIA_LINK_REPAIR_REQUIRED')
+    }
     try {
       await withResourceLock('projects:index', () => rebuildIndex(workspace))
     } catch {
@@ -377,6 +387,57 @@ export async function getMediaResource(workspace, id) {
   }
 }
 
+/**
+ * Union existing workspace media into a project's logical media library.
+ * Source bytes remain globally deduplicated under media/{id}; only the project
+ * association is written here. Missing media ids are left unlinked so callers
+ * can surface them as genuine missing-media references.
+ */
+async function associateMediaResourcesWithProject(workspace, projectId, mediaIds) {
+  assertPortableId(projectId, 'project id')
+  await getProjectResource(workspace, projectId)
+  const ids = [...new Set(mediaIds)]
+  for (const id of ids) assertPortableId(id, 'media id')
+  if (ids.length === 0) return { added: 0 }
+
+  return withResourceLock(`project-media:${projectId}`, async () => {
+    const linksFile = resolveContained(
+      path.join(workspace, 'projects'),
+      path.join(projectId, 'media-links.json'),
+    )
+    let links = { version: '1.0', mediaIds: [] }
+    try {
+      links = JSON.parse(await fs.promises.readFile(linksFile, 'utf8'))
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+    if (!Array.isArray(links.mediaIds)) links.mediaIds = []
+
+    const linkedIds = new Set(
+      links.mediaIds
+        .map((entry) => (typeof entry === 'string' ? entry : entry?.id))
+        .filter((id) => typeof id === 'string'),
+    )
+    const now = Date.now()
+    let added = 0
+    for (const id of ids) {
+      if (linkedIds.has(id)) continue
+      const metadataFile = resolveContained(
+        path.join(workspace, 'media'),
+        path.join(id, 'metadata.json'),
+      )
+      if (!fs.existsSync(metadataFile)) continue
+      links.mediaIds.push({ id, addedAt: now })
+      linkedIds.add(id)
+      added++
+    }
+    if (added > 0) {
+      await atomicWriteFile(linksFile, Buffer.from(`${JSON.stringify(links, null, 2)}\n`))
+    }
+    return { added }
+  })
+}
+
 export async function updateMediaMetadata(
   workspace,
   id,
@@ -502,21 +563,7 @@ export async function commitStagedMedia(staged, probe, { projectId, workspace })
   const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`)
   await atomicWriteFile(path.join(staged.dir, 'metadata.json'), bytes)
   if (projectId) {
-    assertPortableId(projectId, 'project id')
-    await getProjectResource(workspace, projectId)
-    const linksFile = resolveContained(
-      path.join(workspace, 'projects'),
-      path.join(projectId, 'media-links.json'),
-    )
-    let links = { version: '1.0', mediaIds: [] }
-    try {
-      links = JSON.parse(await fs.promises.readFile(linksFile, 'utf8'))
-    } catch (e) {
-      if (e.code !== 'ENOENT') throw e
-    }
-    if (!links.mediaIds.some((entry) => entry.id === staged.id))
-      links.mediaIds.push({ id: staged.id, addedAt: now })
-    await atomicWriteFile(linksFile, Buffer.from(`${JSON.stringify(links, null, 2)}\n`))
+    await associateMediaResourcesWithProject(workspace, projectId, [staged.id])
   }
   return getMediaResource(workspace, staged.id)
 }

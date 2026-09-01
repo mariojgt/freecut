@@ -17,7 +17,7 @@ const NON_SOURCE_NAMES = new Set([
 
 /** Finder metadata and AppleDouble sidecars are never playable media bytes. */
 function isFilesystemMetadata(name) {
-  return name === '.DS_Store' || name.startsWith('._')
+  return name === '.DS_Store' || name.startsWith('._') || name.endsWith('.freecut-tmp')
 }
 
 const MEDIA_ITEM_TYPES = new Set(['video', 'audio', 'image'])

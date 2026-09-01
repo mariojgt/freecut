@@ -17,13 +17,35 @@ const remoteProject = {
   },
 }
 
+const remoteMedia = {
+  id: 'card-1',
+  storageType: 'workspace',
+  fileName: 'card.svg',
+  fileSize: 7,
+  mimeType: 'image/svg+xml',
+  duration: 0,
+  width: 100,
+  height: 140,
+  fps: 0,
+  codec: 'unknown',
+  bitrate: 0,
+  tags: [],
+  createdAt: 1,
+  updatedAt: 1,
+}
+
 const mocks = vi.hoisted(() => ({
   getHeadlessProject: vi.fn(),
   listHeadlessMedia: vi.fn(),
   listHeadlessProjects: vi.fn(),
-  registerExternalMediaUrl: vi.fn(),
+  materializeMediaFromUrl: vi.fn(),
+  getMedia: vi.fn(),
+  getMediaFile: vi.fn(),
+  loadMediaItems: vi.fn(),
+  prependMediaItem: vi.fn(),
   updateProject: vi.fn(),
   hydrate: vi.fn(),
+  refreshMediaValidation: vi.fn(),
   setCurrentProject: vi.fn(),
   setCurrentFrame: vi.fn(),
   settings: { isDirty: false, isTimelineLoading: false },
@@ -47,7 +69,21 @@ vi.mock('@/shared/projects/migrations', () => ({
 }))
 
 vi.mock('../deps/server-media-contract', () => ({
-  registerExternalMediaUrl: (...args: unknown[]) => mocks.registerExternalMediaUrl(...args),
+  importServerMediaBridge: async () => ({
+    mediaLibraryService: {
+      materializeMediaFromUrl: (...args: unknown[]) =>
+        mocks.materializeMediaFromUrl(...args) as never,
+      getMedia: (...args: unknown[]) => mocks.getMedia(...args) as never,
+      getMediaFile: (...args: unknown[]) => mocks.getMediaFile(...args) as never,
+    },
+    useMediaLibraryStore: {
+      getState: () => ({
+        currentProjectId: 'proj1',
+        loadMediaItems: mocks.loadMediaItems,
+        prependMediaItem: mocks.prependMediaItem,
+      }),
+    },
+  }),
 }))
 
 vi.mock('../deps/storage-contract', () => ({
@@ -75,6 +111,8 @@ vi.mock('../deps/timeline-store', () => ({
 
 vi.mock('../deps/timeline-persistence-contract', () => ({
   hydrateTimelineStoresFromProject: (...args: unknown[]) => mocks.hydrate(...args) as never,
+  refreshLoadedProjectMediaValidation: (...args: unknown[]) =>
+    mocks.refreshMediaValidation(...args) as never,
 }))
 
 vi.mock('@/shared/state/playback', () => ({
@@ -94,6 +132,7 @@ function setDirty(isDirty: boolean): void {
 
 const runExclusive = <T,>(operation: () => Promise<T>) => operation()
 const divergenceKey = 'freecut:mcp-local-diverged:proj1'
+const appliedRevisionKey = 'freecut:mcp-applied-revision:proj1'
 
 describe('useMcpProjectSync', () => {
   beforeEach(() => {
@@ -106,7 +145,12 @@ describe('useMcpProjectSync', () => {
       revision: 'sha256:r1',
     })
     mocks.listHeadlessProjects.mockResolvedValue([{ id: 'proj1', revision: 'sha256:r1' }])
-    mocks.listHeadlessMedia.mockResolvedValue([{ id: 'card-1', sourceAvailable: true }])
+    mocks.listHeadlessMedia.mockResolvedValue([
+      { id: 'card-1', sourceAvailable: true, metadata: remoteMedia },
+    ])
+    mocks.materializeMediaFromUrl.mockResolvedValue(remoteMedia)
+    mocks.loadMediaItems.mockResolvedValue(undefined)
+    mocks.refreshMediaValidation.mockResolvedValue(undefined)
     mocks.updateProject.mockResolvedValue(remoteProject)
     mocks.hydrate.mockResolvedValue(true)
   })
@@ -118,17 +162,27 @@ describe('useMcpProjectSync', () => {
   })
 
   it('hydrates a clean editor and follows later MCP revisions', async () => {
-    const { unmount } = renderHook(() =>
+    const { result, unmount } = renderHook(() =>
       useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive }),
     )
     await act(async () => vi.advanceTimersByTimeAsync(0))
 
-    expect(mocks.registerExternalMediaUrl).toHaveBeenCalledWith(
-      'card-1',
+    expect(mocks.materializeMediaFromUrl).toHaveBeenCalledWith(
       '/api/headless/v1/media/card-1/source',
+      'proj1',
+      remoteMedia,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
+    expect(mocks.loadMediaItems).toHaveBeenCalledTimes(1)
+    expect(mocks.prependMediaItem).toHaveBeenCalledWith(remoteMedia)
     expect(mocks.updateProject).toHaveBeenCalledTimes(1)
     expect(mocks.hydrate).toHaveBeenCalledTimes(1)
+    expect(mocks.materializeMediaFromUrl.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.hydrate.mock.invocationCallOrder[0]!,
+    )
+    expect(mocks.refreshMediaValidation).toHaveBeenCalledWith('proj1')
+    expect(result.current.getPushExpectedRevision()).toBe('sha256:r1')
+    expect(window.localStorage.getItem(appliedRevisionKey)).toBe('sha256:r1')
 
     mocks.listHeadlessProjects.mockResolvedValue([{ id: 'proj1', revision: 'sha256:r2' }])
     mocks.getHeadlessProject.mockResolvedValue({
@@ -139,6 +193,7 @@ describe('useMcpProjectSync', () => {
 
     expect(mocks.hydrate).toHaveBeenCalledTimes(2)
     expect(mocks.setCurrentFrame).toHaveBeenLastCalledWith(40)
+    expect(result.current.getPushExpectedRevision()).toBe('sha256:r2')
     unmount()
   })
 
@@ -155,8 +210,10 @@ describe('useMcpProjectSync', () => {
     mocks.listHeadlessProjects.mockResolvedValue([{ id: 'proj1', revision: 'sha256:r2' }])
     await act(async () => vi.advanceTimersByTimeAsync(1600))
     expect(mocks.hydrate).toHaveBeenCalledTimes(1)
+    expect(result.current.getPushExpectedRevision()).toBe('sha256:r1')
 
     act(() => result.current.notePushedRevision('sha256:r2'))
+    expect(result.current.getPushExpectedRevision()).toBe('sha256:r2')
     mocks.listHeadlessProjects.mockResolvedValue([{ id: 'proj1', revision: 'sha256:r3' }])
     mocks.getHeadlessProject.mockResolvedValue({
       project: remoteProject,
@@ -213,6 +270,19 @@ describe('useMcpProjectSync', () => {
     expect(mocks.hydrate).not.toHaveBeenCalled()
     act(() => result.current.notePushedRevision('sha256:r1'))
     expect(window.localStorage.getItem(divergenceKey)).toBeNull()
+    unmount()
+  })
+
+  it('does not apply or persist a revision when required media cannot be materialized', async () => {
+    mocks.materializeMediaFromUrl.mockRejectedValue(new Error('workspace permission denied'))
+    const { unmount } = renderHook(() =>
+      useMcpProjectSync({ projectId: 'proj1', enabled: true, runExclusive }),
+    )
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+
+    expect(mocks.hydrate).not.toHaveBeenCalled()
+    expect(mocks.updateProject).not.toHaveBeenCalled()
+    expect(mocks.refreshMediaValidation).not.toHaveBeenCalled()
     unmount()
   })
 })

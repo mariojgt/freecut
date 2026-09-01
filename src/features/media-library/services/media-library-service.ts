@@ -211,6 +211,155 @@ function parseMediaImportUrl(input: string): URL {
   return parsedUrl
 }
 
+interface FetchMediaFromUrlOptions {
+  signal?: AbortSignal
+  fileName?: string
+  lastModified?: number
+  allowSameOriginPath?: boolean
+}
+
+interface MediaRequestTarget {
+  parsedUrl: URL
+  requestUrl: string
+}
+
+function resolveMediaRequestTarget(
+  url: string,
+  options: FetchMediaFromUrlOptions | undefined,
+): MediaRequestTarget {
+  const trimmedUrl = url.trim()
+  const sameOriginPath =
+    options?.allowSameOriginPath === true &&
+    trimmedUrl.startsWith('/') &&
+    !trimmedUrl.startsWith('//')
+  const parsedUrl = sameOriginPath
+    ? new URL(trimmedUrl, globalThis.location?.origin ?? 'http://localhost')
+    : parseMediaImportUrl(trimmedUrl)
+  return { parsedUrl, requestUrl: sameOriginPath ? trimmedUrl : parsedUrl.toString() }
+}
+
+async function requestMediaUrl(
+  target: MediaRequestTarget,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
+  try {
+    return signal ? await fetch(target.requestUrl, { signal }) : await fetch(target.requestUrl)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
+    logger.warn(`Failed to fetch media URL "${target.parsedUrl.toString()}":`, error)
+    throw new Error(
+      'Could not download that URL. The site may block cross-origin downloads, require sign-in, or need a direct file link.',
+    )
+  }
+}
+
+function assertDownloadResponse(response: Response, parsedUrl: URL): string {
+  if (!response.ok) {
+    const statusText = response.statusText ? ` ${response.statusText}` : ''
+    throw new Error(`Failed to download media (${response.status}${statusText}).`)
+  }
+
+  const mimeType = normalizeMimeType(response.headers.get('content-type'))
+  if (!isPageMimeType(mimeType)) return mimeType
+  if (isKnownMediaPageHost(parsedUrl.hostname)) {
+    throw new Error(
+      'YouTube and similar page URLs are not direct media files here yet. Paste a direct MP4/MP3/image URL, or download the media first.',
+    )
+  }
+  throw new Error(
+    'That URL points to a web page, not a media file. Paste the direct file URL instead.',
+  )
+}
+
+async function responseToMediaFile(
+  response: Response,
+  parsedUrl: URL,
+  responseMimeType: string,
+  options: FetchMediaFromUrlOptions | undefined,
+): Promise<File> {
+  const blob = await response.blob()
+  if (blob.size === 0) throw new Error('The downloaded file was empty.')
+
+  const mimeType = normalizeMimeType(blob.type) || responseMimeType
+  const fileName =
+    options?.fileName ||
+    buildImportedUrlFileName(
+      parsedUrl.toString(),
+      response.url,
+      response.headers.get('content-disposition'),
+      mimeType,
+    )
+  return new File([blob], fileName, {
+    type: mimeType || blob.type,
+    lastModified: options?.lastModified ?? Date.now(),
+  })
+}
+
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function assertMatchingMediaIdentity(existing: MediaMetadata, remote: MediaMetadata): void {
+  const existingMime = normalizeMimeType(existing.mimeType)
+  const remoteMime = normalizeMimeType(remote.mimeType)
+  const sizeConflict =
+    existing.fileSize > 0 && remote.fileSize > 0 && existing.fileSize !== remote.fileSize
+  const mimeConflict =
+    existingMime.length > 0 && remoteMime.length > 0 && existingMime !== remoteMime
+  if (sizeConflict || mimeConflict) {
+    throw new Error(
+      `Media id ${remote.id} already belongs to a different local source; refusing to overwrite it.`,
+    )
+  }
+}
+
+function assertExpectedMediaSize(mediaId: string, actualSize: number, expectedSize: number): void {
+  if (expectedSize <= 0 || actualSize === expectedSize) return
+  throw new Error(`Downloaded media ${mediaId} is ${actualSize} bytes; expected ${expectedSize}.`)
+}
+
+async function reuseMaterializedMedia(
+  existing: MediaMetadata | undefined,
+  remote: MediaMetadata,
+  projectId: string,
+): Promise<MediaMetadata | null> {
+  if (!existing) return null
+  assertMatchingMediaIdentity(existing, remote)
+  const source = await readMediaSource(existing.id)
+  if (!source) return null
+  if (remote.fileSize > 0 && source.size !== remote.fileSize) {
+    throw new Error(
+      `Media id ${remote.id} has incompatible local bytes; refusing to overwrite them.`,
+    )
+  }
+  await associateMediaWithProject(projectId, existing.id)
+  return existing
+}
+
+function normalizeRemoteMediaMetadata(remote: MediaMetadata, file: File): MediaMetadata {
+  const now = Date.now()
+  const normalized: MediaMetadata = {
+    ...remote,
+    id: remote.id,
+    storageType: 'workspace',
+    fileName: remote.fileName || file.name,
+    fileSize: file.size,
+    mimeType: normalizeMimeType(file.type) || normalizeMimeType(remote.mimeType),
+    duration: Math.max(0, finiteOr(remote.duration, 0)),
+    width: Math.max(0, finiteOr(remote.width, 0)),
+    height: Math.max(0, finiteOr(remote.height, 0)),
+    fps: Math.max(0, finiteOr(remote.fps, 0)),
+    codec: typeof remote.codec === 'string' ? remote.codec : 'unknown',
+    bitrate: Math.max(0, finiteOr(remote.bitrate, 0)),
+    tags: Array.isArray(remote.tags) ? remote.tags.filter((tag) => typeof tag === 'string') : [],
+    createdAt: finiteOr(remote.createdAt, now),
+    updatedAt: now,
+  }
+  delete normalized.fileHandle
+  delete normalized.opfsPath
+  return normalized
+}
+
 /**
  * Turn a provider-supplied animation title into a safe base file name.
  * Strips filesystem-hostile characters, collapses whitespace, and caps the
@@ -821,54 +970,11 @@ class MediaLibraryService {
     return persistedMedia
   }
 
-  private async fetchMediaFromUrl(url: string): Promise<File> {
-    const parsedUrl = parseMediaImportUrl(url.trim())
-
-    let response: Response
-    try {
-      response = await fetch(parsedUrl.toString())
-    } catch (error) {
-      logger.warn(`Failed to fetch media URL "${parsedUrl.toString()}":`, error)
-      throw new Error(
-        'Could not download that URL. The site may block cross-origin downloads, require sign-in, or need a direct file link.',
-      )
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to download media (${response.status}${response.statusText ? ` ${response.statusText}` : ''}).`,
-      )
-    }
-
-    const responseMimeType = normalizeMimeType(response.headers.get('content-type'))
-    if (isPageMimeType(responseMimeType)) {
-      if (isKnownMediaPageHost(parsedUrl.hostname)) {
-        throw new Error(
-          'YouTube and similar page URLs are not direct media files here yet. Paste a direct MP4/MP3/image URL, or download the media first.',
-        )
-      }
-      throw new Error(
-        'That URL points to a web page, not a media file. Paste the direct file URL instead.',
-      )
-    }
-
-    const blob = await response.blob()
-    if (blob.size === 0) {
-      throw new Error('The downloaded file was empty.')
-    }
-
-    const mimeType = normalizeMimeType(blob.type) || responseMimeType
-    const fileName = buildImportedUrlFileName(
-      parsedUrl.toString(),
-      response.url,
-      response.headers.get('content-disposition'),
-      mimeType,
-    )
-
-    return new File([blob], fileName, {
-      type: mimeType || blob.type,
-      lastModified: Date.now(),
-    })
+  private async fetchMediaFromUrl(url: string, options?: FetchMediaFromUrlOptions): Promise<File> {
+    const target = resolveMediaRequestTarget(url, options)
+    const response = await requestMediaUrl(target, options?.signal)
+    const responseMimeType = assertDownloadResponse(response, target.parsedUrl)
+    return responseToMediaFile(response, target.parsedUrl, responseMimeType, options)
   }
 
   /**
@@ -1225,6 +1331,52 @@ class MediaLibraryService {
 
     const file = await this.fetchMediaFromUrl(url)
     return this.importMediaFileToOpfs(file, projectId)
+  }
+
+  /**
+   * Pull a server-owned media source into the active browser workspace while
+   * preserving its immutable media id. This is the durable half of MCP project
+   * following: timeline JSON is not safe to accept until its referenced media
+   * exists under `media/{id}/` and is associated with the selected project.
+   *
+   * Existing compatible media is never replaced. A missing workspace mirror is
+   * repaired from the URL; a same-id size/MIME conflict aborts instead of
+   * overwriting user-owned bytes.
+   */
+  async materializeMediaFromUrl(
+    url: string,
+    projectId: string,
+    remoteMetadata: MediaMetadata,
+    options?: { signal?: AbortSignal },
+  ): Promise<MediaMetadata> {
+    if (!projectId) throw new Error('No project selected')
+    if (!remoteMetadata.id) throw new Error('Remote media is missing an id')
+
+    const existing = await getMediaDB(remoteMetadata.id)
+    const reused = await reuseMaterializedMedia(existing, remoteMetadata, projectId)
+    if (reused) return reused
+
+    const file = await this.fetchMediaFromUrl(url, {
+      signal: options?.signal,
+      fileName: remoteMetadata.fileName,
+      lastModified: remoteMetadata.fileLastModified,
+      allowSameOriginPath: true,
+    })
+    assertExpectedMediaSize(remoteMetadata.id, file.size, remoteMetadata.fileSize)
+    const validationResult = await validateMediaFileContent(file)
+    if (!validationResult.valid) throw new Error(validationResult.error)
+
+    if (existing) {
+      await writeMediaSource(existing.id, file, existing.fileName, { strict: true })
+      await associateMediaWithProject(projectId, existing.id)
+      return existing
+    }
+
+    return persistGeneratedMediaAsset({
+      file,
+      projectId,
+      mediaMetadata: normalizeRemoteMediaMetadata(remoteMetadata, file),
+    })
   }
 
   /**

@@ -248,6 +248,11 @@
     },
     "orphanedClips": {
       "autoMatch": "自動マッチング",
+      "clipMediaDeleted": {
+        "audio": "元の音声がこのワークスペースにありません。",
+        "image": "元の画像がこのワークスペースにありません。",
+        "video": "元の動画がこのワークスペースにありません。"
+      },
       "description": "{{count}} 件のクリップが見つからないメディアを参照しています。続行するには置換または削除してください。",
       "keepAsBroken": "壊れたまま保持",
       "removeAll": "すべて削除",

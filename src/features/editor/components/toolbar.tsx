@@ -103,15 +103,21 @@ export const Toolbar = memo(function Toolbar({
   const maxItemEndFrame = useItemsStore((state) => state.maxItemEndFrame)
   const mediaDependencyIds = useItemsStore((state) => state.mediaDependencyIds)
   const brokenMediaIds = useMediaLibraryStore((state) => state.brokenMediaIds)
+  const orphanedClips = useMediaLibraryStore((state) => state.orphanedClips)
   const projectSummary = useMemo(() => {
     const projectMediaIds = new Set(mediaDependencyIds)
+    const missingMediaIds = new Set([
+      ...brokenMediaIds,
+      ...orphanedClips.map((orphan) => orphan.mediaId),
+    ])
     return {
       durationSeconds: project.fps > 0 ? maxItemEndFrame / project.fps : 0,
       clipCount: itemCount,
       mediaCount: mediaDependencyIds.length,
-      brokenMediaCount: brokenMediaIds.filter((mediaId) => projectMediaIds.has(mediaId)).length,
+      brokenMediaCount: [...missingMediaIds].filter((mediaId) => projectMediaIds.has(mediaId))
+        .length,
     }
-  }, [brokenMediaIds, itemCount, maxItemEndFrame, mediaDependencyIds, project.fps])
+  }, [brokenMediaIds, itemCount, maxItemEndFrame, mediaDependencyIds, orphanedClips, project.fps])
 
   useEffect(() => {
     setHasUnseenWhatsNew(hasUnseenChangelog())

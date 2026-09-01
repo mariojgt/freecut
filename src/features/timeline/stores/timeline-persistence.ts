@@ -1273,6 +1273,91 @@ export function loadTimeline(projectId: string, options: LoadTimelineOptions = {
   return pendingLoad
 }
 
+/** Re-run orphan detection against the currently hydrated timeline stores. */
+export async function refreshLoadedProjectMediaValidation(projectId: string): Promise<void> {
+  const orphans = await validateProjectMediaReferences({
+    rootItems: useItemsStore.getState().items,
+    compositions: useCompositionsStore.getState().compositions,
+    projectId,
+  })
+  const mediaStore = useMediaLibraryStore.getState()
+  if (orphans.length > 0) {
+    logger.warn(`Found ${orphans.length} orphaned clip(s) referencing deleted media`)
+    mediaStore.setOrphanedClips(orphans)
+    mediaStore.openOrphanedClipsDialog()
+    return
+  }
+  mediaStore.closeOrphanedClipsDialog()
+  mediaStore.setOrphanedClips([])
+}
+
+type ProjectMigrationResult = ReturnType<typeof migrateProject>
+
+function assertProjectUpgradeAllowed(project: Project, options: LoadTimelineOptions): void {
+  const storedSchemaVersion = project.schemaVersion ?? 1
+  if (storedSchemaVersion >= CURRENT_SCHEMA_VERSION || options.allowProjectUpgrade) return
+  throw new Error(
+    `Project schema v${storedSchemaVersion} requires confirmation before upgrading to v${CURRENT_SCHEMA_VERSION}`,
+  )
+}
+
+function projectNormalizationChanged(
+  migration: ProjectMigrationResult,
+  legacyLayoutRepaired: boolean,
+  timelineCleaned: boolean,
+): boolean {
+  return migration.migrated || legacyLayoutRepaired || timelineCleaned
+}
+
+function logProjectNormalization(
+  projectId: string,
+  migration: ProjectMigrationResult,
+  legacyLayoutRepaired: boolean,
+  timelineCleaned: boolean,
+): void {
+  if (migration.appliedMigrations.length > 0) {
+    logger.info(`Migrated project from v${migration.fromVersion} to v${migration.toVersion}`, {
+      migrations: migration.appliedMigrations,
+    })
+  } else if (timelineCleaned) {
+    logger.info('Removed ephemeral thumbnail URLs from stored timeline items', { projectId })
+  } else if (legacyLayoutRepaired) {
+    logger.info('Repaired legacy A/V track layout for project', { projectId })
+  } else {
+    logger.debug('Project normalized with current defaults')
+  }
+}
+
+async function normalizeLoadedProject(rawProject: Project, projectId: string): Promise<Project> {
+  const migration = migrateProject(rawProject)
+  const repairedLegacyLayouts = await repairLegacyProjectAvLayouts(migration.project)
+  const sanitizedTimeline = repairedLegacyLayouts.project.timeline
+    ? sanitizeTimelineEphemeralFields(repairedLegacyLayouts.project.timeline)
+    : { timeline: repairedLegacyLayouts.project.timeline, cleaned: false }
+  const project = sanitizedTimeline.cleaned
+    ? { ...repairedLegacyLayouts.project, timeline: sanitizedTimeline.timeline }
+    : repairedLegacyLayouts.project
+
+  if (
+    !projectNormalizationChanged(
+      migration,
+      repairedLegacyLayouts.repaired,
+      sanitizedTimeline.cleaned,
+    )
+  ) {
+    return project
+  }
+  logProjectNormalization(
+    projectId,
+    migration,
+    repairedLegacyLayouts.repaired,
+    sanitizedTimeline.cleaned,
+  )
+  await updateProject(projectId, { ...project, schemaVersion: CURRENT_SCHEMA_VERSION })
+  logger.debug('Saved migrated project to storage')
+  return project
+}
+
 async function loadTimelineOnce(
   projectId: string,
   options: LoadTimelineOptions = {},
@@ -1282,68 +1367,12 @@ async function loadTimelineOnce(
     if (!rawProject) {
       throw new Error(`Project not found: ${projectId}`)
     }
-
-    const storedSchemaVersion = rawProject.schemaVersion ?? 1
-    const requiresUpgrade = storedSchemaVersion < CURRENT_SCHEMA_VERSION
-    if (requiresUpgrade && !options.allowProjectUpgrade) {
-      throw new Error(
-        `Project schema v${storedSchemaVersion} requires confirmation before upgrading to v${CURRENT_SCHEMA_VERSION}`,
-      )
-    }
-
-    // Run migrations and normalization
-    const migrationResult = migrateProject(rawProject)
-    const repairedLegacyLayouts = await repairLegacyProjectAvLayouts(migrationResult.project)
-    const sanitizedTimeline = repairedLegacyLayouts.project.timeline
-      ? sanitizeTimelineEphemeralFields(repairedLegacyLayouts.project.timeline)
-      : { timeline: repairedLegacyLayouts.project.timeline, cleaned: false }
-    const project = sanitizedTimeline.cleaned
-      ? {
-          ...repairedLegacyLayouts.project,
-          timeline: sanitizedTimeline.timeline,
-        }
-      : repairedLegacyLayouts.project
-
-    // Log migration activity
-    if (migrationResult.migrated || repairedLegacyLayouts.repaired || sanitizedTimeline.cleaned) {
-      if (migrationResult.appliedMigrations.length > 0) {
-        logger.info(
-          `Migrated project from v${migrationResult.fromVersion} to v${migrationResult.toVersion}`,
-          { migrations: migrationResult.appliedMigrations },
-        )
-      } else if (sanitizedTimeline.cleaned) {
-        logger.info('Removed ephemeral thumbnail URLs from stored timeline items', { projectId })
-      } else if (repairedLegacyLayouts.repaired) {
-        logger.info('Repaired legacy A/V track layout for project', { projectId })
-      } else {
-        logger.debug('Project normalized with current defaults')
-      }
-
-      // Persist migrated project back to storage
-      await updateProject(projectId, {
-        ...project,
-        schemaVersion: CURRENT_SCHEMA_VERSION,
-      })
-      logger.debug('Saved migrated project to storage')
-    }
-
+    assertProjectUpgradeAllowed(rawProject, options)
+    const project = await normalizeLoadedProject(rawProject, projectId)
     await hydrateTimelineStoresFromProject(project)
 
-    // Validate media references after loading timeline
-    const loadedItems = useItemsStore.getState().items
-    const orphans = await validateProjectMediaReferences({
-      rootItems: loadedItems,
-      compositions: useCompositionsStore.getState().compositions,
-      projectId,
-    })
-    if (orphans.length > 0) {
-      logger.warn(`Found ${orphans.length} orphaned clip(s) referencing deleted media`)
-      useMediaLibraryStore.getState().setOrphanedClips(orphans)
-      useMediaLibraryStore.getState().openOrphanedClipsDialog()
-    } else {
-      useMediaLibraryStore.getState().closeOrphanedClipsDialog()
-      useMediaLibraryStore.getState().setOrphanedClips([])
-    }
+    // Validate media references after loading timeline.
+    await refreshLoadedProjectMediaValidation(projectId)
   } catch (error) {
     logger.error('Failed to load timeline:', error)
     throw error

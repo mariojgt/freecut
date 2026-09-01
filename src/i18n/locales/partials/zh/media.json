@@ -248,6 +248,11 @@
     },
     "orphanedClips": {
       "autoMatch": "自动匹配",
+      "clipMediaDeleted": {
+        "audio": "此工作区中缺少源音频。",
+        "image": "此工作区中缺少源图像。",
+        "video": "此工作区中缺少源视频。"
+      },
       "description": "{{count}} 个片段引用的媒体已找不到。请替换或删除以继续。",
       "keepAsBroken": "保留为损坏",
       "removeAll": "全部删除",

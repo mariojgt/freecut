@@ -611,7 +611,7 @@ export const LoadedEditor = memo(function LoadedEditor({
     [projectId, runEditorMutation],
   )
 
-  const { notePushedRevision } = useMcpProjectSync({
+  const { notePushedRevision, getPushExpectedRevision } = useMcpProjectSync({
     projectId,
     enabled: mcpWorkspaceAvailable,
     runExclusive: runEditorMutation,
@@ -662,9 +662,13 @@ export const LoadedEditor = memo(function LoadedEditor({
   }, [project.name])
 
   const handleSendToMcp = useCallback(async () => {
-    const revision = await sendProjectToMcpWorkspace(projectId, handleSave)
+    const revision = await sendProjectToMcpWorkspace(
+      projectId,
+      handleSave,
+      getPushExpectedRevision(),
+    )
     notePushedRevision(revision)
-  }, [handleSave, notePushedRevision, projectId])
+  }, [getPushExpectedRevision, handleSave, notePushedRevision, projectId])
 
   // Enable keyboard shortcuts
   useEditorHotkeys({

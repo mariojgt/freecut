@@ -261,6 +261,11 @@
     },
     "orphanedClips": {
       "autoMatch": "Auto Match",
+      "clipMediaDeleted": {
+        "audio": "The source audio is missing from this workspace.",
+        "image": "The source image is missing from this workspace.",
+        "video": "The source video is missing from this workspace."
+      },
       "description": "{{count}} clip(s) reference media that can no longer be found. Replace them or remove them to continue.",
       "keepAsBroken": "Keep As Broken",
       "removeAll": "Remove All",

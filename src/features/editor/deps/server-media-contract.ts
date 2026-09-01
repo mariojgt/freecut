@@ -1,3 +1,3 @@
-/** Server-backed media registration used by the normal editor follower. */
+/** Server-backed media bridge used by the normal editor follower. */
 
-export { registerExternalMediaUrl } from '@/features/media-library/utils/media-resolver'
+export const importServerMediaBridge = () => import('@/features/media-library/mcp-workspace-bridge')

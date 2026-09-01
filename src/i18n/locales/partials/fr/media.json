@@ -248,6 +248,11 @@
     },
     "orphanedClips": {
       "autoMatch": "Correspondance automatique",
+      "clipMediaDeleted": {
+        "audio": "Le fichier audio source est absent de cet espace de travail.",
+        "image": "L’image source est absente de cet espace de travail.",
+        "video": "La vidéo source est absente de cet espace de travail."
+      },
       "description": "{{count}} clip(s) référencent des médias introuvables. Remplacez-les ou supprimez-les pour continuer.",
       "keepAsBroken": "Conserver comme cassés",
       "removeAll": "Tout supprimer",

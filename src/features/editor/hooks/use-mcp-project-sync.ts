@@ -6,20 +6,26 @@ import {
   HeadlessApiError,
   listHeadlessMedia,
   listHeadlessProjects,
+  type HeadlessMediaResource,
   type HeadlessProjectResource,
 } from '@/shared/deployment/headless-api'
 import { createLogger } from '@/shared/logging/logger'
 import { migrateProject } from '@/shared/projects/migrations'
 import { usePlaybackStore } from '@/shared/state/playback'
 import type { Project } from '@/types/project'
+import type { MediaMetadata } from '@/types/storage'
 import { useProjectStore } from '../deps/projects'
-import { registerExternalMediaUrl } from '../deps/server-media-contract'
+import { importServerMediaBridge } from '../deps/server-media-contract'
 import { updateProject } from '../deps/storage-contract'
-import { hydrateTimelineStoresFromProject } from '../deps/timeline-persistence-contract'
+import {
+  hydrateTimelineStoresFromProject,
+  refreshLoadedProjectMediaValidation,
+} from '../deps/timeline-persistence-contract'
 import { useItemsStore, useTimelineSettingsStore } from '../deps/timeline-store'
 
 const POLL_INTERVAL_MS = 1500
 const LOCAL_DIVERGENCE_KEY_PREFIX = 'freecut:mcp-local-diverged:'
+const APPLIED_REVISION_KEY_PREFIX = 'freecut:mcp-applied-revision:'
 const logger = createLogger('McpProjectSync')
 
 type EditorMutationRunner = <T>(operation: () => Promise<T>) => Promise<T>
@@ -32,10 +38,34 @@ interface UseMcpProjectSyncOptions {
 
 interface McpProjectSyncControl {
   notePushedRevision: (revision: string | null) => void
+  getPushExpectedRevision: () => string | null
 }
+
+type ServerMediaBridge = Awaited<ReturnType<typeof importServerMediaBridge>>
 
 function localDivergenceKey(projectId: string): string {
   return `${LOCAL_DIVERGENCE_KEY_PREFIX}${projectId}`
+}
+
+function appliedRevisionKey(projectId: string): string {
+  return `${APPLIED_REVISION_KEY_PREFIX}${projectId}`
+}
+
+function readPersistedAppliedRevision(projectId: string): string | null {
+  try {
+    const revision = window.localStorage.getItem(appliedRevisionKey(projectId))
+    return revision && revision.length > 0 ? revision : null
+  } catch {
+    return null
+  }
+}
+
+function persistAppliedRevision(projectId: string, revision: string): void {
+  try {
+    window.localStorage.setItem(appliedRevisionKey(projectId), revision)
+  } catch {
+    // The in-memory base still protects this editor session.
+  }
 }
 
 function readPersistedDivergence(projectId: string): boolean {
@@ -59,17 +89,79 @@ function persistDivergence(projectId: string, diverged: boolean): void {
   }
 }
 
-async function registerServerMedia(project: Project, signal: AbortSignal): Promise<void> {
-  const available = new Set(
-    (await listHeadlessMedia(signal))
-      .filter((resource) => resource.sourceAvailable)
-      .map((resource) => resource.id),
-  )
-  for (const mediaId of collectHeadlessProjectMediaIds(project)) {
-    if (available.has(mediaId)) {
-      registerExternalMediaUrl(mediaId, headlessMediaSourceUrl(mediaId))
-    }
+async function materializeReferencedMedia(
+  mediaId: string,
+  projectId: string,
+  resource: HeadlessMediaResource | undefined,
+  signal: AbortSignal,
+  bridge: ServerMediaBridge,
+): Promise<MediaMetadata | null> {
+  if (resource?.sourceAvailable && resource.metadata) {
+    return bridge.mediaLibraryService.materializeMediaFromUrl(
+      headlessMediaSourceUrl(mediaId),
+      projectId,
+      resource.metadata,
+      { signal },
+    )
   }
+
+  // Browser-origin media sent with the original project may intentionally
+  // have no server copy. It is safe only when this selected workspace still
+  // has a usable local source for the same immutable id.
+  const local = await bridge.mediaLibraryService.getMedia(mediaId)
+  const localSource = local ? await bridge.mediaLibraryService.getMediaFile(local) : null
+  if (local && localSource) return null
+  throw new HeadlessApiError(
+    `MCP project references media ${mediaId}, but neither workspace has its source.`,
+    422,
+    'MISSING_MEDIA',
+  )
+}
+
+async function syncMaterializedMediaStore(
+  projectId: string,
+  materialized: MediaMetadata[],
+  bridge: ServerMediaBridge,
+): Promise<void> {
+  const mediaStore = bridge.useMediaLibraryStore.getState()
+  if (mediaStore.currentProjectId !== projectId) return
+
+  // Finish any editor-start load before upserting the just-materialized
+  // records, so an older in-flight read cannot replace them afterwards.
+  await mediaStore.loadMediaItems()
+  for (const media of materialized) {
+    bridge.useMediaLibraryStore.getState().prependMediaItem(media)
+  }
+}
+
+async function materializeServerMedia(
+  projectId: string,
+  project: Project,
+  signal: AbortSignal,
+): Promise<void> {
+  const mediaIds = collectHeadlessProjectMediaIds(project)
+  if (mediaIds.length === 0) return
+
+  const resources = await listHeadlessMedia(signal)
+  const resourcesById = new Map(resources.map((resource) => [resource.id, resource]))
+  const bridge = await importServerMediaBridge()
+  const materialized: MediaMetadata[] = []
+
+  // Deliberately sequential: source files may be large, and accepting the
+  // project waits for every required byte. This bounds browser memory while
+  // still making the operation abortable between and during downloads.
+  for (const mediaId of mediaIds) {
+    signal.throwIfAborted()
+    const media = await materializeReferencedMedia(
+      mediaId,
+      projectId,
+      resourcesById.get(mediaId),
+      signal,
+      bridge,
+    )
+    if (media) materialized.push(media)
+  }
+  await syncMaterializedMediaStore(projectId, materialized, bridge)
 }
 
 async function persistAndHydrateRemoteProject(
@@ -80,7 +172,7 @@ async function persistAndHydrateRemoteProject(
   onHydrated: () => void,
 ): Promise<boolean> {
   const { project } = migrateProject(rawProject)
-  await registerServerMedia(project, signal)
+  await materializeServerMedia(projectId, project, signal)
 
   let savedFrame = usePlaybackStore.getState().currentFrame
   const hydrated = await hydrateTimelineStoresFromProject(project, {
@@ -104,6 +196,7 @@ async function persistAndHydrateRemoteProject(
     id: projectId,
   })
   useProjectStore.getState().setCurrentProject(persisted)
+  await refreshLoadedProjectMediaValidation(projectId)
   return true
 }
 
@@ -125,20 +218,26 @@ export function useMcpProjectSync({
   runExclusive,
 }: UseMcpProjectSyncOptions): McpProjectSyncControl {
   const observedRevisionRef = useRef<string | null>(null)
+  const appliedRevisionRef = useRef<string | null>(null)
   const localDivergedRef = useRef(false)
 
   const notePushedRevision = useCallback(
     (revision: string | null) => {
       if (!revision) return
       observedRevisionRef.current = revision
+      appliedRevisionRef.current = revision
+      persistAppliedRevision(projectId, revision)
       localDivergedRef.current = false
       persistDivergence(projectId, false)
     },
     [projectId],
   )
 
+  const getPushExpectedRevision = useCallback(() => appliedRevisionRef.current, [])
+
   useEffect(() => {
     observedRevisionRef.current = null
+    appliedRevisionRef.current = readPersistedAppliedRevision(projectId)
     localDivergedRef.current =
       useTimelineSettingsStore.getState().isDirty || readPersistedDivergence(projectId)
     if (!enabled) return
@@ -172,7 +271,11 @@ export function useMcpProjectSync({
           },
         )
       })
-      if (applied) observedRevisionRef.current = resource.revision
+      if (applied) {
+        observedRevisionRef.current = resource.revision
+        appliedRevisionRef.current = resource.revision
+        persistAppliedRevision(projectId, resource.revision)
+      }
     }
 
     const load = async () => {
@@ -224,5 +327,5 @@ export function useMcpProjectSync({
     }
   }, [enabled, projectId, runExclusive])
 
-  return { notePushedRevision }
+  return { notePushedRevision, getPushExpectedRevision }
 }
