@@ -358,10 +358,13 @@ browser app on `127.0.0.1:8080`. Optional settings can be added with
 
 ```env
 FREECUT_WEB_PORT=8080
+FREECUT_WEB_BIND=127.0.0.1
 FREECUT_API_PORT=8787
 FREECUT_WORKSPACE=/srv/freecut/workspace
 FREECUT_MCP_OUTPUT=/srv/freecut/output
 FREECUT_API_TOKEN=replace-with-a-long-random-token
+FREECUT_MCP_BIND=127.0.0.1
+FREECUT_MCP_TOKEN=replace-with-a-long-random-token
 ```
 
 Check immediately or inspect recent update logs with:

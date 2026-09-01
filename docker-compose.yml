@@ -13,7 +13,7 @@ services:
       FREECUT_MCP_PORT: ${FREECUT_MCP_PORT:-8788}
       FREECUT_MCP_BIND: ${FREECUT_MCP_BIND:-127.0.0.1}
     ports:
-      - "127.0.0.1:${FREECUT_WEB_PORT:-8080}:8080"
+      - "${FREECUT_WEB_BIND:-127.0.0.1}:${FREECUT_WEB_PORT:-8080}:8080"
     restart: unless-stopped
 
   # HTTPS front door for opening FreeCut from another machine. Held behind the
