@@ -30,7 +30,8 @@
         "copyRemoteDockerCommand": "Copy supervised host command",
         "copyDockerCommand": "Copy Docker command",
         "copyRemoteTokenConfig": "Copy remote config with token",
-        "remoteTokenHint": "The endpoint is open to anyone who can reach the port. To require a token, set FREECUT_MCP_TOKEN on the host and use this config instead."
+        "remoteTokenHint": "The endpoint is open to anyone who can reach the port. To require a token, set FREECUT_MCP_TOKEN on the host and use this config instead.",
+        "loopbackWarning": "This deployment publishes the MCP port on loopback only, so the address above answers on the Docker host and nowhere else. Set FREECUT_MCP_BIND=0.0.0.0 in .env and restart to reach it from this machine."
       },
       "provider": {
         "label": "Model",

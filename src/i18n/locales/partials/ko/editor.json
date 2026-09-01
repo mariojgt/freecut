@@ -30,7 +30,8 @@
         "copyRemoteDockerCommand": "상시 실행 호스트 명령 복사",
         "copyDockerCommand": "Docker 명령 복사",
         "copyRemoteTokenConfig": "토큰 포함 원격 설정 복사",
-        "remoteTokenHint": "이 엔드포인트는 포트에 접근할 수 있는 누구에게나 열려 있습니다. 토큰을 요구하려면 호스트에 FREECUT_MCP_TOKEN을 설정하고 이 설정을 사용하세요."
+        "remoteTokenHint": "이 엔드포인트는 포트에 접근할 수 있는 누구에게나 열려 있습니다. 토큰을 요구하려면 호스트에 FREECUT_MCP_TOKEN을 설정하고 이 설정을 사용하세요.",
+        "loopbackWarning": "이 배포는 MCP 포트를 루프백에만 게시하므로 위 주소는 Docker 호스트에서만 응답합니다. 이 컴퓨터에서 연결하려면 .env에 FREECUT_MCP_BIND=0.0.0.0을 설정하고 다시 시작하세요."
       },
       "provider": {
         "label": "모델",

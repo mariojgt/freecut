@@ -30,7 +30,8 @@
         "copyRemoteDockerCommand": "复制常驻主机命令",
         "copyDockerCommand": "复制 Docker 命令",
         "copyRemoteTokenConfig": "复制带令牌的远程配置",
-        "remoteTokenHint": "该端点对任何能访问该端口的人开放。若要求令牌，请在主机上设置 FREECUT_MCP_TOKEN 并改用此配置。"
+        "remoteTokenHint": "该端点对任何能访问该端口的人开放。若要求令牌，请在主机上设置 FREECUT_MCP_TOKEN 并改用此配置。",
+        "loopbackWarning": "此部署仅在回环地址上发布 MCP 端口，因此上面的地址只在 Docker 主机上响应。请在 .env 中设置 FREECUT_MCP_BIND=0.0.0.0 并重启，以便从这台计算机访问。"
       },
       "provider": {
         "label": "模型",

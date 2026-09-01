@@ -30,7 +30,8 @@
         "copyRemoteDockerCommand": "常駐ホストのコマンドをコピー",
         "copyDockerCommand": "Docker コマンドをコピー",
         "copyRemoteTokenConfig": "トークン付きリモート設定をコピー",
-        "remoteTokenHint": "このエンドポイントはポートに到達できる誰にでも開かれています。トークンを必須にするにはホストで FREECUT_MCP_TOKEN を設定し、こちらの設定を使ってください。"
+        "remoteTokenHint": "このエンドポイントはポートに到達できる誰にでも開かれています。トークンを必須にするにはホストで FREECUT_MCP_TOKEN を設定し、こちらの設定を使ってください。",
+        "loopbackWarning": "このデプロイでは MCP ポートがループバックにのみ公開されているため、上記のアドレスは Docker ホスト上でのみ応答します。このマシンから接続するには、.env に FREECUT_MCP_BIND=0.0.0.0 を設定して再起動してください。"
       },
       "provider": {
         "label": "モデル",

@@ -23,7 +23,12 @@ test('reports a writable managed Docker deployment without exposing its host pat
     FREECUT_UPDATE_REQUEST_FILE: fixture.requestFile,
   })
 
-  assert.deepEqual(info, { runtime: 'docker', releaseTag: 'v1.2.3', updateEnabled: true })
+  assert.deepEqual(info, {
+    runtime: 'docker',
+    releaseTag: 'v1.2.3',
+    updateEnabled: true,
+    mcp: { port: 8788, reachableFromNetwork: false },
+  })
   assert.equal('requestFile' in info, false)
 })
 
@@ -65,4 +70,28 @@ test('writes an atomic host update request', async (t) => {
 test('rejects a relative update request path', async () => {
   assert.equal(getUpdateRequestFile({ FREECUT_UPDATE_REQUEST_FILE: 'run/update-request' }), null)
   await assert.rejects(createUpdateRequest('run/update-request'), /must be absolute/)
+})
+
+test('describes the MCP endpoint the editor should hand to a client', async () => {
+  const configured = await getDeploymentInfo({
+    FREECUT_RUNTIME: 'docker',
+    FREECUT_MCP_PORT: '9000',
+    FREECUT_MCP_BIND: '0.0.0.0',
+  })
+  assert.deepEqual(configured.mcp, { port: 9000, reachableFromNetwork: true })
+
+  // An unset or unusable port still describes the stack rather than reporting
+  // NaN, because the compose default is what the container actually published.
+  for (const port of [undefined, '', 'not-a-port', '0', '70000']) {
+    assert.equal((await getDeploymentInfo({ FREECUT_MCP_PORT: port })).mcp.port, 8788)
+  }
+
+  // Loopback is the compose default, so an operator who never set the bind is
+  // told the endpoint is unreachable from another machine.
+  for (const bind of [undefined, '', '127.0.0.1', 'localhost']) {
+    assert.equal(
+      (await getDeploymentInfo({ FREECUT_MCP_BIND: bind })).mcp.reachableFromNetwork,
+      false,
+    )
+  }
 })

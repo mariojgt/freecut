@@ -30,7 +30,8 @@
         "copyRemoteDockerCommand": "Gözetimli sunucu komutunu kopyala",
         "copyDockerCommand": "Docker komutunu kopyala",
         "copyRemoteTokenConfig": "Token'lı uzak yapılandırmayı kopyala",
-        "remoteTokenHint": "Uç nokta, porta erişebilen herkese açıktır. Token zorunlu kılmak için sunucuda FREECUT_MCP_TOKEN ayarla ve bunun yerine bu yapılandırmayı kullan."
+        "remoteTokenHint": "Uç nokta, porta erişebilen herkese açıktır. Token zorunlu kılmak için sunucuda FREECUT_MCP_TOKEN ayarla ve bunun yerine bu yapılandırmayı kullan.",
+        "loopbackWarning": "Bu dağıtım MCP bağlantı noktasını yalnızca geri döngüde yayımlar; bu nedenle yukarıdaki adres yalnızca Docker ana makinesinde yanıt verir. Bu makineden erişmek için .env dosyasında FREECUT_MCP_BIND=0.0.0.0 ayarlayıp yeniden başlatın."
       },
       "provider": {
         "label": "Model",

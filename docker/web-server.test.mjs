@@ -64,6 +64,7 @@ test('exposes managed Docker deployment information without the request path', a
     runtime: 'docker',
     releaseTag: 'v1.2.3',
     updateEnabled: true,
+    mcp: { port: 8788, reachableFromNetwork: false },
   })
   assert.equal(response.headers.get('cache-control'), 'no-store')
 })

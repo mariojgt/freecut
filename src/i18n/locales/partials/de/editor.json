@@ -30,7 +30,8 @@
         "copyRemoteDockerCommand": "Überwachten Host-Befehl kopieren",
         "copyDockerCommand": "Docker-Befehl kopieren",
         "copyRemoteTokenConfig": "Remote-Konfiguration mit Token kopieren",
-        "remoteTokenHint": "Der Endpunkt ist für jeden offen, der den Port erreicht. Für ein Token setze FREECUT_MCP_TOKEN auf dem Host und nutze stattdessen diese Konfiguration."
+        "remoteTokenHint": "Der Endpunkt ist für jeden offen, der den Port erreicht. Für ein Token setze FREECUT_MCP_TOKEN auf dem Host und nutze stattdessen diese Konfiguration.",
+        "loopbackWarning": "Diese Installation veröffentlicht den MCP-Port nur auf Loopback, daher antwortet die Adresse oben nur auf dem Docker-Host. Setzen Sie FREECUT_MCP_BIND=0.0.0.0 in .env und starten Sie neu, um sie von diesem Rechner aus zu erreichen."
       },
       "provider": {
         "label": "Modell",

@@ -1,14 +1,25 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+import { DEFAULT_MCP_PORT } from '@/shared/deployment/mcp-endpoint'
 import {
+  buildMcpClientConfig,
+  isLoopbackHost,
   MCP_DIRECT_CLIENT_CONFIG,
-  MCP_DOCKER_CLIENT_CONFIG,
   MCP_DOCKER_REMOTE_START_COMMAND,
   MCP_DOCKER_START_COMMAND,
-  MCP_REMOTE_CLIENT_CONFIG,
-  MCP_REMOTE_CLIENT_CONFIG_WITH_TOKEN,
   MCP_REMOTE_START_COMMAND,
+  resolveMcpHost,
 } from './mcp-setup-config'
+
+// jsdom serves the panel from localhost, which is what the browser would
+// report for a stack reached at that address.
+const PAGE_HOST = 'localhost'
+const CLIENT_CONFIG = buildMcpClientConfig({ host: PAGE_HOST, port: DEFAULT_MCP_PORT })
+const CLIENT_CONFIG_WITH_TOKEN = buildMcpClientConfig({
+  host: PAGE_HOST,
+  port: DEFAULT_MCP_PORT,
+  withToken: true,
+})
 import { McpSetupPanel } from './mcp-setup-panel'
 
 vi.mock('react-i18next', () => ({
@@ -23,6 +34,7 @@ vi.mock('react-i18next', () => ({
         'editor.agent.mcp.copyDockerCommand': 'Copy Docker command',
         'editor.agent.mcp.copyDockerConfig': 'Copy Docker config',
         'editor.agent.mcp.copied': 'MCP config copied',
+        'editor.agent.mcp.loopbackWarning': 'Bound to loopback only.',
       })[key] ?? key,
   }),
 }))
@@ -47,12 +59,12 @@ const ARTIFACTS = [
   {
     testId: 'mcp-remote-config',
     button: 'mcp-copy-remote-config-button',
-    value: MCP_REMOTE_CLIENT_CONFIG,
+    value: CLIENT_CONFIG,
   },
   {
     testId: 'mcp-remote-token-config',
     button: 'mcp-copy-remote-token-config-button',
-    value: MCP_REMOTE_CLIENT_CONFIG_WITH_TOKEN,
+    value: CLIENT_CONFIG_WITH_TOKEN,
   },
   {
     testId: 'mcp-docker-command',
@@ -62,7 +74,7 @@ const ARTIFACTS = [
   {
     testId: 'mcp-docker-config',
     button: 'mcp-copy-docker-config-button',
-    value: MCP_DOCKER_CLIENT_CONFIG,
+    value: CLIENT_CONFIG,
   },
 ]
 
@@ -72,6 +84,12 @@ describe('McpSetupPanel', () => {
   beforeEach(() => {
     writeText.mockReset()
     writeText.mockResolvedValue()
+    // A stubbed location or fetch would otherwise leak into the next test and
+    // silently decide its result.
+    vi.unstubAllGlobals()
+    // The panel asks the server to describe its MCP endpoint on mount. Outside
+    // Docker there is nothing to answer, which is the default here.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('no deployment endpoint')))
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
@@ -121,7 +139,7 @@ describe('McpSetupPanel', () => {
   it('offers a remote configuration with no local path and no required auth', () => {
     // The point of the HTTP transport is hosting FreeCut elsewhere; a
     // filesystem path would mean the client still had to be on that machine.
-    const remote = JSON.parse(MCP_REMOTE_CLIENT_CONFIG).mcpServers.freecut
+    const remote = JSON.parse(CLIENT_CONFIG).mcpServers.freecut
     expect(remote.url).toMatch(/^https?:\/\//)
     expect(remote.command).toBeUndefined()
     expect(remote.args).toBeUndefined()
@@ -140,8 +158,8 @@ describe('McpSetupPanel', () => {
   })
 
   it('still offers a token-bearing variant for hosts that opt in', () => {
-    const secured = JSON.parse(MCP_REMOTE_CLIENT_CONFIG_WITH_TOKEN).mcpServers.freecut
-    expect(secured.url).toBe(JSON.parse(MCP_REMOTE_CLIENT_CONFIG).mcpServers.freecut.url)
+    const secured = JSON.parse(CLIENT_CONFIG_WITH_TOKEN).mcpServers.freecut
+    expect(secured.url).toBe(JSON.parse(CLIENT_CONFIG).mcpServers.freecut.url)
     expect(secured.headers.Authorization).toMatch(/^Bearer /)
   })
 
@@ -157,5 +175,78 @@ describe('McpSetupPanel', () => {
 
     fireEvent.click(screen.getByTestId('mcp-copy-config-button'))
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+  })
+  it('addresses the page host instead of a placeholder to be edited by hand', () => {
+    // The host is the one field a user cannot fill in from what is on screen,
+    // and a wrong guess fails at connect time rather than at paste time.
+    render(<McpSetupPanel />)
+    const url = JSON.parse(screen.getByTestId('mcp-remote-config').textContent ?? '{}').mcpServers
+      .freecut.url
+    expect(url).toBe(`http://${PAGE_HOST}:${DEFAULT_MCP_PORT}/mcp`)
+    expect(url).not.toContain('your-host')
+  })
+
+  it('publishes the port the deployment actually reports, not the default', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ mcp: { port: 9100, reachableFromNetwork: false } }),
+      }),
+    )
+    render(<McpSetupPanel />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('mcp-docker-config').textContent).toContain(':9100/mcp'),
+    )
+  })
+
+  it('warns when the reported endpoint cannot answer the machine reading the page', async () => {
+    vi.stubGlobal('location', { ...window.location, hostname: '192.168.1.50' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ mcp: { port: 8788, reachableFromNetwork: false } }),
+      }),
+    )
+    render(<McpSetupPanel />)
+
+    // The copied address is right and still unreachable: loopback serves the
+    // Docker host alone, and this page was opened from somewhere else.
+    await waitFor(() => expect(screen.getByTestId('mcp-loopback-warning')).toBeTruthy())
+    expect(screen.getByTestId('mcp-remote-config').textContent).toContain('192.168.1.50')
+  })
+
+  it('stays quiet when the page is the Docker host, where loopback works', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ mcp: { port: 8788, reachableFromNetwork: false } }),
+      }),
+    )
+    render(<McpSetupPanel />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('mcp-remote-config').textContent).toContain(PAGE_HOST),
+    )
+    expect(screen.queryByTestId('mcp-loopback-warning')).toBeNull()
+  })
+
+  it('treats every spelling of the local machine as loopback', () => {
+    for (const host of ['localhost', '127.0.0.1', '[::1]', 'LOCALHOST']) {
+      expect(isLoopbackHost(host)).toBe(true)
+    }
+    expect(isLoopbackHost('192.168.1.50')).toBe(false)
+    expect(isLoopbackHost('freecut.example.com')).toBe(false)
+  })
+
+  it('falls back to a placeholder only when the page has no host to offer', () => {
+    expect(resolveMcpHost('192.168.1.50')).toBe('192.168.1.50')
+    expect(resolveMcpHost('  ')).toBe('your-host')
   })
 })

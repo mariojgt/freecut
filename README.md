@@ -233,12 +233,19 @@ in the workspace.
 
 ## Docker
 
-Run the production browser app in a container:
+Bring up the stack:
 
 ```bash
-docker compose up --build web
+docker compose up --build -d
 # open http://localhost:8080
+docker compose ps
 ```
+
+One `up` starts the editor, the render API, and the MCP endpoint together, each
+with `restart: unless-stopped`, so they return after a crash or a reboot with
+nothing to run again. Naming a single service — `docker compose up web` —
+starts only that service, which is the usual reason the MCP endpoint is not
+running; `docker compose ps` shows what actually came up.
 
 The UI is still local-first: the workspace belongs to the browser using the
 app, not to the static web container. Chrome/Edge can select a host folder;
@@ -257,7 +264,7 @@ Start the headless editing/render API against a selected host folder:
 ```bash
 FREECUT_WORKSPACE=/absolute/path/to/workspace \
 FREECUT_API_TOKEN=change-me \
-docker compose --profile automation up --build -d headless
+docker compose up --build -d headless
 curl http://localhost:8787/health
 ```
 

@@ -30,7 +30,8 @@
         "copyRemoteDockerCommand": "Copier la commande d'hôte supervisée",
         "copyDockerCommand": "Copier la commande Docker",
         "copyRemoteTokenConfig": "Copier la configuration distante avec jeton",
-        "remoteTokenHint": "Le point de terminaison est ouvert à quiconque atteint le port. Pour exiger un jeton, définissez FREECUT_MCP_TOKEN sur l'hôte et utilisez plutôt cette configuration."
+        "remoteTokenHint": "Le point de terminaison est ouvert à quiconque atteint le port. Pour exiger un jeton, définissez FREECUT_MCP_TOKEN sur l'hôte et utilisez plutôt cette configuration.",
+        "loopbackWarning": "Ce déploiement publie le port MCP uniquement sur la boucle locale, donc l'adresse ci-dessus ne répond que sur l'hôte Docker. Définissez FREECUT_MCP_BIND=0.0.0.0 dans .env puis redémarrez pour y accéder depuis cette machine."
       },
       "provider": {
         "label": "Modèle",
