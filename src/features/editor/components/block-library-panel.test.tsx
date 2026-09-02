@@ -78,6 +78,7 @@ describe('BlockLibraryPanel', () => {
   it('lists the committed library', () => {
     render(<BlockLibraryPanel />)
     expect(screen.getByText('Astronaut')).toBeTruthy()
+    expect(screen.getByText('Stick figure')).toBeTruthy()
   })
 
   it('offers import even when the project owns no blocks', () => {

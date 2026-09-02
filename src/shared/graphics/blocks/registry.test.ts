@@ -42,7 +42,10 @@ describe('block registry', () => {
   })
 
   it('filters the catalog by category', () => {
-    expect(listBlocks('character').map((block) => block.id)).toEqual(['character-astronaut'])
+    expect(listBlocks('character').map((block) => block.id)).toEqual([
+      'character-astronaut',
+      'character-stick-figure',
+    ])
     expect(listBlocks()).toHaveLength(allBlocks.length)
   })
 

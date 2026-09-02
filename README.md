@@ -119,6 +119,7 @@ All visual effects and compositing paths are WebGPU-first, with fallbacks where 
 ### Keyframe Animation
 
 - Bezier graph editor, dopesheet, split view, and multi-curve overlays
+- Rigged illustration blocks with editable vector parts, including a monochrome stick figure with reviewed walk, wave, jump, celebration, and acting poses
 - Easing presets (linear, ease-in/out, cubic-bezier, spring) with a live-preview editor and saved custom presets
 - Procedural motion modifiers (drift, sway, breath, spin, shake) evaluated at render time, with one-click bake to keyframes
 - Motion text: per-character, per-word, and per-line text animation
@@ -138,6 +139,7 @@ Runs on your machine — nothing is uploaded unless you deliberately configure a
 non-local model endpoint.
 
 - Plain-language editing assistant with review-before-apply timeline plans, validated bulk fades/transitions, styled titles, transforms, and exact timed cuts
+- FreeCut-native animation directing skill with approval-gated storyboards, narration-cued beats, camera direction, dry runs, scene checks, and contact-sheet review through MCP
 - Selectable Qwen 3.5 and Gemma 4 assistants running in a WebGPU worker, cached after their first download
 - OpenAI-compatible local model support for Ollama, LM Studio, and LocalAI
 - On-device transcription with the Parakeet engine (Whisper fallback) and generated caption text items

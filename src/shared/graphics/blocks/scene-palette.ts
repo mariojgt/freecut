@@ -76,9 +76,43 @@ export const DEFAULT_SCENE_PALETTE: ScenePalette = createScenePalette({ hue: BRA
 /** Cold, high-contrast ground for space and night exteriors. */
 export const DEEP_SPACE_PALETTE: ScenePalette = createScenePalette({ hue: 265, chroma: 0.14 })
 
+/**
+ * Monochrome line-art systems for stick-figure explainers.
+ *
+ * Only primary, secondary and accent are saturated. Keeping every structural
+ * role neutral lets a whole cast change polarity without colour drift.
+ */
+export const STICKMAN_LIGHT_PALETTE: ScenePalette = {
+  ink: '#111111',
+  inkMuted: '#555555',
+  surface: '#ffffff',
+  surfaceDeep: '#f4f4f4',
+  primary: '#ff3b30',
+  secondary: '#007aff',
+  accent: '#ffcc00',
+  highlight: '#ffffff',
+  glow: '#ffffff',
+  shadow: 'rgb(0 0 0 / 0.22)',
+}
+
+export const STICKMAN_DARK_PALETTE: ScenePalette = {
+  ink: '#f7f7f7',
+  inkMuted: '#aaaaaa',
+  surface: '#000000',
+  surfaceDeep: '#0a0a0a',
+  primary: '#ff453a',
+  secondary: '#0a84ff',
+  accent: '#ffd60a',
+  highlight: '#ffffff',
+  glow: '#ffffff',
+  shadow: 'rgb(0 0 0 / 0.55)',
+}
+
 export const SCENE_PALETTES: Record<string, ScenePalette> = {
   brand: DEFAULT_SCENE_PALETTE,
   'deep-space': DEEP_SPACE_PALETTE,
+  'stickman-light': STICKMAN_LIGHT_PALETTE,
+  'stickman-dark': STICKMAN_DARK_PALETTE,
 }
 
 /**

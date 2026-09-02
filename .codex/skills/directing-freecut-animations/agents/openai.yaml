@@ -1,0 +1,4 @@
+interface:
+  display_name: 'FreeCut Animation Director'
+  short_description: 'Direct editable, story-led FreeCut animations'
+  default_prompt: 'Use $directing-freecut-animations to turn my idea into an editable FreeCut animation.'

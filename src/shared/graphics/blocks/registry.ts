@@ -7,6 +7,11 @@ import {
   WALK_GESTURE,
   WAVE_GESTURE,
 } from './character-astronaut'
+import {
+  STICK_FIGURE_BLOCK,
+  STICK_FIGURE_GESTURES,
+  STICK_FIGURE_POSES,
+} from './character-stick-figure'
 import { MOON_SURFACE_BLOCK, PARALLAX_PAN_GESTURE, STAR_DRIFT_GESTURE } from './world-moon'
 import { UI_BLOCKS, UI_GESTURES, UI_POSES } from './explainer-ui'
 import { BACKEND_BLOCKS, BACKEND_GESTURES, BACKEND_POSES } from './explainer-backend'
@@ -21,6 +26,7 @@ import { BACKEND_BLOCKS, BACKEND_GESTURES, BACKEND_POSES } from './explainer-bac
 
 const BLOCK_LIST: BlockDefinition[] = [
   ASTRONAUT_BLOCK,
+  STICK_FIGURE_BLOCK,
   MOON_SURFACE_BLOCK,
   ...UI_BLOCKS,
   ...BACKEND_BLOCKS,
@@ -30,12 +36,18 @@ const GESTURE_LIST: GestureDefinition[] = [
   IDLE_BREATH_GESTURE,
   WAVE_GESTURE,
   LAND_SQUASH_GESTURE,
+  ...STICK_FIGURE_GESTURES,
   PARALLAX_PAN_GESTURE,
   STAR_DRIFT_GESTURE,
   ...UI_GESTURES,
   ...BACKEND_GESTURES,
 ]
-const POSE_LIST: PoseDefinition[] = [...ASTRONAUT_POSES, ...UI_POSES, ...BACKEND_POSES]
+const POSE_LIST: PoseDefinition[] = [
+  ...ASTRONAUT_POSES,
+  ...STICK_FIGURE_POSES,
+  ...UI_POSES,
+  ...BACKEND_POSES,
+]
 
 export const BLOCKS: ReadonlyMap<string, BlockDefinition> = new Map(
   BLOCK_LIST.map((block) => [block.id, block]),

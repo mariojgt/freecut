@@ -7,6 +7,8 @@ import {
   DEEP_SPACE_PALETTE,
   DEFAULT_SCENE_PALETTE,
   SCENE_PALETTES,
+  STICKMAN_DARK_PALETTE,
+  STICKMAN_LIGHT_PALETTE,
   createScenePalette,
   resolvePaletteRole,
 } from './scene-palette'
@@ -96,6 +98,13 @@ describe('registered palettes', () => {
   it('exposes the brand and deep-space grounds', () => {
     expect(SCENE_PALETTES.brand).toBe(DEFAULT_SCENE_PALETTE)
     expect(SCENE_PALETTES['deep-space']).toBe(DEEP_SPACE_PALETTE)
+  })
+
+  it('exposes matched light and dark stick-figure systems', () => {
+    expect(SCENE_PALETTES['stickman-light']).toBe(STICKMAN_LIGHT_PALETTE)
+    expect(SCENE_PALETTES['stickman-dark']).toBe(STICKMAN_DARK_PALETTE)
+    expect(STICKMAN_LIGHT_PALETTE).toMatchObject({ ink: '#111111', surface: '#ffffff' })
+    expect(STICKMAN_DARK_PALETTE).toMatchObject({ ink: '#f7f7f7', surface: '#000000' })
   })
 
   it('keeps deep space cold against the warm brand', () => {

@@ -34,6 +34,7 @@ const hasExactlyOneProjectSource = (value) =>
 // src/shared/graphics/blocks/catalog-contract.test.ts.
 const BLOCK_IDS = [
   'character-astronaut',
+  'character-stick-figure',
   'world-moon-surface',
   'ui-browser-window',
   'ui-login-form',
@@ -49,6 +50,11 @@ const GESTURE_IDS = [
   'idle-breath',
   'wave',
   'land-squash',
+  'stick-idle',
+  'stick-walk',
+  'stick-wave',
+  'stick-jump',
+  'stick-celebrate',
   'parallax-pan',
   'star-drift',
   'window-appear',
@@ -204,6 +210,13 @@ const POSE_IDS = [
   'arms-raised',
   'crouch',
   'look-up',
+  'stick-stand',
+  'stick-point-forward',
+  'stick-point-up',
+  'stick-explain',
+  'stick-think',
+  'stick-celebrate',
+  'stick-crouch',
   'form-empty',
   'email-focused',
   'email-entered',
@@ -215,7 +228,7 @@ const POSE_IDS = [
   'verdict-granted',
   'verdict-denied',
 ]
-const SCENE_PALETTE_IDS = ['brand', 'deep-space']
+const SCENE_PALETTE_IDS = ['brand', 'deep-space', 'stickman-light', 'stickman-dark']
 
 const GPU_EFFECT_TYPES = [
   'gpu-ascii',

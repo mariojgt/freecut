@@ -46,6 +46,38 @@ export function circle(cx: number, cy: number, r: number): string {
 }
 
 /**
+ * Thick line segment with round caps.
+ *
+ * Character rigs use this instead of a stroked line so every limb has stable
+ * filled bounds in the path renderer. The endpoints stay meaningful authoring
+ * joints while the perpendicular is derived from their direction.
+ */
+export function roundedSegment(
+  from: readonly [number, number],
+  to: readonly [number, number],
+  width: number,
+): string {
+  const [x1, y1] = from
+  const [x2, y2] = to
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const length = Math.hypot(dx, dy)
+  if (length === 0) return circle(x1, y1, Math.max(0, width) / 2)
+
+  const radius = Math.max(0, width) / 2
+  const nx = (-dy / length) * radius
+  const ny = (dx / length) * radius
+  return [
+    `M ${x1 + nx} ${y1 + ny}`,
+    `L ${x2 + nx} ${y2 + ny}`,
+    `A ${radius} ${radius} 0 0 0 ${x2 - nx} ${y2 - ny}`,
+    `L ${x1 - nx} ${y1 - ny}`,
+    `A ${radius} ${radius} 0 0 0 ${x1 + nx} ${y1 + ny}`,
+    'Z',
+  ].join(' ')
+}
+
+/**
  * Closed polygon through the given points.
  *
  * Arrow heads, cursors and check marks are all straight-edged silhouettes that

@@ -119,7 +119,13 @@ export function createFreeCutMcpServer(options = {}) {
         'the session, is listed by listBlocks, and can be copied elsewhere with copy_block. ' +
         'If there is a voiceover, setNarration with its word timings and cue every beat to the ' +
         'words (fromCue/untilCue, and atCue on applyPose steps) rather than typing frame numbers: ' +
-        'the cut then follows the read and survives a re-record. Narration is call-scoped too.',
+        'the cut then follows the read and survives a re-record. Narration is call-scoped too. ' +
+        'For story-led shorts, secure approval on the director plan before persistent edits. ' +
+        'Build each roughly ten-second scene as three distinct beats, preserve a visible ending ' +
+        'state into the next opening, and change motion or framing every two to three seconds. ' +
+        'Stage 16:9 laterally, 9:16 through depth and vertical reveals, and 1:1 around a compact ' +
+        'centre. character-stick-figure with stickman-light or stickman-dark provides a stable ' +
+        'monochrome actor; pair the palette with a white or black project background.',
     },
   )
 
