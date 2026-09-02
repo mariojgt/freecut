@@ -69,6 +69,7 @@ import type { NarrationCue, NarrationWord } from '@/shared/graphics/scene/narrat
 import type { CameraIntent } from '@/shared/graphics/scene/camera'
 import { SCENE_PALETTES, DEFAULT_SCENE_PALETTE } from '@/shared/graphics/blocks/scene-palette'
 import { importSvgSource } from '@/shared/graphics/shapes/svg-document-import'
+import { instantiateSvgLayers } from '@/shared/graphics/shapes/instantiate-svg'
 import { parseSvgPathToVertices } from '@/shared/graphics/shapes/svg-path-parse'
 import { preparePathMorph, pathVertexComponents } from '@/shared/graphics/shapes/path-morph'
 import { buildPathVertexAnimatableProperty } from '@/types/keyframe'
@@ -1600,16 +1601,8 @@ function applyOp(op: EditOp): unknown {
     case 'importSvg': {
       const source = asString(op.source)
       if (!source) throw new Error('importSvg requires `source`')
-      const imported = importSvgSource(source, { idPrefix: asString(op.idPrefix) ?? newId() })
-      if (imported.paths.length === 0) {
-        throw new Error('importSvg: the document contained no drawable geometry')
-      }
-      const MAX_PATHS = 120
-      if (imported.paths.length > MAX_PATHS) {
-        throw new Error(
-          `importSvg: ${imported.paths.length} paths exceeds the ${MAX_PATHS} path limit; simplify the file first`,
-        )
-      }
+      const idPrefix = asString(op.idPrefix) ?? newId()
+      const imported = importSvgSource(source, { idPrefix })
 
       const from = asNumber(op.from, 0)!
       const durationInFrames = asNumber(op.durationInFrames, 150)!
@@ -1623,81 +1616,28 @@ function applyOp(op: EditOp): unknown {
           : (asNumber(op.scale, 1) ?? 1)
       const offsetX = asNumber(op.x, 0)!
       const offsetY = asNumber(op.y, 0)!
-
-      const baseOrder = nextBlockTrackOrder(imported.paths.length)
-      const groupTrackId = `svg-group-${newId()}`
-      const newTracks: TimelineTrack[] = [
-        {
-          id: groupTrackId,
-          name: asString(op.name) ?? 'Imported SVG',
-          kind: 'video',
-          height: 40,
-          locked: false,
-          visible: true,
-          muted: false,
-          solo: false,
-          order: baseOrder,
-          items: [],
-          isGroup: true,
-          isCollapsed: true,
-        },
-      ]
-      const pendingItems: TimelineItem[] = []
-
-      // Later paths paint on top, so they take the lower (frontmost) order.
-      const frontToBack = [...imported.paths].sort((a, b) => b.z - a.z)
-      frontToBack.forEach((path, index) => {
-        const trackId = `${path.id}-track`
-        newTracks.push({
-          id: trackId,
-          name: path.name,
-          kind: 'video',
-          height: 40,
-          locked: false,
-          visible: true,
-          muted: false,
-          solo: false,
-          order: baseOrder + 1 + index,
-          items: [],
-          parentTrackId: groupTrackId,
-        })
-        pendingItems.push({
-          id: path.id,
-          trackId,
-          type: 'shape',
-          shapeType: 'path',
-          from,
-          durationInFrames,
-          label: path.name,
-          pathVertices: path.vertices,
-          pathClosed: path.closed,
-          fillColor: path.fill ?? '#ffffff',
-          fillEnabled: path.fillEnabled,
-          ...(path.strokeEnabled && {
-            strokeColor: path.stroke,
-            strokeEnabled: true,
-            strokeWidth: path.strokeWidth * fit,
-          }),
-          transform: {
-            x:
-              (path.bounds.minX + path.bounds.width / 2 - (viewBox.minX + viewBox.width / 2)) *
-                fit +
-              offsetX,
-            y:
-              (path.bounds.minY + path.bounds.height / 2 - (viewBox.minY + viewBox.height / 2)) *
-                fit +
-              offsetY,
-            width: path.bounds.width * fit,
-            height: path.bounds.height * fit,
-            opacity: path.opacity,
-            aspectRatioLocked: false,
-          },
-        })
+      const instantiated = instantiateSvgLayers(imported, {
+        name: asString(op.name) ?? 'Imported SVG',
+        idPrefix,
+        from,
+        durationInFrames,
+        baseTrackOrder: nextBlockTrackOrder(imported.paths.length),
+        canvasWidth: editCanvas.width,
+        canvasHeight: editCanvas.height,
+        scale: fit,
+        x: offsetX,
+        y: offsetY,
       })
 
-      appendTracksOnTop(newTracks)
-      for (const item of pendingItems) addItem(item)
-      return { items: pendingItems.length, warnings: imported.warnings, viewBox }
+      appendTracksOnTop(instantiated.tracks)
+      for (const item of instantiated.items) addItem(item)
+      return {
+        items: instantiated.items.length,
+        itemIds: instantiated.items.map((item) => item.id),
+        groupTrackId: instantiated.groupTrackId,
+        warnings: instantiated.warnings,
+        viewBox,
+      }
     }
     case 'morphPath': {
       const itemId = asString(op.itemId)

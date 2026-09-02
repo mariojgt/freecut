@@ -8,7 +8,7 @@
  * full re-render of every keyframe button. All props are referentially stable
  * across scrubs, so `React.memo` skips these subtrees entirely while scrubbing.
  */
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import type { CSSProperties, MutableRefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/shared/ui/cn'
@@ -22,6 +22,7 @@ import type { KeyframeMeta } from './dopesheet-types'
 import { KEYFRAME_DIAMOND_SIDE_PX, KEYFRAME_EDGE_INSET } from './layout'
 import { SegmentEasingPopover, type SegmentEasingChange } from './segment-easing-popover'
 import { buildSegmentSpans } from './segment-spans'
+import { getSortedFrameRenderWindow, type FrameRenderViewport } from './keyframe-render-window'
 
 type FrameGroup = DopesheetPropertyGroupStructure['frameGroups'][number]
 type StructureRow = { property: AnimatableProperty; keyframes: Keyframe[] }
@@ -152,6 +153,7 @@ interface GroupTimelineCellProps {
   frameGroups: FrameGroup[]
   /** Stable structural rows (used for drag-preview frame remapping). */
   rows: StructureRow[]
+  frameViewport: FrameRenderViewport
   ticks: number[]
   axisWidth: number
   frameToX: (frame: number) => number
@@ -175,6 +177,7 @@ export const GroupTimelineCell = memo(function GroupTimelineCell({
   expanded,
   frameGroups,
   rows,
+  frameViewport,
   ticks,
   axisWidth,
   frameToX,
@@ -195,6 +198,14 @@ export const GroupTimelineCell = memo(function GroupTimelineCell({
     sheetPreviewDuplicateKeyframeIds,
   })
   const renderedFrameGroups = sheetPreviewDuplicateKeyframeIds ? frameGroups : displayedFrameGroups
+  const visibleRenderedFrameGroups = useMemo(
+    () => getSortedFrameRenderWindow(renderedFrameGroups, frameViewport).visible,
+    [frameViewport, renderedFrameGroups],
+  )
+  const visiblePreviewFrameGroups = useMemo(
+    () => getSortedFrameRenderWindow(displayedFrameGroups, frameViewport).visible,
+    [displayedFrameGroups, frameViewport],
+  )
 
   return (
     <div
@@ -216,8 +227,9 @@ export const GroupTimelineCell = memo(function GroupTimelineCell({
 
         <div data-motion-span-drag-visual className="absolute inset-0">
           {!expanded &&
-            renderedFrameGroups.map((frameGroup) => {
-              const renderedX = getRenderedKeyframeX(frameGroup.frame) ?? frameToX(frameGroup.frame)
+            visibleRenderedFrameGroups.map((frameGroup) => {
+              const renderedX = getRenderedKeyframeX(frameGroup.frame)
+              if (renderedX === null) return null
 
               const movableEntries = frameGroup.keyframes.filter(
                 ({ property }) => !isPropertyLocked(property),
@@ -270,8 +282,9 @@ export const GroupTimelineCell = memo(function GroupTimelineCell({
             })}
           {!expanded &&
             sheetPreviewDuplicateKeyframeIds &&
-            displayedFrameGroups.map((frameGroup) => {
-              const renderedX = getRenderedKeyframeX(frameGroup.frame) ?? frameToX(frameGroup.frame)
+            visiblePreviewFrameGroups.map((frameGroup) => {
+              const renderedX = getRenderedKeyframeX(frameGroup.frame)
+              if (renderedX === null) return null
 
               return (
                 <div
@@ -304,6 +317,7 @@ interface PropertyTimelineCellProps {
   property: AnimatableProperty
   /** Stable, frame-independent sorted keyframes for this property. */
   keyframes: Keyframe[]
+  frameViewport: FrameRenderViewport
   locked: boolean
   ticks: number[]
   axisWidth: number
@@ -338,6 +352,7 @@ export const PropertyTimelineCell = memo(function PropertyTimelineCell({
   itemId,
   property,
   keyframes,
+  frameViewport,
   locked,
   ticks,
   axisWidth,
@@ -367,18 +382,22 @@ export const PropertyTimelineCell = memo(function PropertyTimelineCell({
   // diamonds moving. Duplicate-drag keeps the originals put (the ghost overlay
   // below shows the moved copies), matching the group cell's behaviour.
   const previewFrames = sheetPreviewDuplicateKeyframeIds ? null : sheetPreviewFrames
+  const keyframeRenderWindow = useMemo(
+    () => getSortedFrameRenderWindow(keyframes, frameViewport),
+    [frameViewport, keyframes],
+  )
   const displayedFrame = (keyframe: Keyframe) => previewFrames?.[keyframe.id] ?? keyframe.frame
   const xForKeyframe = (keyframe: Keyframe): number | null => {
     const previewFrame = previewFrames?.[keyframe.id]
     if (previewFrame !== undefined) {
-      return getRenderedKeyframeX(previewFrame) ?? frameToX(previewFrame)
+      return getRenderedKeyframeX(previewFrame)
     }
-    return renderedKeyframeXById.get(keyframe.id) ?? frameToX(keyframe.frame)
+    return renderedKeyframeXById.get(keyframe.id) ?? null
   }
   const xForSegmentKeyframe = (keyframe: Keyframe): number => frameToX(displayedFrame(keyframe))
 
   const connectorSegments = buildConnectorSegments(
-    keyframes.map((keyframe) => ({
+    keyframeRenderWindow.connected.map((keyframe) => ({
       id: keyframe.id,
       frame: displayedFrame(keyframe),
       x: xForSegmentKeyframe(keyframe),
@@ -391,7 +410,7 @@ export const PropertyTimelineCell = memo(function PropertyTimelineCell({
   const segmentSpans =
     onSegmentEasingChange && !locked && !disabled && !sheetPreviewDuplicateKeyframeIds
       ? buildSegmentSpans(
-          keyframes.map((keyframe) => ({
+          keyframeRenderWindow.connected.map((keyframe) => ({
             from: keyframe,
             frame: displayedFrame(keyframe),
             x: xForSegmentKeyframe(keyframe),
@@ -459,7 +478,7 @@ export const PropertyTimelineCell = memo(function PropertyTimelineCell({
               />
             ))}
 
-          {keyframes.map((keyframe) => {
+          {keyframeRenderWindow.visible.map((keyframe) => {
             const renderedX = xForKeyframe(keyframe)
             if (renderedX === null) return null
             const selected = selectedKeyframeIds.has(keyframe.id)
@@ -529,7 +548,10 @@ export const PropertyTimelineCell = memo(function PropertyTimelineCell({
               return []
             }
 
-            const renderedX = getRenderedKeyframeX(previewFrame) ?? frameToX(previewFrame)
+            const renderedX = getRenderedKeyframeX(previewFrame)
+            if (renderedX === null) {
+              return []
+            }
 
             return [
               <div

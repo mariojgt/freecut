@@ -20,7 +20,7 @@ describe('DopesheetEditor property groups', () => {
   })
 
   function renderEditor(overrides: Partial<ComponentProps<typeof DopesheetEditor>> = {}) {
-    render(
+    return render(
       <DopesheetEditor
         itemId="item-1"
         keyframesByProperty={{ x: [], volume: [] }}
@@ -709,9 +709,30 @@ describe('DopesheetEditor property groups', () => {
     // Category rows summarize child keyframes with diamonds only; the actual
     // property row remains the sole owner of the easing connector.
     expect(screen.getAllByTestId('keyframe-connector')).toHaveLength(1)
-    const offscreenMarker = screen.getByTestId('row-keyframe-x-kx-offscreen')
-    expect(Number.parseFloat(offscreenMarker.style.left)).toBeLessThan(0)
+    expect(screen.queryByTestId('row-keyframe-x-kx-offscreen')).toBeNull()
     expect(screen.getByTestId('row-keyframe-x-kx-visible')).toBeTruthy()
+  })
+
+  it('bounds mounted keyframe DOM to the visible frame window on dense lanes', () => {
+    const { container } = renderEditor({
+      keyframesByProperty: {
+        x: Array.from({ length: 10_000 }, (_, frame) => ({
+          id: `dense-${frame}`,
+          frame,
+          value: frame,
+          easing: 'linear' as const,
+        })),
+      },
+      propertyValues: { x: 2_520 },
+      totalFrames: 10_000,
+      frameViewport: { startFrame: 2_500, endFrame: 2_520 },
+    })
+
+    const mountedKeyframes = container.querySelectorAll('[data-motion-keyframe-id]')
+    expect(mountedKeyframes).toHaveLength(21)
+    expect(mountedKeyframes[0]).toHaveAttribute('data-dopesheet-frame', '2500')
+    expect(mountedKeyframes[20]).toHaveAttribute('data-dopesheet-frame', '2520')
+    expect(screen.getAllByTestId('keyframe-connector')).toHaveLength(22)
   })
 
   it('filters parameter groups from the menu', () => {

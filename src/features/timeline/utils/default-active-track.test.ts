@@ -46,4 +46,20 @@ describe('getDefaultActiveTrackId', () => {
   it('returns null for an empty timeline', () => {
     expect(getDefaultActiveTrackId([])).toBeNull()
   })
+
+  it('does not activate a child hidden inside a collapsed layer group', () => {
+    const group = {
+      ...makeTrack('svg-group', 'Artwork', 'video', 0),
+      isGroup: true,
+      isCollapsed: true,
+    }
+    const hiddenChild = {
+      ...makeTrack('svg-child', 'Path 1', 'video', 1),
+      parentTrackId: group.id,
+    }
+    const audio = makeTrack('a1', 'A1', 'audio', 2)
+
+    expect(getDefaultActiveTrackId([group, hiddenChild, audio])).toBe(audio.id)
+    expect(getDefaultActiveTrackId([group, hiddenChild])).toBe(group.id)
+  })
 })

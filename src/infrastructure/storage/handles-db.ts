@@ -1,9 +1,10 @@
 /**
- * Tiny dedicated IndexedDB for FileSystemHandle storage.
+ * Tiny dedicated IndexedDB for durable file-system references.
  *
  * The ONLY IndexedDB the app still uses after the workspace-fs refactor.
- * It exists because FileSystem*Handle can't serialize to disk files and
- * must live somewhere browser-native to survive reloads.
+ * User-picked FileSystem*Handles live here so they survive reloads. WebKit
+ * cannot structured-clone OPFS handles into IndexedDB, so OPFS workspaces are
+ * stored as plain directory-name descriptors and rehydrated on read.
  *
  * Single store: `handles`, keyed by a compound id `{kind}:{id}`.
  * - Workspace root handle: kind='workspace', id='current'
@@ -49,12 +50,21 @@ export interface HandleRecord {
    * (notably Firefox). Older records omit this field and are directories.
    */
   workspaceStorageKind?: WorkspaceStorageKind
+  /**
+   * Durable OPFS locator. WebKit cannot persist the live handle in IndexedDB,
+   * so OPFS workspace records store this directory name instead.
+   */
+  opfsDirectoryName?: string
+}
+
+type StoredHandleRecord = Omit<HandleRecord, 'handle'> & {
+  handle?: FileSystemDirectoryHandle | FileSystemFileHandle
 }
 
 interface HandlesDBSchema extends DBSchema {
   handles: {
     key: string
-    value: HandleRecord
+    value: StoredHandleRecord
     indexes: { kind: HandleKind }
   }
 }
@@ -87,11 +97,46 @@ function compoundKey(kind: HandleKind, id: string): string {
   return `${kind}:${id}`
 }
 
+function isOpfsWorkspaceRecord(
+  record: Pick<StoredHandleRecord, 'kind' | 'workspaceStorageKind'>,
+): boolean {
+  return record.kind === 'workspace' && record.workspaceStorageKind === 'opfs'
+}
+
+function toStoredHandleRecord(record: HandleRecord): StoredHandleRecord {
+  if (!isOpfsWorkspaceRecord(record)) return record
+
+  const { handle, ...descriptor } = record
+  return {
+    ...descriptor,
+    opfsDirectoryName: record.opfsDirectoryName ?? handle.name,
+  }
+}
+
+async function hydrateHandleRecord(record: StoredHandleRecord): Promise<HandleRecord> {
+  if (record.handle) {
+    return {
+      ...record,
+      handle: record.handle,
+      opfsDirectoryName:
+        record.opfsDirectoryName ??
+        (isOpfsWorkspaceRecord(record) ? record.handle.name : undefined),
+    }
+  }
+
+  if (!isOpfsWorkspaceRecord(record) || !record.opfsDirectoryName) {
+    throw new Error(`Stored handle ${record.key} has no live handle or OPFS locator.`)
+  }
+
+  const handle = await openOpfsWorkspaceHandle(record.opfsDirectoryName, false)
+  return { ...record, handle }
+}
+
 export async function getHandle(kind: HandleKind, id: string): Promise<HandleRecord | null> {
   try {
     const db = await getHandlesDB()
     const record = await db.get(HANDLES_STORE, compoundKey(kind, id))
-    return record ?? null
+    return record ? await hydrateHandleRecord(record) : null
   } catch (error) {
     logger.error(`getHandle(${kind}, ${id}) failed`, error)
     return null
@@ -104,7 +149,7 @@ export async function saveHandle(record: Omit<HandleRecord, 'key'>): Promise<voi
     ...record,
     key: compoundKey(record.kind, record.id),
   }
-  await db.put(HANDLES_STORE, full)
+  await db.put(HANDLES_STORE, toStoredHandleRecord(full))
 }
 
 export async function deleteHandle(kind: HandleKind, id: string): Promise<void> {
@@ -114,7 +159,18 @@ export async function deleteHandle(kind: HandleKind, id: string): Promise<void> 
 
 async function listHandlesByKind(kind: HandleKind): Promise<HandleRecord[]> {
   const db = await getHandlesDB()
-  return db.getAllFromIndex(HANDLES_STORE, 'kind', kind)
+  const stored = await db.getAllFromIndex(HANDLES_STORE, 'kind', kind)
+  const hydrated: HandleRecord[] = []
+
+  for (const record of stored) {
+    try {
+      hydrated.push(await hydrateHandleRecord(record))
+    } catch (error) {
+      logger.warn(`Skipping unavailable stored handle ${record.key}`, error)
+    }
+  }
+
+  return hydrated
 }
 
 /* ───────────────────────────── Workspace shortcut ─────────────────────── */
@@ -126,8 +182,8 @@ async function listHandlesByKind(kind: HandleKind): Promise<HandleRecord[]> {
  *    activations, survives remove/re-add. These are listed in the UI.
  *  - `workspace:current` — sentinel pointer to the active workspace. Its
  *    `activeWorkspaceId` references the real record above, and its
- *    `handle` / `name` mirror that record so existing consumers
- *    (`getWorkspaceHandleRecord`) keep working without changes.
+ *    `name` and storage locator mirror that record. Reads rehydrate a live
+ *    `handle` so existing consumers keep working without changes.
  */
 const WORKSPACE_ID = 'current'
 
@@ -146,9 +202,19 @@ export async function listKnownWorkspaces(): Promise<HandleRecord[]> {
 
 async function findKnownWorkspaceByHandle(
   handle: FileSystemDirectoryHandle,
+  workspaceStorageKind: WorkspaceStorageKind,
 ): Promise<HandleRecord | null> {
   const known = await listKnownWorkspaces()
   for (const record of known) {
+    const recordStorageKind = record.workspaceStorageKind ?? 'directory'
+    if (recordStorageKind !== workspaceStorageKind) continue
+
+    if (workspaceStorageKind === 'opfs') {
+      const directoryName = record.opfsDirectoryName ?? record.handle.name
+      if (directoryName === handle.name) return record
+      continue
+    }
+
     try {
       const candidate = record.handle as FileSystemDirectoryHandle
       if (await candidate.isSameEntry(handle)) return record
@@ -169,7 +235,7 @@ export async function saveWorkspaceHandleRecord(
   workspaceStorageKind: WorkspaceStorageKind = 'directory',
   displayName: string = handle.name,
 ): Promise<void> {
-  const existing = await findKnownWorkspaceByHandle(handle)
+  const existing = await findKnownWorkspaceByHandle(handle, workspaceStorageKind)
   const workspaceId = existing?.id ?? crypto.randomUUID()
   const pickedAt = Date.now()
 
@@ -209,6 +275,7 @@ export async function activateWorkspaceHandle(workspaceId: string): Promise<Hand
     pickedAt: Date.now(),
     activeWorkspaceId: workspaceId,
     workspaceStorageKind: record.workspaceStorageKind,
+    opfsDirectoryName: record.opfsDirectoryName,
   })
   return record
 }
@@ -248,6 +315,8 @@ export async function ensureKnownWorkspaceForCurrent(): Promise<void> {
     handle: current.handle,
     name: current.name,
     pickedAt: current.pickedAt,
+    workspaceStorageKind: current.workspaceStorageKind,
+    opfsDirectoryName: current.opfsDirectoryName,
   })
   await saveHandle({
     ...current,
@@ -311,6 +380,18 @@ function isOpfsWorkspaceSupported(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function'
 }
 
+async function openOpfsWorkspaceHandle(
+  directoryName: string,
+  create: boolean,
+): Promise<FileSystemDirectoryHandle> {
+  if (!isOpfsWorkspaceSupported()) {
+    throw new Error('Origin-private file system storage is unavailable in this browser.')
+  }
+
+  const root = await navigator.storage.getDirectory()
+  return root.getDirectoryHandle(directoryName, { create })
+}
+
 /**
  * Return a stable browser-private workspace directory. This is the Firefox
  * fallback: it uses the same FileSystemDirectoryHandle storage stack as a
@@ -325,6 +406,5 @@ export async function getOrCreateOpfsWorkspaceHandle(): Promise<FileSystemDirect
   // decline without making OPFS unusable, so the result is deliberately not a
   // hard gate.
   await navigator.storage.persist?.().catch(() => false)
-  const root = await navigator.storage.getDirectory()
-  return root.getDirectoryHandle('FreeCut Workspace', { create: true })
+  return openOpfsWorkspaceHandle('FreeCut Workspace', true)
 }

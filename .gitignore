@@ -61,6 +61,7 @@ Trace-*.json
 CLAUDE.md
 crates/*/target/
 crates/*/Cargo.lock
+/src-tauri/target/
 .knip-report.json
 
 tmp
@@ -87,6 +88,7 @@ tmp-workspace/
 /waveform-bin/
 
 *.lock
+!src-tauri/Cargo.lock
 plans/
 
 .compound-engineering/*.local.yaml

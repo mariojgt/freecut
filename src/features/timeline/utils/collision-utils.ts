@@ -1,8 +1,5 @@
 import type { TimelineItem } from '@/types/timeline'
 import type { Transition } from '@/types/transition'
-import { createLogger } from '@/shared/logging/logger'
-
-const logger = createLogger('CollisionUtils')
 
 /**
  * Collision detection utilities for timeline drag-and-drop
@@ -19,6 +16,17 @@ const EMPTY_TRACK_ITEMS: CollisionRect[] = []
 
 function compareCollisionRectsByFrom(a: CollisionRect, b: CollisionRect): number {
   return a.from - b.from
+}
+
+function getSortedCollisionRects(
+  trackItems: ReadonlyArray<CollisionRect>,
+): ReadonlyArray<CollisionRect> {
+  for (let index = 1; index < trackItems.length; index += 1) {
+    if (trackItems[index - 1]!.from > trackItems[index]!.from) {
+      return [...trackItems].sort(compareCollisionRectsByFrom)
+    }
+  }
+  return trackItems
 }
 
 /**
@@ -68,32 +76,23 @@ function findSpaceBackward(
   durationInFrames: number,
   trackItems: ReadonlyArray<CollisionRect>,
 ): number | null {
-  // Find the item we're colliding with
-  const proposedEnd = proposedFrom + durationInFrames
-  const collision = trackItems.find((item) => {
+  let testPosition = proposedFrom
+
+  // Walk toward frame zero. Once a collision moves the candidate backward,
+  // every already-visited item starts at or after its new end and cannot
+  // collide again. This remains linear even for thousands of adjacent clips.
+  for (let index = trackItems.length - 1; index >= 0; index -= 1) {
+    const item = trackItems[index]!
     const itemEnd = item.from + item.durationInFrames
-    return rangesOverlap(proposedFrom, proposedEnd, item.from, itemEnd)
-  })
+    if (!rangesOverlap(testPosition, testPosition + durationInFrames, item.from, itemEnd)) {
+      continue
+    }
 
-  if (!collision) {
-    // No collision - original position is fine
-    return proposedFrom
+    testPosition = item.from - durationInFrames
+    if (testPosition < 0) return null
   }
 
-  // Try snapping to just before the colliding item
-  const snapBackPosition = collision.from - durationInFrames
-
-  // Can't go below frame 0
-  if (snapBackPosition < 0) {
-    return null
-  }
-
-  // Check if this position is available (no collision with previous items)
-  if (hasAvailableSpace(snapBackPosition, durationInFrames, trackItems)) {
-    return snapBackPosition
-  }
-
-  return null
+  return testPosition
 }
 
 /**
@@ -110,28 +109,18 @@ function findSpaceForward(
   trackItems: ReadonlyArray<CollisionRect>,
 ): number | null {
   let testPosition = proposedFrom
-  const MAX_ITERATIONS = 1000
-  let iterations = 0
 
-  while (iterations < MAX_ITERATIONS) {
-    iterations++
-
-    const collision = trackItems.find((item) => {
-      const itemEnd = item.from + item.durationInFrames
-      const testEnd = testPosition + durationInFrames
-      return rangesOverlap(testPosition, testEnd, item.from, itemEnd)
-    })
-
-    if (!collision) {
-      return testPosition
+  // Sweep the ordered intervals once. Moving to the end of a collision means
+  // earlier intervals can never affect the candidate again.
+  for (const item of trackItems) {
+    const itemEnd = item.from + item.durationInFrames
+    if (!rangesOverlap(testPosition, testPosition + durationInFrames, item.from, itemEnd)) {
+      continue
     }
-
-    // Snap to end of colliding item
-    testPosition = collision.from + collision.durationInFrames
+    testPosition = Math.max(testPosition, itemEnd)
   }
 
-  logger.error('findSpaceForward: too many iterations, aborting')
-  return null
+  return testPosition
 }
 
 export function buildCollisionTrackItemsMap(
@@ -160,46 +149,22 @@ export function findNearestAvailableSpaceInTrackItems(
   durationInFrames: number,
   trackItems: ReadonlyArray<CollisionRect>,
 ): number | null {
+  const sortedTrackItems = getSortedCollisionRects(trackItems)
+
   // If no collision, return proposed position
-  if (hasAvailableSpace(proposedFrom, durationInFrames, trackItems)) {
+  if (hasAvailableSpace(proposedFrom, durationInFrames, sortedTrackItems)) {
     return proposedFrom
   }
 
-  // Find collision to determine distances
-  const proposedEnd = proposedFrom + durationInFrames
-  const collision = trackItems.find((item) => {
-    const itemEnd = item.from + item.durationInFrames
-    return rangesOverlap(proposedFrom, proposedEnd, item.from, itemEnd)
-  })
+  const backwardPosition = findSpaceBackward(proposedFrom, durationInFrames, sortedTrackItems)
+  const forwardPosition = findSpaceForward(proposedFrom, durationInFrames, sortedTrackItems)
 
-  if (!collision) {
-    // Shouldn't happen since hasAvailableSpace returned false, but handle it
-    return proposedFrom
-  }
+  if (backwardPosition === null) return forwardPosition
+  if (forwardPosition === null) return backwardPosition
 
-  // Calculate distances to both edges
-  const collisionEnd = collision.from + collision.durationInFrames
-  const distanceToBackEdge = proposedFrom - (collision.from - durationInFrames)
-  const distanceToFrontEdge = collisionEnd - proposedFrom
-
-  // Try the closer edge first
-  if (distanceToBackEdge <= distanceToFrontEdge) {
-    // Try backward first
-    const backwardPosition = findSpaceBackward(proposedFrom, durationInFrames, trackItems)
-    if (backwardPosition !== null) {
-      return backwardPosition
-    }
-    // Backward not available, try forward
-    return findSpaceForward(proposedFrom, durationInFrames, trackItems)
-  }
-
-  // Try forward first
-  const forwardPosition = findSpaceForward(proposedFrom, durationInFrames, trackItems)
-  if (forwardPosition !== null) {
-    return forwardPosition
-  }
-  // Forward not available, try backward
-  return findSpaceBackward(proposedFrom, durationInFrames, trackItems)
+  const backwardDistance = Math.abs(proposedFrom - backwardPosition)
+  const forwardDistance = Math.abs(forwardPosition - proposedFrom)
+  return backwardDistance <= forwardDistance ? backwardPosition : forwardPosition
 }
 
 /**

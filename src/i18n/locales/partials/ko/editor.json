@@ -572,6 +572,11 @@
       "verticalMixed": "상하(혼합)"
     },
     "shapeSection": {
+      "importSvgLayers": "SVG를 레이어로 가져오기",
+      "importSvgLayersHint": "윤곽선을 편집 가능한 패스로 가져와 모션과 키프레임에 바로 사용할 수 있습니다.",
+      "importSvgImported": "편집 가능한 SVG 레이어 {{count}}개를 가져왔습니다.",
+      "importSvgImportedWithWarnings": "레이어 {{count}}개를 가져왔으며 단순화 경고가 {{warnings}}개 있습니다.",
+      "importSvgError": "SVG를 레이어로 가져올 수 없습니다.",
       "shape": "도형",
       "type": "유형",
       "mixed": "혼합됨",

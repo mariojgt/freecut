@@ -6,7 +6,12 @@
  */
 
 import { z } from 'zod'
-import { useTimelineStore } from '@/features/editor/deps/timeline-store'
+import {
+  applyMotionModifierToItems,
+  useCompositionNavigationStore,
+  useCompositionsStore,
+  useTimelineStore,
+} from '@/features/editor/deps/timeline-store'
 import {
   createTextTemplateItem,
   findCompatibleTrackForItemType,
@@ -23,6 +28,15 @@ import { usePlaybackStore } from '@/shared/state/playback'
 import { useSelectionStore } from '@/shared/state/selection'
 import { DEFAULT_PROJECT_HEIGHT, DEFAULT_PROJECT_WIDTH } from '@/shared/projects/defaults'
 import type { TextItem, TimelineItem } from '@/types/timeline'
+import {
+  createMotionModifier,
+  DEFAULT_MOTION_GENERATOR_SETTINGS,
+  getAnimatablePropertiesForItem,
+  MOTION_MODULATORS,
+  MOTION_PRESETS,
+} from '@/features/editor/deps/keyframes'
+import { resolveGeneratedLayerCanvasSize } from '../../utils/generated-layer-canvas-size'
+import { applyBuiltInMotion } from '../../services/apply-built-in-motion'
 import type { EditorAgentTool, JsonSchema, ToolResult, ToolValidation } from './types'
 import { buildClipRefs, resolveClipRefs, resolveItemRef, resolveTargetItems } from './clip-refs'
 
@@ -86,6 +100,15 @@ function objSchema(properties: Record<string, unknown>, required: string[] = [])
 
 const clipsField = z.array(z.string()).optional()
 const scopeField = z.enum(['selection', 'all']).optional()
+const motionPresetField = z
+  .string()
+  .refine((value) => MOTION_PRESETS.some((preset) => preset.id === value), 'Unknown motion preset.')
+const continuousMotionField = z
+  .string()
+  .refine(
+    (value) => MOTION_MODULATORS.some((modulator) => modulator.id === value),
+    'Unknown continuous motion type.',
+  )
 
 function getFps(): number {
   return useTimelineStore.getState().fps
@@ -97,6 +120,70 @@ function isMedia(item: TimelineItem): boolean {
 
 function isVisual(item: TimelineItem): boolean {
   return item.type === 'video' || item.type === 'image' || item.type === 'composition'
+}
+
+function isAnimatableVisual(item: TimelineItem): boolean {
+  return item.type !== 'audio' && item.type !== 'adjustment'
+}
+
+function orderedForAnimation(items: TimelineItem[]): TimelineItem[] {
+  const orderByTrack = new Map(
+    useTimelineStore.getState().tracks.map((track) => [track.id, track.order ?? 0]),
+  )
+  return items.toSorted(
+    (left, right) =>
+      left.from - right.from ||
+      (orderByTrack.get(left.trackId) ?? 0) - (orderByTrack.get(right.trackId) ?? 0),
+  )
+}
+
+function activeAnimationCanvas(): { width: number; height: number; fps: number } {
+  const fps = useTimelineStore.getState().fps
+  const project = useProjectStore.getState().currentProject
+  const activeCompositionId = useCompositionNavigationStore.getState().activeCompositionId
+  const activeComposition = activeCompositionId
+    ? useCompositionsStore.getState().getComposition(activeCompositionId)
+    : undefined
+  const size = resolveGeneratedLayerCanvasSize(activeComposition, project?.metadata)
+  return { ...size, fps }
+}
+
+function scaledMotionSettings(
+  values: {
+    durationPercent?: number
+    intensityPercent?: number
+    staggerSeconds?: number
+  },
+  fps: number,
+) {
+  return {
+    ...DEFAULT_MOTION_GENERATOR_SETTINGS,
+    durationScale: (values.durationPercent ?? 100) / 100,
+    intensityScale: (values.intensityPercent ?? 100) / 100,
+    staggerFrames: Math.round((values.staggerSeconds ?? 0) * fps),
+  }
+}
+
+function throwMotionApplyFailure(
+  reason: 'no-targets' | 'incompatible' | 'transition-blocked' | undefined,
+): never {
+  if (reason === 'incompatible') {
+    throw new Error('That animation is not compatible with every targeted clip.')
+  }
+  if (reason === 'transition-blocked') {
+    throw new Error('The animation falls entirely inside a protected transition region.')
+  }
+  throw new Error('The animation did not create any editable motion.')
+}
+
+function animationAppliedMessage(
+  presetId: string,
+  targetCount: number,
+  staggerSeconds: number | undefined,
+): string {
+  const noun = targetCount === 1 ? 'clip' : 'clips'
+  const stagger = staggerSeconds ? ` with ${staggerSeconds}s stagger` : ''
+  return `Applied ${presetId} to ${targetCount} ${noun}${stagger}.`
 }
 
 function resolveScopedItems(
@@ -532,6 +619,162 @@ const setTransform = defineTool({
   },
 })
 
+const animateClips = defineTool({
+  name: 'animate_clips',
+  title: 'Animate clips',
+  description:
+    'Apply editable entrance, exit, or emphasis animation to SVG parts and other visual clips. Supports non-destructive motion layers and multi-clip staggering. Direction names describe travel: slide-in-up enters from below; slide-in-down enters from above.',
+  inputSchema: objSchema(
+    {
+      clips: CLIPS_PROP,
+      scope: SCOPE_PROP,
+      preset: {
+        type: 'string',
+        enum: MOTION_PRESETS.map((preset) => preset.id),
+        description: 'Built-in animation recipe to apply.',
+      },
+      mode: {
+        type: 'string',
+        enum: ['layer', 'merge', 'replace'],
+        description:
+          '"layer" is non-destructive and independently removable (default); "merge" preserves keyframes at matching frames; "replace" rewrites the affected animation window.',
+      },
+      durationPercent: {
+        type: 'number',
+        minimum: 25,
+        maximum: 300,
+        description: 'Animation duration relative to the preset default (100 = normal).',
+      },
+      intensityPercent: {
+        type: 'number',
+        minimum: 0,
+        maximum: 200,
+        description: 'Motion strength relative to the preset default (100 = normal).',
+      },
+      staggerSeconds: {
+        type: 'number',
+        minimum: 0,
+        maximum: 10,
+        description: 'Delay each successive selected clip by this many seconds.',
+      },
+    },
+    ['preset'],
+  ),
+  schema: z.object({
+    clips: clipsField,
+    scope: scopeField,
+    preset: motionPresetField,
+    mode: z.enum(['layer', 'merge', 'replace']).optional(),
+    durationPercent: z.number().min(25).max(300).optional(),
+    intensityPercent: z.number().min(0).max(200).optional(),
+    staggerSeconds: z.number().min(0).max(10).optional(),
+  }),
+  summarize: (args) => `Apply ${args.preset} animation`,
+  execute: (args) => {
+    const preset = MOTION_PRESETS.find((candidate) => candidate.id === args.preset)
+    if (!preset) throw new Error(`Unknown motion preset: ${args.preset}`)
+    const targets = orderedForAnimation(
+      resolveScopedItems(args.clips, args.scope).filter(isAnimatableVisual),
+    )
+    if (targets.length === 0) throw new Error('Select or name one or more visual clips.')
+
+    const canvas = activeAnimationCanvas()
+    const result = applyBuiltInMotion({
+      preset,
+      presetName: preset.id,
+      items: targets,
+      canvas,
+      mode: args.mode ?? 'layer',
+      settings: scaledMotionSettings(args, canvas.fps),
+    })
+    if (!result.applied) throwMotionApplyFailure(result.reason)
+
+    return {
+      ok: true,
+      message: animationAppliedMessage(preset.id, targets.length, args.staggerSeconds),
+      data: { preset: preset.id, itemIds: targets.map((item) => item.id), ...result },
+    }
+  },
+})
+
+const addContinuousMotion = defineTool({
+  name: 'add_continuous_motion',
+  title: 'Add continuous motion',
+  description:
+    'Attach editable, procedural looping motion to SVG parts and other visual clips without baking dense keyframes. Use for ambient float, breathing, shake, sway, or spin.',
+  inputSchema: objSchema(
+    {
+      clips: CLIPS_PROP,
+      scope: SCOPE_PROP,
+      motion: {
+        type: 'string',
+        enum: MOTION_MODULATORS.map((modulator) => modulator.id),
+      },
+      durationPercent: {
+        type: 'number',
+        minimum: 25,
+        maximum: 300,
+        description: 'Cycle duration relative to the default (larger is slower).',
+      },
+      intensityPercent: {
+        type: 'number',
+        minimum: 0,
+        maximum: 200,
+        description: 'Motion strength relative to the default.',
+      },
+      staggerSeconds: {
+        type: 'number',
+        minimum: 0,
+        maximum: 10,
+        description: 'Phase offset between successive clips.',
+      },
+    },
+    ['motion'],
+  ),
+  schema: z.object({
+    clips: clipsField,
+    scope: scopeField,
+    motion: continuousMotionField,
+    durationPercent: z.number().min(25).max(300).optional(),
+    intensityPercent: z.number().min(0).max(200).optional(),
+    staggerSeconds: z.number().min(0).max(10).optional(),
+  }),
+  summarize: (args) => `Add ${args.motion} motion`,
+  execute: (args) => {
+    const modulator = MOTION_MODULATORS.find((candidate) => candidate.id === args.motion)
+    if (!modulator) throw new Error(`Unknown continuous motion type: ${args.motion}`)
+    const targets = orderedForAnimation(
+      resolveScopedItems(args.clips, args.scope).filter(isAnimatableVisual),
+    )
+    if (targets.length === 0) throw new Error('Select or name one or more visual clips.')
+
+    const incompatible = targets.find((item) => {
+      if (item.type === 'text' && modulator.scalesBox) return true
+      const properties = new Set(getAnimatablePropertiesForItem(item))
+      return !modulator.properties.every((property) => properties.has(property))
+    })
+    if (incompatible) {
+      throw new Error(
+        `Continuous ${modulator.id} motion is incompatible with ${incompatible.label}.`,
+      )
+    }
+
+    const settings = scaledMotionSettings(args, getFps())
+    const applied = applyMotionModifierToItems(
+      targets.map((item, index) => ({
+        itemId: item.id,
+        modifier: createMotionModifier(modulator.id, settings, index),
+      })),
+    )
+    if (applied === 0) throw new Error('The continuous motion could not be applied.')
+    return {
+      ok: true,
+      message: `Added ${modulator.id} motion to ${applied} clip${applied === 1 ? '' : 's'}.`,
+      data: { motion: modulator.id, itemIds: targets.map((item) => item.id) },
+    }
+  },
+})
+
 const removeRange = defineTool({
   name: 'remove_range',
   title: 'Remove a timeline range',
@@ -833,6 +1076,8 @@ export const EDITOR_TOOLS: readonly EditorAgentTool[] = [
   setVolume,
   setFades,
   setTransform,
+  animateClips,
+  addContinuousMotion,
   removeRange,
   trimClip,
   addTransition,

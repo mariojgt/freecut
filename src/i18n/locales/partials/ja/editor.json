@@ -572,6 +572,11 @@
       "verticalMixed": "上下（混在）"
     },
     "shapeSection": {
+      "importSvgLayers": "SVGをレイヤーとして読み込む",
+      "importSvgLayersHint": "輪郭を編集可能なパスとして読み込み、モーションとキーフレームですぐに使用できます。",
+      "importSvgImported": "編集可能なSVGレイヤーを{{count}}個読み込みました。",
+      "importSvgImportedWithWarnings": "{{count}}個のレイヤーを読み込みました（簡略化の警告: {{warnings}}件）。",
+      "importSvgError": "SVGをレイヤーとして読み込めませんでした。",
       "shape": "シェイプ",
       "type": "種類",
       "mixed": "混在",

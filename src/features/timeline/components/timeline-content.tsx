@@ -40,6 +40,7 @@ import { TimelinePlayhead } from './timeline-playhead'
 import { TimelinePreviewScrubber } from './timeline-preview-scrubber'
 import { TimelineRulerSurface } from './timeline-ruler-surface'
 import { TimelineTrack } from './timeline-track'
+import { TimelineGroupTrack } from './timeline-group-track'
 import { TimelineGuidelines } from './timeline-guidelines'
 import { TimelineMediaDropZone } from './timeline-media-drop-zone'
 import { TimelineRecordingOverlay } from './timeline-recording-overlay'
@@ -636,7 +637,11 @@ const TimelineTrackSectionsSurface = memo(function TimelineTrackSectionsSurface(
               : TrackRowFrame
           return (
             <RowFrame key={track.id}>
-              <TimelineTrack track={track} />
+              {track.isGroup ? (
+                <TimelineGroupTrack track={track} />
+              ) : (
+                <TimelineTrack track={track} />
+              )}
             </RowFrame>
           )
         })}

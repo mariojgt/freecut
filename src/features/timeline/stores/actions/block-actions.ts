@@ -108,3 +108,7 @@ function nextTopOrder(partCount: number): number {
   const orders = useItemsStore.getState().tracks.map((track) => track.order)
   return Math.min(0, ...orders) - partCount - 1
 }
+
+// SVG artwork and reusable blocks share the editor's grouped-vector insertion
+// seam, keeping one cross-feature action boundary for both authoring paths.
+export { importSvgLayers } from './svg-actions'

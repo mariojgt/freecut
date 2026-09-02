@@ -54,9 +54,12 @@ const toolIgnorePatterns = [
   'output/**',
   'scripts/**',
 ]
+const tauriDevHost = process.env.TAURI_DEV_HOST
 
 // https://vite.dev/config/
 export default defineConfig({
+  clearScreen: false,
+  envPrefix: ['VITE_', 'TAURI_ENV_*'],
   lint: {
     ...oxlintConfig,
     ignorePatterns: toolIgnorePatterns,
@@ -106,6 +109,17 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    host: tauriDevHost || undefined,
+    hmr: tauriDevHost
+      ? {
+          protocol: 'ws',
+          host: tauriDevHost,
+          port: 1421,
+        }
+      : undefined,
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',

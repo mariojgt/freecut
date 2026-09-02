@@ -572,6 +572,11 @@
       "verticalMixed": "Dikey (karışık)"
     },
     "shapeSection": {
+      "importSvgLayers": "SVG'yi katmanlar olarak içe aktar",
+      "importSvgLayersHint": "Konturları hareket ve ana kareler için hazır, düzenlenebilir yollar olarak içe aktarır.",
+      "importSvgImported": "{{count}} düzenlenebilir SVG katmanı içe aktarıldı.",
+      "importSvgImportedWithWarnings": "{{count}} katman, {{warnings}} sadeleştirme uyarısıyla içe aktarıldı.",
+      "importSvgError": "SVG katmanlar olarak içe aktarılamadı.",
       "shape": "Şekil",
       "type": "Tür",
       "mixed": "Karışık",

@@ -19,3 +19,4 @@ export { useTimelineStore } from './timeline-store-facade'
 
 // Re-export all actions for direct use
 export * from './timeline-actions'
+export { rateStretchItemWithoutHistory } from './actions/item-edit-actions'

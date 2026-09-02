@@ -572,6 +572,11 @@
       "verticalMixed": "Vertikal (gemischt)"
     },
     "shapeSection": {
+      "importSvgLayers": "SVG als Ebenen importieren",
+      "importSvgLayersHint": "Importiert Konturen als bearbeitbare Pfade, bereit für Motion und Keyframes.",
+      "importSvgImported": "{{count}} bearbeitbare SVG-Ebenen importiert.",
+      "importSvgImportedWithWarnings": "{{count}} Ebenen mit {{warnings}} Vereinfachungshinweisen importiert.",
+      "importSvgError": "SVG konnte nicht als Ebenen importiert werden.",
       "shape": "Form",
       "type": "Typ",
       "mixed": "Gemischt",

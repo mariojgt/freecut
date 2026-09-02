@@ -1,0 +1,9 @@
+{
+  "main-window": {
+    "identifier": "main-window",
+    "description": "Core permissions for the FreeCut editor window.",
+    "local": true,
+    "windows": ["main"],
+    "permissions": ["core:default"]
+  }
+}

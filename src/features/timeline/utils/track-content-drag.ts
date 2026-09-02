@@ -5,6 +5,7 @@ import {
   getTrackKind,
   type TrackKind,
 } from './classic-tracks'
+import { getTimelineDisplayTracks } from './group-utils'
 
 export interface TrackContentDragPlan {
   kind: TrackKind
@@ -19,7 +20,9 @@ export interface TrackContentCreateTrackMovePlan {
 
 function getSectionTracks(tracks: TimelineTrack[], anchorTrack: TimelineTrack): TimelineTrack[] {
   const anchorKind = getTrackKind(anchorTrack)
-  return tracks.filter((track) => getTrackKind(track) === anchorKind)
+  return getTimelineDisplayTracks(tracks).filter(
+    (track) => !track.isGroup && getTrackKind(track) === anchorKind,
+  )
 }
 
 function getKindTracks(tracks: TimelineTrack[], kind: TrackKind): TimelineTrack[] {
@@ -35,6 +38,10 @@ export function resolveTrackContentDragPlan(params: {
 }): TrackContentDragPlan | null {
   const anchorTrack = params.tracks.find((track) => track.id === params.anchorTrackId)
   if (!anchorTrack) {
+    return null
+  }
+
+  if (anchorTrack.isGroup) {
     return null
   }
 

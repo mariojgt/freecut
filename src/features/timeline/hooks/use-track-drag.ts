@@ -3,11 +3,13 @@ import type { TimelineTrack } from '@/types/timeline'
 import { useTimelineStore } from '../stores/timeline-store'
 import { useSelectionStore } from '@/shared/state/selection'
 import { DRAG_THRESHOLD_PIXELS } from '../constants'
+import { getTrackKind } from '../utils/classic-tracks'
 import {
   buildTrackContentCreateTrackMovePlan,
   buildTrackContentMoveUpdates,
   resolveTrackContentDragPlan,
 } from '../utils/track-content-drag'
+import { getTimelineDisplayTracks } from '../utils/group-utils'
 
 // Shared ref for drag offset (avoids re-renders from store updates)
 export const trackDragOffsetRef = { current: 0 }
@@ -230,6 +232,7 @@ export function useTrackDrag(track: TimelineTrack): UseTrackDragReturn {
       trackDragOffsetRef.current = deltaY
 
       const allTracks = tracksRef.current
+      const displayTracks = getTimelineDisplayTracks(allTracks)
       const sectionTrackIds = dragStateRef.current.sectionTrackIds
       const visibleTracks = sectionTrackIds
         .map((trackId) => allTracks.find((track) => track.id === trackId))
@@ -237,7 +240,9 @@ export function useTrackDrag(track: TimelineTrack): UseTrackDragReturn {
       const createNewZone = getCreateNewZoneAtMouseY(e.clientY)
 
       if (visibleTracks.length > 0 && dragStateRef.current) {
-        const sectionStartIndex = allTracks.findIndex((track) => track.id === visibleTracks[0]?.id)
+        const sectionStartIndex = displayTracks.findIndex(
+          (track) => getTrackKind(track) === dragStateRef.current?.kind,
+        )
         if (sectionStartIndex !== -1 && createNewZone === dragStateRef.current.kind) {
           const absoluteDropIndex =
             createNewZone === 'video' ? sectionStartIndex : sectionStartIndex + visibleTracks.length
@@ -283,7 +288,7 @@ export function useTrackDrag(track: TimelineTrack): UseTrackDragReturn {
               }
             }
 
-            const sectionStartIndex = allTracks.findIndex(
+            const sectionStartIndex = displayTracks.findIndex(
               (track) => track.id === visibleTracks[0]?.id,
             )
             const absoluteDropIndex =

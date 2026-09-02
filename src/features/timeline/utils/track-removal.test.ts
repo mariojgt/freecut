@@ -56,4 +56,43 @@ describe('getEmptyTrackIdsForRemoval', () => {
 
     expect(getEmptyTrackIdsForRemoval(tracks, {}, 'a1')).toEqual(['v1'])
   })
+
+  it('does not treat a populated layer-group container as an empty lane', () => {
+    const tracks = [
+      makeTrack({ id: 'group', name: 'Artwork', isGroup: true, order: 0 }),
+      makeTrack({ id: 'shape', name: 'Shape', parentTrackId: 'group', order: 1 }),
+      makeTrack({ id: 'empty', name: 'V1', order: 2 }),
+    ]
+    const itemsByTrackId = {
+      shape: [makeItem({ id: 'shape-item', trackId: 'shape' })],
+    }
+
+    expect(getEmptyTrackIdsForRemoval(tracks, itemsByTrackId, 'group')).toEqual(['empty'])
+  })
+
+  it('removes a group only when all of its empty descendant lanes are removed', () => {
+    const tracks = [
+      makeTrack({ id: 'group', name: 'Artwork', isGroup: true, order: 0 }),
+      makeTrack({ id: 'shape', name: 'Shape', parentTrackId: 'group', order: 1 }),
+      makeTrack({ id: 'populated', name: 'V1', order: 2 }),
+    ]
+    const itemsByTrackId = {
+      populated: [makeItem({ id: 'clip', trackId: 'populated' })],
+    }
+
+    expect(getEmptyTrackIdsForRemoval(tracks, itemsByTrackId, 'populated')).toEqual([
+      'group',
+      'shape',
+    ])
+  })
+
+  it('preserves a child lane when an empty group is the deletion context', () => {
+    const tracks = [
+      makeTrack({ id: 'group', name: 'Artwork', isGroup: true, order: 0 }),
+      makeTrack({ id: 'shape', name: 'Shape', parentTrackId: 'group', order: 1 }),
+      makeTrack({ id: 'empty', name: 'V1', order: 2 }),
+    ]
+
+    expect(getEmptyTrackIdsForRemoval(tracks, {}, 'group')).toEqual(['empty'])
+  })
 })

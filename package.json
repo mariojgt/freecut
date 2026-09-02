@@ -21,6 +21,9 @@
     "dev:compare": "node scripts/run-dev-and-perf.mjs",
     "build": "vp build",
     "build:perf": "vp build --mode perf",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "lint": "vp lint src headless mcp docker vite.config.ts",
     "lint:fix": "vp lint src headless mcp docker vite.config.ts --fix",
     "format": "vp fmt src headless mcp docker vite.config.ts package.json .oxlintrc.json .oxfmtrc.json",
@@ -124,6 +127,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.2.2",
     "@tanstack/router-cli": "1.166.33",
+    "@tauri-apps/cli": "2.11.4",
     "@testing-library/dom": "10.4.1",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",

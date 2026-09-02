@@ -4,7 +4,10 @@
  */
 
 export type { TimelineState, TimelineActions } from '@/features/timeline/types'
-export { useTimelineStore } from '@/features/timeline/stores/timeline-store'
+export {
+  rateStretchItemWithoutHistory,
+  useTimelineStore,
+} from '@/features/timeline/stores/timeline-store'
 export { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 export { useItemsStore } from '@/features/timeline/stores/items-store'
 export { useKeyframesStore } from '@/features/timeline/stores/keyframes-store'
@@ -16,7 +19,6 @@ export {
 export { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 export { execute as executeTimelineCommand } from '@/features/timeline/stores/actions/shared'
 export { captureSnapshot } from '@/features/timeline/stores/commands/snapshot'
-export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
 export {
   addCompositionControl,
   removeCompositionControl,
@@ -33,10 +35,8 @@ export {
   removePresetKeyframeApplication,
   removeManualKeyframes,
   trimAnimationToItemBounds,
-} from '@/features/timeline/stores/actions/keyframe-actions'
-export type {
-  MotionPresetClear,
-  MotionPresetVectorApply,
+  type MotionPresetClear,
+  type MotionPresetVectorApply,
 } from '@/features/timeline/stores/actions/keyframe-actions'
 export {
   applyMotionLayersToItems,
@@ -64,8 +64,9 @@ export {
   createMotionClip,
   openComposition,
 } from '@/features/timeline/stores/actions/composition-actions'
-export { insertBlock } from '@/features/timeline/stores/actions/block-actions'
-export type {
-  InsertBlockParams,
-  InsertBlockResult,
+export {
+  importSvgLayers,
+  insertBlock,
+  type InsertBlockParams,
+  type InsertBlockResult,
 } from '@/features/timeline/stores/actions/block-actions'

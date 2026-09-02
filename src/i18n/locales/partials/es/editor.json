@@ -572,6 +572,11 @@
       "verticalMixed": "Vertical (mixto)"
     },
     "shapeSection": {
+      "importSvgLayers": "Importar SVG como capas",
+      "importSvgLayersHint": "Importa los contornos como trazados editables, listos para movimiento y fotogramas clave.",
+      "importSvgImported": "Se importaron {{count}} capas SVG editables.",
+      "importSvgImportedWithWarnings": "Se importaron {{count}} capas con {{warnings}} avisos de simplificación.",
+      "importSvgError": "No se pudo importar el SVG como capas.",
       "shape": "Forma",
       "type": "Tipo",
       "mixed": "Mixto",

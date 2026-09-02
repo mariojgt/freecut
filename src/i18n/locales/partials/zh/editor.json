@@ -572,6 +572,11 @@
       "verticalMixed": "垂直（混合）"
     },
     "shapeSection": {
+      "importSvgLayers": "将 SVG 导入为图层",
+      "importSvgLayersHint": "将轮廓导入为可编辑路径，可立即用于动画和关键帧。",
+      "importSvgImported": "已导入 {{count}} 个可编辑 SVG 图层。",
+      "importSvgImportedWithWarnings": "已导入 {{count}} 个图层，并有 {{warnings}} 条简化警告。",
+      "importSvgError": "无法将 SVG 导入为图层。",
       "shape": "形状",
       "type": "类型",
       "mixed": "混合",

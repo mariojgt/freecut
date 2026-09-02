@@ -143,4 +143,42 @@ describe('TrackHeader', () => {
 
     expect(screen.getByRole('button', { name: 'Enable sync lock' })).toBeInTheDocument()
   })
+
+  it('renders a non-draggable layer-group disclosure with its child count', () => {
+    const onToggleCollapsed = vi.fn()
+    render(
+      <TrackHeader
+        track={makeTrack({
+          id: 'svg-group',
+          name: 'Artwork',
+          isGroup: true,
+          isCollapsed: true,
+        })}
+        isActive={false}
+        isSelected={false}
+        canDeleteTrack
+        canDeleteEmptyTracks
+        groupChildCount={120}
+        onToggleLock={() => undefined}
+        onToggleSyncLock={() => undefined}
+        onToggleDisabled={() => undefined}
+        onToggleSolo={() => undefined}
+        onSelect={() => undefined}
+        onCloseGaps={() => undefined}
+        onAddVideoTrack={() => undefined}
+        onAddAudioTrack={() => undefined}
+        onDeleteTrack={() => undefined}
+        onDeleteEmptyTracks={() => undefined}
+        onToggleCollapsed={onToggleCollapsed}
+      />,
+    )
+
+    const disclosure = screen.getByRole('button', { name: 'Expand layer group' })
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('120 layers')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close All Gaps' })).toBeDisabled()
+
+    fireEvent.click(disclosure)
+    expect(onToggleCollapsed).toHaveBeenCalledTimes(1)
+  })
 })

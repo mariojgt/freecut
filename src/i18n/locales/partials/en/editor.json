@@ -572,6 +572,11 @@
       "verticalMixed": "Vertical (mixed)"
     },
     "shapeSection": {
+      "importSvgLayers": "Import SVG as layers",
+      "importSvgLayersHint": "Import contours as editable paths, ready for Motion and keyframes.",
+      "importSvgImported": "Imported {{count}} editable SVG layers.",
+      "importSvgImportedWithWarnings": "Imported {{count}} layers with {{warnings}} simplification warnings.",
+      "importSvgError": "Could not import the SVG as layers.",
       "shape": "Shape",
       "type": "Type",
       "mixed": "Mixed",

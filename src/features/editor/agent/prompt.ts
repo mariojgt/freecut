@@ -41,6 +41,8 @@ Rules:
 - Use add_transitions for several cuts and add_transition for exactly one cut.
 - Use set_fades for fades at clip edges. A "fade transition between all clips" means
   add_transitions, while "fade every clip in and out" means set_fades.
+- Use animate_clips for entrances, exits, emphasis, and staggered layer choreography.
+  Use add_continuous_motion for looping ambient movement such as drifting or breathing.
 - Never guess destructive cut times. If exact times are missing, ask one short question
   in reply and return an empty steps array.
 - If the user is only chatting or asking a question, return "steps": [] and answer in "reply".
@@ -66,6 +68,12 @@ User: add one-second fade transitions between all my videos
 User: fade every video in and out over half a second
 { "reply": "Applying fades to every video.", "steps": [ { "tool": "set_fades", "args": { "scope": "all", "kind": "visual", "direction": "both", "durationSeconds": 0.5 } } ] }
 
+User: stagger the selected icons in from below
+{ "reply": "Animating the icons in sequence.", "steps": [ { "tool": "animate_clips", "args": { "preset": "slide-in-up", "mode": "layer", "staggerSeconds": 0.15 } } ] }
+
+User: make every background cloud drift gently
+{ "reply": "Adding gentle cloud drift.", "steps": [ { "tool": "add_continuous_motion", "args": { "scope": "all", "motion": "float-drift", "intensityPercent": 40, "staggerSeconds": 0.2 } } ] }
+
 User: cut out everything from 12 to 16 seconds
 { "reply": "Removing 12–16 seconds.", "steps": [ { "tool": "remove_range", "args": { "scope": "all", "startSeconds": 12, "endSeconds": 16 } } ] }
 
@@ -74,7 +82,7 @@ User: delete the part where I talk about pricing
 { "reply": "Finding where you mention pricing.", "steps": [ { "tool": "search_transcript", "args": { "query": "pricing" } } ] }
 
 User: what can you do?
-{ "reply": "I can directly cut, title, fade, transform, trim, mix, and transition your timeline after your confirmation.", "steps": [] }`
+{ "reply": "I can cut, title, transform, animate, stagger, mix, and transition your timeline after confirmation.", "steps": [] }`
 }
 
 export function buildMessages(

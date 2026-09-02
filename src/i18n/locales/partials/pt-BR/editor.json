@@ -572,6 +572,11 @@
       "verticalMixed": "Vertical (misto)"
     },
     "shapeSection": {
+      "importSvgLayers": "Importar SVG como camadas",
+      "importSvgLayersHint": "Importa os contornos como caminhos editáveis, prontos para animação e quadros-chave.",
+      "importSvgImported": "{{count}} camadas SVG editáveis importadas.",
+      "importSvgImportedWithWarnings": "{{count}} camadas importadas com {{warnings}} avisos de simplificação.",
+      "importSvgError": "Não foi possível importar o SVG como camadas.",
       "shape": "Forma",
       "type": "Tipo",
       "mixed": "Misto",

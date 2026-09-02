@@ -43,6 +43,7 @@ import { importTranscriptEditorPanel } from '@/features/editor/deps/timeline-pan
 import { LottieBrowserPanel } from '@/features/editor/deps/lottie-browser'
 import { TransitionsPanel } from './transitions-panel'
 import { BlockLibraryPanel } from './block-library-panel'
+import { SvgLayerImportButton } from './svg-layer-import-button'
 import {
   createDefaultGradientItem,
   createDefaultShapeItem,
@@ -805,6 +806,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
             <div
               className={`min-h-0 flex-1 overflow-y-auto p-3 ${activeTab === 'shapes' ? 'block' : 'hidden'}`}
             >
+              <SvgLayerImportButton />
               <div className="grid grid-cols-3 gap-1.5">
                 <button
                   draggable={true}

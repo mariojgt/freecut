@@ -23,7 +23,7 @@ import {
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'
 import type { CanvasSettings } from '@/types/transform'
-import type { AnimationKeyframeSource, AnimatableProperty } from '@/types/keyframe'
+import type { AnimatableProperty } from '@/types/keyframe'
 import type { TextItem, TimelineItem } from '@/types/timeline'
 import type { TextMotionSlot } from '@/types/text-motion'
 import type {
@@ -46,8 +46,6 @@ import { usePlaybackStore } from '@/shared/state/playback'
 import { useProjectStore } from '@/features/editor/deps/projects'
 import {
   applyAnimationPreset,
-  applyMotionLayersToItems,
-  applyMotionPresetKeyframes,
   applyMotionModifierToItems,
   updateMotionModifiersLive,
   beginMotionModifierEdit,
@@ -66,27 +64,21 @@ import {
   useKeyframesStore,
   useTimelineCommandStore,
   useCompositionsStore,
-  type MotionPresetClear,
-  type MotionPresetVectorApply,
 } from '@/features/editor/deps/timeline-store'
 import { getSourceDimensions, resolveTransform } from '@/features/editor/deps/composition-runtime'
 import {
   getAnimatablePropertiesForItem,
   getKeyframePropertyLabel,
-  getMotionPresetAnchorFrame,
   MOTION_MODULATORS,
   MOTION_PRESET_CATEGORIES,
   MOTION_PRESETS,
   motionPresetScalesBox,
   DEFAULT_MOTION_GENERATOR_SETTINGS,
-  applyMotionGeneratorSettings,
   createMotionModifier,
   getMotionModifierSettings,
   updateMotionModifierSettings,
-  createMotionAnimationLayer,
   buildBakeMotionPlan,
   countTrimmedKeyframes,
-  resolveAnimatedTransform,
   type MotionPreset,
   type MotionPresetCategory,
   type MotionGeneratorSettings,
@@ -104,13 +96,7 @@ import { SaveAnimationPresetDialog } from './save-animation-preset-dialog'
 import { TextMotionSlotRows } from '../text-motion/text-motion-slot-rows'
 import { filterAnimationPresetCandidates } from './animation-preset-filter'
 import { AppliedContinuousMotionControls } from './applied-continuous-motion-controls'
-
-// Every transform/opacity property any built-in motion preset can write. In
-// Replace mode we clear these (within the new preset's frame window) so a fresh
-// preset fully supersedes whatever animation occupied that region.
-const MOTION_PRESET_PROPERTIES: AnimatableProperty[] = Array.from(
-  new Set(MOTION_PRESETS.flatMap((preset) => preset.properties)),
-)
+import { applyBuiltInMotion } from '../../services/apply-built-in-motion'
 
 const presetsByCategory = MOTION_PRESET_CATEGORIES.reduce(
   (map, category) => {
@@ -748,220 +734,32 @@ export const AnimationPresetLibrary = memo(function AnimationPresetLibrary({
         toast.warning(t('editor.animatePresets.selectClipFirst'))
         return
       }
-      const replace = applyMode === 'replace'
-      const additiveLayer = applyMode === 'layer'
-      const clearSet = new Set<AnimatableProperty>(MOTION_PRESET_PROPERTIES)
-      const payloads: Array<
-        { itemId: string; source?: AnimationKeyframeSource } & ReturnType<
-          typeof applyMotionGeneratorSettings
-        >[number]
-      > = []
-      const clears: MotionPresetClear[] = []
-      const vectorApplies: MotionPresetVectorApply[] = []
-      const layerAssignments: Parameters<typeof applyMotionLayersToItems>[0] = []
-
-      selectedItems.forEach((item, index) => {
-        const itemKeyframes = keyframesByItemId[item.id]
-        // In Replace mode the preset defines this clip's animation, so anchor the
-        // resting pose off the BASE transform, ignoring existing keyframes on any
-        // preset-owned property (they're about to be cleared in this region).
-        const anchorKeyframes =
-          replace && itemKeyframes
-            ? {
-                ...itemKeyframes,
-                properties: itemKeyframes.properties.filter(
-                  (entry) => !clearSet.has(entry.property),
-                ),
-                vectorProperties: itemKeyframes.vectorProperties?.filter(
-                  (entry) => entry.property !== 'position' && entry.property !== 'scale',
-                ),
-              }
-            : itemKeyframes
-        const base = resolveTransform(item, canvas, getSourceDimensions(item))
-        const anchorFrame = getMotionPresetAnchorFrame(
-          preset.category,
-          item.durationInFrames,
-          canvas.fps,
-        )
-        const anchor = resolveAnimatedTransform(base, anchorKeyframes, anchorFrame)
-        const ctx = {
-          anchor,
-          durationInFrames: item.durationInFrames,
-          fps: canvas.fps,
-          frameWidth: canvas.width,
-          frameHeight: canvas.height,
-        }
-        const built = applyMotionGeneratorSettings(
-          preset,
-          preset.build(ctx),
-          ctx,
-          motionGeneratorSettingsRef.current,
-          index,
-        )
-        if (built.length === 0) return
-        if (additiveLayer) {
-          const layer = createMotionAnimationLayer({
-            name: t(`editor.motionPresets.items.${preset.labelKey}`),
-            source: 'built-in-preset',
-            sourcePresetId: preset.id,
-            anchor,
-            payloads: built,
-          })
-          layerAssignments.push({ itemId: item.id, layer })
-          return
-        }
-        const source = {
-          applicationId: crypto.randomUUID(),
-          kind: 'built-in-preset' as const,
-          presetId: preset.id,
-          presetName: t(`editor.motionPresets.items.${preset.labelKey}`),
-        }
-        const existingVectorProperties = new Set(
-          itemKeyframes?.vectorProperties
-            ?.filter((property) => property.keyframes.length > 0)
-            .map((property) => property.property) ?? [],
-        )
-        const vectorEvaluationKeyframes = replace ? anchorKeyframes : itemKeyframes
-        const vectorControlledScalars = new Set<AnimatableProperty>()
-
-        if (existingVectorProperties.has('position')) {
-          const positionPayloads = built.filter(
-            (keyframe) => keyframe.property === 'x' || keyframe.property === 'y',
-          )
-          if (positionPayloads.length > 0) {
-            const frames = [...new Set(positionPayloads.map((keyframe) => keyframe.frame))]
-            const fromFrame = Math.min(...frames)
-            const toFrame = Math.max(...frames)
-            vectorApplies.push({
-              itemId: item.id,
-              property: 'position',
-              keyframes: frames.map((frame) => {
-                const pose = resolveAnimatedTransform(base, vectorEvaluationKeyframes, frame)
-                const x = positionPayloads.find(
-                  (keyframe) => keyframe.frame === frame && keyframe.property === 'x',
-                )
-                const y = positionPayloads.find(
-                  (keyframe) => keyframe.frame === frame && keyframe.property === 'y',
-                )
-                const style = x ?? y!
-                return {
-                  frame,
-                  value: { x: x?.value ?? pose.x, y: y?.value ?? pose.y },
-                  easing: style.easing,
-                  easingConfig: style.easingConfig,
-                  source,
-                }
-              }),
-              ...(replace && { replaceRange: { fromFrame, toFrame } }),
-            })
-            vectorControlledScalars.add('x')
-            vectorControlledScalars.add('y')
-          }
-        }
-
-        if (existingVectorProperties.has('scale')) {
-          const scalePayloads = built.filter(
-            (keyframe) => keyframe.property === 'width' || keyframe.property === 'height',
-          )
-          if (scalePayloads.length > 0) {
-            const frames = [...new Set(scalePayloads.map((keyframe) => keyframe.frame))]
-            const fromFrame = Math.min(...frames)
-            const toFrame = Math.max(...frames)
-            vectorApplies.push({
-              itemId: item.id,
-              property: 'scale',
-              keyframes: frames.map((frame) => {
-                const pose = resolveAnimatedTransform(base, vectorEvaluationKeyframes, frame)
-                const width = scalePayloads.find(
-                  (keyframe) => keyframe.frame === frame && keyframe.property === 'width',
-                )
-                const height = scalePayloads.find(
-                  (keyframe) => keyframe.frame === frame && keyframe.property === 'height',
-                )
-                const style = width ?? height!
-                const resolvedWidth = width?.value ?? pose.width
-                const resolvedHeight = height?.value ?? pose.height
-                return {
-                  frame,
-                  value: {
-                    x: base.width === 0 ? 100 : (resolvedWidth / base.width) * 100,
-                    y: base.height === 0 ? 100 : (resolvedHeight / base.height) * 100,
-                  },
-                  easing: style.easing,
-                  easingConfig: style.easingConfig,
-                  source,
-                }
-              }),
-              ...(replace && { replaceRange: { fromFrame, toFrame } }),
-            })
-            vectorControlledScalars.add('width')
-            vectorControlledScalars.add('height')
-          }
-        }
-
-        for (const keyframe of built) {
-          if (!vectorControlledScalars.has(keyframe.property)) {
-            payloads.push({ itemId: item.id, ...keyframe, source })
-          }
-        }
-
-        if (replace) {
-          // Clear every preset-owned property within THIS preset's frame window,
-          // so a new entrance wipes a previous entrance (whatever properties it
-          // used) while an exit at the other end of the clip is left intact.
-          const frames = built.map((keyframe) => keyframe.frame)
-          const fromFrame = Math.min(...frames)
-          const toFrame = Math.max(...frames)
-          for (const property of MOTION_PRESET_PROPERTIES) {
-            clears.push({ itemId: item.id, property, fromFrame, toFrame })
-          }
-        }
+      const name = t(`editor.motionPresets.items.${preset.labelKey}`)
+      const result = applyBuiltInMotion({
+        preset,
+        presetName: name,
+        items: selectedItems,
+        canvas,
+        settings: motionGeneratorSettingsRef.current,
+        mode: applyMode,
       })
-
-      if (additiveLayer) {
-        const applied = applyMotionLayersToItems(layerAssignments)
-        if (applied === 0) {
-          toast.warning(t('editor.animatePresets.applyFailed'))
-          return
-        }
-        toast.success(
-          t('editor.animatePresets.appliedToast', {
-            name: t(`editor.motionPresets.items.${preset.labelKey}`),
-          }),
+      if (!result.applied) {
+        toast.warning(
+          t(
+            result.reason === 'transition-blocked'
+              ? 'editor.animatePresets.transitionBlocked'
+              : 'editor.animatePresets.applyFailed',
+          ),
         )
-        return
-      }
-      if (payloads.length === 0 && vectorApplies.length === 0) {
-        toast.warning(t('editor.animatePresets.applyFailed'))
-        return
-      }
-      // The action drops keyframes that land inside a transition region; if every
-      // keyframe was dropped nothing was applied, so don't claim success.
-      const mergePayloads = replace
-        ? payloads
-        : payloads.filter((payload) => {
-            const itemKeyframes = keyframesByItemId[payload.itemId]
-            const lane = itemKeyframes?.properties.find(
-              (candidate) => candidate.property === payload.property,
-            )
-            return !lane?.keyframes.some((keyframe) => keyframe.frame === payload.frame)
-          })
-      const appliedIds = applyMotionPresetKeyframes(
-        mergePayloads,
-        replace ? clears : [],
-        vectorApplies,
-      )
-      if (appliedIds.length === 0) {
-        toast.warning(t('editor.animatePresets.transitionBlocked'))
         return
       }
       toast.success(
         t('editor.animatePresets.appliedToast', {
-          name: t(`editor.motionPresets.items.${preset.labelKey}`),
+          name,
         }),
       )
     },
-    [applyMode, canvas, keyframesByItemId, selectedItems, t],
+    [applyMode, canvas, selectedItems, t],
   )
 
   // A modulator is "active" when every selected clip already carries it — used

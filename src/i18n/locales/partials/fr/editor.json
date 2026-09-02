@@ -572,6 +572,11 @@
       "verticalMixed": "Vertical (mixte)"
     },
     "shapeSection": {
+      "importSvgLayers": "Importer le SVG en calques",
+      "importSvgLayersHint": "Importe les contours comme tracés modifiables, prêts pour l’animation et les images clés.",
+      "importSvgImported": "{{count}} calques SVG modifiables importés.",
+      "importSvgImportedWithWarnings": "{{count}} calques importés avec {{warnings}} avertissements de simplification.",
+      "importSvgError": "Impossible d’importer le SVG en calques.",
       "shape": "Forme",
       "type": "Type",
       "mixed": "Mixte",

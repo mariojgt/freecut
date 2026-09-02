@@ -185,6 +185,41 @@ npm run dev
 Open [http://localhost:5173](http://localhost:5173). Chrome or Edge provides the
 widest codec and GPU feature set; Firefox uses browser-private workspace storage.
 
+### macOS Desktop App
+
+FreeCut also ships as a Tauri v2 desktop application for macOS 12.4 or newer.
+Install the normal web dependencies plus the [Rust toolchain](https://rustup.rs/)
+and Apple's command-line developer tools, then run:
+
+```bash
+xcode-select --install # skip this if the tools are already installed
+npm run tauri:dev
+```
+
+Create a native `.app` and `.dmg` for the current Mac with:
+
+```bash
+APPLE_SIGNING_IDENTITY=- npm run tauri:build -- --bundles app,dmg
+```
+
+The bundles are written below `src-tauri/target/release/bundle/`. To build one
+universal download that supports both Apple Silicon and Intel Macs:
+
+```bash
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+APPLE_SIGNING_IDENTITY=- npm run tauri:build -- --target universal-apple-darwin --bundles app,dmg
+```
+
+The desktop shell uses macOS's system WebKit runtime. It preserves FreeCut's
+cross-origin-isolation headers and uses the existing browser-private workspace
+fallback when the webview exposes OPFS. FreeCut stores serializable workspace
+locators and reopens OPFS handles on launch, avoiding WebKit's inability to put
+those handles directly in IndexedDB. Media picked through the fallback file
+input is copied into that private workspace; linking directly to the original
+file still requires the File System Access API. WebGPU, WebCodecs, local AI, and
+available export codecs therefore depend on the macOS/WebKit version, just as
+they do in Safari.
+
 ### Workflow
 
 1. Pick a workspace folder when prompted. In Firefox, start an empty browser workspace or import a copy of an existing FreeCut workspace folder.
@@ -324,6 +359,31 @@ web image supports `linux/amd64` and `linux/arm64`; the Chrome-based headless
 image is `linux/amd64`. Prereleases are published but are not selected by the
 automatic updater.
 
+Pushing a semantic `v*` tag also runs `.github/workflows/release-macos.yml`:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The workflow derives the application version from the tag, builds a universal
+Apple Silicon + Intel `.app` and `.dmg`, and attaches them to a draft GitHub
+Release. Test the Mac download, then publish that draft; publishing continues to
+trigger the Docker release workflow above.
+
+Without Apple credentials, the workflow still builds the Mac downloads, but
+they are unsigned and macOS may require approval in **System Settings → Privacy
+& Security**. For public distribution, configure these GitHub Actions secrets
+from an Apple Developer ID certificate and notarization account:
+
+- `APPLE_CERTIFICATE`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_ID`
+- `APPLE_PASSWORD` (an app-specific password)
+- `APPLE_TEAM_ID`
+
+When those secrets are present, Tauri signs and notarizes the tagged build.
+
 The Docker host checks GitHub's public `releases/latest` address every five
 minutes. When the stable tag changes, it downloads the deployment files from
 that tag, validates them, pulls the matching immutable images, and waits for
@@ -427,6 +487,7 @@ process environment when their defaults do not apply.
 ## Tech Stack
 
 - [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- [Tauri 2](https://v2.tauri.app/) + Rust for the macOS desktop package
 - [Vite+](https://github.com/voidzero-dev/vite-plus) for dev, build, lint, format, check, and tests
 - [Vite](https://vite.dev/) + [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react)
 - [WebGPU](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API) for effects, compositing, transitions, masks, scopes, and AI acceleration

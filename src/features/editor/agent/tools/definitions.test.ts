@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vite-plus/test'
 import {
   useItemsStore,
+  useKeyframesStore,
   useTimelineCommandStore,
   useTimelineSettingsStore,
   useTimelineStore,
@@ -59,6 +60,7 @@ describe('editor agent mutation tools', () => {
     useItemsStore.getState().setItems([])
     useItemsStore.getState().setTracks([])
     useTimelineStore.setState({ transitions: [] })
+    useKeyframesStore.getState().setKeyframes([])
     useTimelineCommandStore.getState().clearHistory()
     useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
     useEditorStore.setState({ linkedSelectionEnabled: false })
@@ -280,5 +282,70 @@ describe('editor agent mutation tools', () => {
     expect(useItemsStore.getState().items).toEqual([
       expect.objectContaining({ id: 'long-video', from: 0, durationInFrames: 300 }),
     ])
+  })
+
+  it('authors staggered, editable animation keyframes with one Undo', async () => {
+    useItemsStore
+      .getState()
+      .setItems([
+        makeTimelineVideoItem({ id: 'first', from: 0 }),
+        makeTimelineVideoItem({ id: 'second', from: 60 }),
+      ])
+    buildClipRefs()
+
+    const call = toolArgs('animate_clips', {
+      scope: 'all',
+      preset: 'slide-in-up',
+      mode: 'replace',
+      staggerSeconds: 0.2,
+    })
+    const result = await call.tool.execute(call.args)
+
+    expect(result.ok).toBe(true)
+    const lanes = useKeyframesStore.getState().keyframesByItemId
+    expect(lanes.first?.properties.find((lane) => lane.property === 'y')?.keyframes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ frame: 0 }),
+        expect.objectContaining({ frame: 15 }),
+      ]),
+    )
+    expect(lanes.second?.properties.find((lane) => lane.property === 'y')?.keyframes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ frame: 6 }),
+        expect.objectContaining({ frame: 21 }),
+      ]),
+    )
+    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
+
+    useTimelineCommandStore.getState().undo()
+    expect(useKeyframesStore.getState().keyframes).toEqual([])
+  })
+
+  it('attaches staggered procedural motion without baking keyframes', async () => {
+    useItemsStore
+      .getState()
+      .setItems([
+        makeTimelineVideoItem({ id: 'first', from: 0 }),
+        makeTimelineVideoItem({ id: 'second', from: 60 }),
+      ])
+    buildClipRefs()
+
+    const call = toolArgs('add_continuous_motion', {
+      scope: 'all',
+      motion: 'float-drift',
+      intensityPercent: 80,
+      staggerSeconds: 0.1,
+    })
+    const result = await call.tool.execute(call.args)
+
+    expect(result.ok).toBe(true)
+    expect(useItemsStore.getState().itemById.first?.motionModifiers).toEqual([
+      expect.objectContaining({ type: 'float-drift', amplitude: 0.8, phaseFrames: 0 }),
+    ])
+    expect(useItemsStore.getState().itemById.second?.motionModifiers).toEqual([
+      expect.objectContaining({ type: 'float-drift', amplitude: 0.8, phaseFrames: 3 }),
+    ])
+    expect(useKeyframesStore.getState().keyframes).toEqual([])
+    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
   })
 })

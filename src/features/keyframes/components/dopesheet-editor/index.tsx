@@ -122,6 +122,7 @@ import {
 } from './dopesheet-helpers'
 import type { DopesheetPropertyGroupStructure } from './dopesheet-helpers'
 import { GroupTimelineCell, PropertyTimelineCell } from './dopesheet-timeline-cells'
+import { getSortedFrameRenderWindow } from './keyframe-render-window'
 import type { SegmentEasingChange } from './segment-easing-popover'
 import { DopesheetPlayheadLine } from './dopesheet-playhead-line'
 import {
@@ -1583,13 +1584,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
     linkedTimelineViewportWidth !== undefined &&
     linkedTimelineViewportWidth > 0
   const timelineCellBorderWidth =
-    presentation === 'classic'
-      ? hasLinkedTimelineAxis
-        ? 0
-        : 1
-      : presentation === 'lanes'
-        ? 1
-        : 0
+    presentation === 'classic' ? (hasLinkedTimelineAxis ? 0 : 1) : presentation === 'lanes' ? 1 : 0
   const effectiveTimelineWidth = Math.max(
     hasLinkedTimelineAxis
       ? linkedTimelineViewportWidth
@@ -1692,12 +1687,8 @@ export const DopesheetEditor = memo(function DopesheetEditor({
   }, [affectedFrameRange, effectiveTimelineWidth, frameToX])
   const sharedGridFrameToX = useCallback(
     (frame: number) =>
-      getFrameAxisX(
-        frame,
-        viewport,
-        effectiveTimelineWidth + timelineCellBorderWidth,
-        0,
-      ) - timelineCellBorderWidth,
+      getFrameAxisX(frame, viewport, effectiveTimelineWidth + timelineCellBorderWidth, 0) -
+      timelineCellBorderWidth,
     [effectiveTimelineWidth, timelineCellBorderWidth, viewport],
   )
   const getRenderedKeyframeX = useCallback(
@@ -1807,7 +1798,8 @@ export const DopesheetEditor = memo(function DopesheetEditor({
   const renderedKeyframeXById = useMemo(() => {
     const positions = new Map<string, number>()
     for (const row of sheetRowsStructure) {
-      for (const keyframe of row.keyframes) {
+      const visibleKeyframes = getSortedFrameRenderWindow(row.keyframes, viewport).visible
+      for (const keyframe of visibleKeyframes) {
         const x = getRenderedKeyframeX(keyframe.frame)
         if (x !== null) {
           positions.set(keyframe.id, x)
@@ -1815,7 +1807,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
       }
     }
     return positions
-  }, [sheetRowsStructure, getRenderedKeyframeX])
+  }, [sheetRowsStructure, getRenderedKeyframeX, viewport])
   const renderedSheetEntries = useMemo(() => {
     const entries: RenderedSheetEntry[] = []
     const textMotionRowCount = presentation === 'classic' ? textMotionBands.length : 0
@@ -1947,8 +1939,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
     if (timelineGridDivisions && timelineGridDivisions > 0) {
       return Array.from(
         { length: timelineGridDivisions + 1 },
-        (_, index) =>
-          viewport.startFrame + (index / timelineGridDivisions) * frameRange,
+        (_, index) => viewport.startFrame + (index / timelineGridDivisions) * frameRange,
       )
     }
     const step = getNiceTickStep(frameRange)
@@ -4737,6 +4728,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
                     groupTimelineById.get(entry.group.id)?.frameGroups ?? EMPTY_FRAME_GROUPS
                   }
                   rows={groupTimelineById.get(entry.group.id)?.rows ?? EMPTY_STRUCTURE_ROWS}
+                  frameViewport={viewport}
                   ticks={ticks}
                   axisWidth={effectiveTimelineWidth}
                   frameToX={frameToX}
@@ -4769,6 +4761,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
                 itemId={itemId}
                 property={row.property}
                 keyframes={rowKeyframesByProperty.get(row.property) ?? EMPTY_KEYFRAMES}
+                frameViewport={viewport}
                 locked={rowLocked}
                 ticks={ticks}
                 axisWidth={effectiveTimelineWidth}
@@ -4818,6 +4811,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
       transitionBlockedRanges,
       proceduralBandByProperty,
       renderedKeyframeXById,
+      viewport,
       selectedKeyframeIds,
       sheetPreviewDuplicateKeyframeIds,
       sheetPreviewFrames,

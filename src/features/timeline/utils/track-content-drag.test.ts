@@ -56,6 +56,46 @@ function makeAudioItem(id: string, trackId: string): AudioItem {
 }
 
 describe('track content drag', () => {
+  it('excludes organizational groups and children hidden by a collapsed group', () => {
+    const tracks = [
+      makeTrack({
+        id: 'svg-group',
+        name: 'Artwork',
+        kind: 'video',
+        order: 0,
+        isGroup: true,
+        isCollapsed: true,
+      }),
+      makeTrack({
+        id: 'svg-child',
+        name: 'Path 1',
+        kind: 'video',
+        order: 1,
+        parentTrackId: 'svg-group',
+      }),
+      makeTrack({ id: 'v1', name: 'V1', kind: 'video', order: 2 }),
+    ]
+
+    expect(
+      resolveTrackContentDragPlan({
+        tracks,
+        anchorTrackId: 'v1',
+        selectedTrackIds: ['svg-group', 'svg-child', 'v1'],
+      }),
+    ).toEqual({
+      kind: 'video',
+      sectionTrackIds: ['v1'],
+      draggedTrackIds: ['v1'],
+    })
+    expect(
+      resolveTrackContentDragPlan({
+        tracks,
+        anchorTrackId: 'svg-group',
+        selectedTrackIds: ['svg-group'],
+      }),
+    ).toBeNull()
+  })
+
   it('limits drag plans to the anchor section and ignores mixed A/V selections', () => {
     const tracks = [
       makeTrack({ id: 'v3', name: 'V3', kind: 'video', order: 0 }),

@@ -54,6 +54,7 @@ import {
 import { getDefaultActiveTrackId } from '../utils/default-active-track'
 import { KeyframeGraphPanel } from './keyframe-graph-panel'
 import { createRafCoalescedCallback } from '../utils/raf-coalesced-callback'
+import { getTimelineDescendantTrackIds, getTimelineDisplayTracks } from '../utils/group-utils'
 
 const logger = createLogger('Timeline')
 
@@ -90,6 +91,7 @@ export const Timeline = memo(function Timeline({ duration }: TimelineProps) {
     tracks,
     addTrack,
     removeTracks,
+    updateTrack,
     toggleTrackDisabled,
     toggleTrackLock,
     toggleTrackSyncLock,
@@ -103,23 +105,29 @@ export const Timeline = memo(function Timeline({ duration }: TimelineProps) {
   const selectTracks = useSelectionStore((s) => s.selectTracks)
   const selectedTrackIdsSet = useMemo(() => new Set(selectedTrackIds), [selectedTrackIds])
 
-  const visibleTracks = tracks
+  const visibleTracks = useMemo(() => getTimelineDisplayTracks(tracks), [tracks])
+  const groupChildCountById = useMemo(() => {
+    const trackById = new Map(tracks.map((track) => [track.id, track] as const))
+    const counts = new Map<string, number>()
+    for (const track of tracks) {
+      if (track.isGroup) continue
+
+      let parentTrackId = track.parentTrackId
+      const visited = new Set<string>()
+      while (parentTrackId && !visited.has(parentTrackId)) {
+        visited.add(parentTrackId)
+        const parent = trackById.get(parentTrackId)
+        if (!parent?.isGroup) break
+        counts.set(parent.id, (counts.get(parent.id) ?? 0) + 1)
+        parentTrackId = parent.parentTrackId
+      }
+    }
+    return counts
+  }, [tracks])
   const canDeleteEmptyTracks = useItemsStore(
     useCallback(
-      (s) => {
-        let emptyTrackCount = 0
-
-        for (const track of tracks) {
-          if ((s.itemsByTrackId[track.id]?.length ?? 0) === 0) {
-            emptyTrackCount += 1
-          }
-        }
-
-        if (emptyTrackCount === 0) return false
-        if (emptyTrackCount < tracks.length) return true
-        return tracks.length > 1
-      },
-      [tracks],
+      (s) => getEmptyTrackIdsForRemoval(tracks, s.itemsByTrackId, activeTrackId ?? '').length > 0,
+      [activeTrackId, tracks],
     ),
   )
   const videoTracks = useMemo(
@@ -718,6 +726,27 @@ export const Timeline = memo(function Timeline({ duration }: TimelineProps) {
     applyTrackSizePreset(preset.id)
   }, [])
 
+  const handleToggleGroupCollapsed = useCallback(
+    (trackId: string) => {
+      const currentTracks = useTimelineStore.getState().tracks
+      const track = currentTracks.find((candidate) => candidate.id === trackId)
+      if (!track?.isGroup) return
+      const nextCollapsed = !track.isCollapsed
+      updateTrack(track.id, { isCollapsed: nextCollapsed })
+
+      // Keep keyboard focus and selection on a row the user can still see.
+      const currentActiveTrackId = useSelectionStore.getState().activeTrackId
+      if (
+        nextCollapsed &&
+        currentActiveTrackId &&
+        getTimelineDescendantTrackIds(currentTracks, track.id).has(currentActiveTrackId)
+      ) {
+        setActiveTrack(track.id)
+      }
+    },
+    [setActiveTrack, updateTrack],
+  )
+
   const handleDeleteTrack = useCallback(
     (trackId: string) => {
       if (tracks.length <= 1) {
@@ -846,6 +875,7 @@ export const Timeline = memo(function Timeline({ duration }: TimelineProps) {
                   isSelected={selectedTrackIdsSet.has(track.id)}
                   canDeleteTrack={tracks.length > 1}
                   canDeleteEmptyTracks={canDeleteEmptyTracks}
+                  groupChildCount={groupChildCountById.get(track.id) ?? 0}
                   onToggleLock={() => toggleTrackLock(track.id)}
                   onToggleSyncLock={() => toggleTrackSyncLock(track.id)}
                   onToggleDisabled={() => toggleTrackDisabled(track.id)}
@@ -855,6 +885,7 @@ export const Timeline = memo(function Timeline({ duration }: TimelineProps) {
                   onAddAudioTrack={appendAudioTrackToSection}
                   onDeleteTrack={() => handleDeleteTrack(track.id)}
                   onDeleteEmptyTracks={() => handleDeleteEmptyTracks(track.id)}
+                  onToggleCollapsed={() => handleToggleGroupCollapsed(track.id)}
                   onSelect={(e) => {
                     if (trackDragJustDroppedRef.current) return
                     if (e.shiftKey && activeTrackId) {

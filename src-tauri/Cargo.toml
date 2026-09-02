@@ -1,0 +1,17 @@
+[package]
+name = "freecut"
+version = "0.0.0"
+description = "FreeCut local-first video and SVG animation editor"
+authors = ["FreeCut contributors"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "freecut_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

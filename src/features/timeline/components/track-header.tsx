@@ -8,8 +8,19 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { Power, PowerOff, Lock, GripVertical, Radio, FoldHorizontal, Link2 } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Power,
+  PowerOff,
+  Lock,
+  GripVertical,
+  Radio,
+  FoldHorizontal,
+  Link2,
+} from 'lucide-react'
 import type { TimelineTrack } from '@/types/timeline'
+import { cn } from '@/shared/ui/cn'
 import { useTrackDrag } from '../hooks/use-track-drag'
 import { TIMELINE_SIDEBAR_WIDTH } from '../constants'
 import { EDITOR_LAYOUT_CSS_VALUES } from '@/config/editor-layout'
@@ -23,6 +34,7 @@ interface TrackHeaderProps {
   isSelected: boolean
   canDeleteTrack: boolean
   canDeleteEmptyTracks: boolean
+  groupChildCount?: number
   onToggleLock: () => void
   onToggleSyncLock: () => void
   onToggleDisabled: () => void
@@ -33,6 +45,7 @@ interface TrackHeaderProps {
   onAddAudioTrack: () => void
   onDeleteTrack: () => void
   onDeleteEmptyTracks: () => void
+  onToggleCollapsed?: () => void
 }
 
 /**
@@ -44,9 +57,198 @@ function areTrackHeaderPropsEqual(prev: TrackHeaderProps, next: TrackHeaderProps
     prev.isActive === next.isActive &&
     prev.isSelected === next.isSelected &&
     prev.canDeleteTrack === next.canDeleteTrack &&
-    prev.canDeleteEmptyTracks === next.canDeleteEmptyTracks
+    prev.canDeleteEmptyTracks === next.canDeleteEmptyTracks &&
+    prev.groupChildCount === next.groupChildCount
   )
   // Callbacks (onToggleLock, etc.) are ignored - they're recreated each render but functionality is same
+}
+
+function getTrackHeaderBodyClassName(options: {
+  isGroup: boolean
+  isSelected: boolean
+  isActive: boolean
+  isDisabled: boolean
+}): string {
+  return cn(
+    'relative flex flex-col overflow-hidden px-1 transition-colors duration-150',
+    options.isGroup ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
+    options.isSelected
+      ? 'bg-primary/10'
+      : options.isDisabled
+        ? 'bg-muted/30 hover:bg-muted/40'
+        : 'hover:bg-secondary/50',
+    options.isActive ? 'border-l-3 border-l-primary' : 'border-l-3 border-l-transparent',
+    options.isDisabled && 'text-muted-foreground',
+  )
+}
+
+function TrackLeadControl({
+  track,
+  onToggleCollapsed,
+}: {
+  track: TimelineTrack
+  onToggleCollapsed?: () => void
+}) {
+  const { t } = useTranslation()
+  if (!track.isGroup) {
+    return <GripVertical className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+  }
+
+  const disclosureLabel = track.isCollapsed
+    ? t('editor.compose.expandGroup')
+    : t('editor.compose.collapseGroup')
+
+  return (
+    <button
+      type="button"
+      className="flex h-5 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground"
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggleCollapsed?.()
+      }}
+      onMouseDown={(event) => event.stopPropagation()}
+      aria-label={disclosureLabel}
+      aria-expanded={!track.isCollapsed}
+    >
+      {track.isCollapsed ? (
+        <ChevronRight className="h-3.5 w-3.5" />
+      ) : (
+        <ChevronDown className="h-3.5 w-3.5" />
+      )}
+    </button>
+  )
+}
+
+interface TrackControlButtonsProps {
+  track: TimelineTrack
+  isGroup: boolean
+  trackDisabled: boolean
+  syncLockEnabled: boolean
+  onToggleDisabled: () => void
+  onToggleSolo: () => void
+  onToggleLock: () => void
+  onToggleSyncLock: () => void
+  onCloseGaps?: () => void
+}
+
+function TrackControlButtons({
+  track,
+  isGroup,
+  trackDisabled,
+  syncLockEnabled,
+  onToggleDisabled,
+  onToggleSolo,
+  onToggleLock,
+  onToggleSyncLock,
+  onCloseGaps,
+}: TrackControlButtonsProps) {
+  const { t } = useTranslation()
+  const disabledLabel = trackDisabled
+    ? t('timeline.trackHeader.enableTrack')
+    : t('timeline.trackHeader.disableTrack')
+  const soloLabel = track.solo
+    ? t('timeline.trackHeader.unsoloTrack')
+    : t('timeline.trackHeader.soloTrack')
+  const lockLabel = track.locked
+    ? t('timeline.trackHeader.unlockTrack')
+    : t('timeline.trackHeader.lockTrack')
+  const syncLockLabel = syncLockEnabled
+    ? t('timeline.trackHeader.disableSyncLock')
+    : t('timeline.trackHeader.enableSyncLock')
+  const closeGapsLabel = t('timeline.trackHeader.closeAllGaps')
+  const buttonStyle = {
+    width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+    height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+  }
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded hover:bg-secondary"
+        style={buttonStyle}
+        onClick={(event) => {
+          event.stopPropagation()
+          onToggleDisabled()
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        aria-label={disabledLabel}
+        data-tooltip={disabledLabel}
+      >
+        {trackDisabled ? (
+          <PowerOff className="h-3 w-3 text-primary" />
+        ) : (
+          <Power className="h-3 w-3 opacity-70" />
+        )}
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded hover:bg-secondary"
+        style={buttonStyle}
+        onClick={(event) => {
+          event.stopPropagation()
+          onToggleSolo()
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        aria-label={soloLabel}
+        data-tooltip={soloLabel}
+      >
+        <Radio className={cn('h-3 w-3', track.solo && 'text-primary')} />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded hover:bg-secondary"
+        style={buttonStyle}
+        onClick={(event) => {
+          event.stopPropagation()
+          onToggleLock()
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        aria-label={lockLabel}
+        data-tooltip={lockLabel}
+      >
+        <Lock className={cn('h-3 w-3', track.locked ? 'text-primary' : 'opacity-70')} />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded hover:bg-secondary"
+        style={buttonStyle}
+        onClick={(event) => {
+          event.stopPropagation()
+          onToggleSyncLock()
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        aria-label={syncLockLabel}
+        data-tooltip={syncLockLabel}
+      >
+        <Link2 className={cn('h-3 w-3', syncLockEnabled ? 'text-primary' : 'opacity-70')} />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded hover:bg-secondary"
+        style={buttonStyle}
+        disabled={isGroup}
+        onClick={(event) => {
+          event.stopPropagation()
+          onCloseGaps?.()
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        aria-label={closeGapsLabel}
+        data-tooltip={closeGapsLabel}
+      >
+        <FoldHorizontal className="h-3 w-3" />
+      </Button>
+    </>
+  )
 }
 
 /**
@@ -64,6 +266,7 @@ export const TrackHeader = memo(function TrackHeader({
   isSelected,
   canDeleteTrack,
   canDeleteEmptyTracks,
+  groupChildCount = 0,
   onToggleLock,
   onToggleSyncLock,
   onToggleDisabled,
@@ -74,15 +277,20 @@ export const TrackHeader = memo(function TrackHeader({
   onAddAudioTrack,
   onDeleteTrack,
   onDeleteEmptyTracks,
+  onToggleCollapsed,
 }: TrackHeaderProps) {
   const { t } = useTranslation()
   const itemCount = useItemsStore((s) => s.itemsByTrackId[track.id]?.length ?? 0)
   const syncLockEnabled = isTrackSyncLockActive(track)
   const trackDisabled = isTrackDisabled(track)
+  const isGroup = track.isGroup === true
+  const isChild = Boolean(track.parentTrackId)
 
   // Use track drag hook (visuals handled centrally by timeline.tsx via DOM)
   const { handleDragStart } = useTrackDrag(track)
-  const itemCountLabel = t('timeline.trackHeader.clipCount', { count: itemCount })
+  const itemCountLabel = isGroup
+    ? t('editor.compose.groupLayerCount', { count: groupChildCount })
+    : t('timeline.trackHeader.clipCount', { count: itemCount })
 
   return (
     <ContextMenu>
@@ -95,162 +303,48 @@ export const TrackHeader = memo(function TrackHeader({
             containIntrinsicSize: `${TIMELINE_SIDEBAR_WIDTH}px ${track.height}px`,
           }}
           data-track-id={track.id}
+          data-track-group={isGroup ? 'true' : undefined}
+          data-track-parent-id={track.parentTrackId}
           data-track-disabled={trackDisabled ? 'true' : undefined}
         >
           <div
-            className={`
-              flex flex-col overflow-hidden px-1
-              cursor-grab active:cursor-grabbing relative
-              ${isSelected ? 'bg-primary/10' : trackDisabled ? 'bg-muted/30 hover:bg-muted/40' : 'hover:bg-secondary/50'}
-              ${isActive ? 'border-l-3 border-l-primary' : 'border-l-3 border-l-transparent'}
-              ${trackDisabled ? 'text-muted-foreground' : ''}
-              transition-colors duration-150
-            `}
+            className={getTrackHeaderBodyClassName({
+              isGroup,
+              isSelected,
+              isActive,
+              isDisabled: trackDisabled,
+            })}
             style={{ height: `${track.height}px` }}
             onClick={onSelect}
-            onMouseDown={handleDragStart}
+            onMouseDown={isGroup ? undefined : handleDragStart}
           >
-            <div className="flex h-6 shrink-0 items-center gap-0.5 overflow-hidden border-b border-border/60">
+            <div
+              className="flex h-6 shrink-0 items-center gap-0.5 overflow-hidden border-b border-border/60"
+              style={{ paddingLeft: isChild ? 12 : 0 }}
+            >
               <div className="flex h-5 w-4 shrink-0 items-center justify-center">
-                <GripVertical className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
+                <TrackLeadControl track={track} onToggleCollapsed={onToggleCollapsed} />
               </div>
-              {/* Disable Button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded hover:bg-secondary"
-                style={{
-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleDisabled()
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                aria-label={
-                  trackDisabled
-                    ? t('timeline.trackHeader.enableTrack')
-                    : t('timeline.trackHeader.disableTrack')
-                }
-                data-tooltip={
-                  trackDisabled
-                    ? t('timeline.trackHeader.enableTrack')
-                    : t('timeline.trackHeader.disableTrack')
-                }
-              >
-                {trackDisabled ? (
-                  <PowerOff className="w-3 h-3 text-primary" />
-                ) : (
-                  <Power className="w-3 h-3 opacity-70" />
-                )}
-              </Button>
-
-              {/* Solo Button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded hover:bg-secondary"
-                style={{
-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleSolo()
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                aria-label={
-                  track.solo
-                    ? t('timeline.trackHeader.unsoloTrack')
-                    : t('timeline.trackHeader.soloTrack')
-                }
-                data-tooltip={
-                  track.solo
-                    ? t('timeline.trackHeader.unsoloTrack')
-                    : t('timeline.trackHeader.soloTrack')
-                }
-              >
-                <Radio className={`w-3 h-3 ${track.solo ? 'text-primary' : ''}`} />
-              </Button>
-
-              {/* Lock Button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded hover:bg-secondary"
-                style={{
-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleLock()
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                aria-label={
-                  track.locked
-                    ? t('timeline.trackHeader.unlockTrack')
-                    : t('timeline.trackHeader.lockTrack')
-                }
-                data-tooltip={
-                  track.locked
-                    ? t('timeline.trackHeader.unlockTrack')
-                    : t('timeline.trackHeader.lockTrack')
-                }
-              >
-                <Lock className={`w-3 h-3 ${track.locked ? 'text-primary' : 'opacity-70'}`} />
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded hover:bg-secondary"
-                style={{
-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleSyncLock()
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                aria-label={
-                  syncLockEnabled
-                    ? t('timeline.trackHeader.disableSyncLock')
-                    : t('timeline.trackHeader.enableSyncLock')
-                }
-                data-tooltip={
-                  syncLockEnabled
-                    ? t('timeline.trackHeader.disableSyncLock')
-                    : t('timeline.trackHeader.enableSyncLock')
-                }
-              >
-                <Link2 className={`w-3 h-3 ${syncLockEnabled ? 'text-primary' : 'opacity-70'}`} />
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded hover:bg-secondary"
-                style={{
-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onCloseGaps?.()
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                aria-label={t('timeline.trackHeader.closeAllGaps')}
-                data-tooltip={t('timeline.trackHeader.closeAllGaps')}
-              >
-                <FoldHorizontal className="w-3 h-3" />
-              </Button>
+              <TrackControlButtons
+                track={track}
+                isGroup={isGroup}
+                trackDisabled={trackDisabled}
+                syncLockEnabled={syncLockEnabled}
+                onToggleDisabled={onToggleDisabled}
+                onToggleSolo={onToggleSolo}
+                onToggleLock={onToggleLock}
+                onToggleSyncLock={onToggleSyncLock}
+                onCloseGaps={onCloseGaps}
+              />
             </div>
 
             <div className="flex min-h-0 flex-1 items-center gap-1.5 overflow-hidden px-1.5">
-              <span className="min-w-0 truncate text-xs font-semibold leading-none font-mono">
+              <span
+                className={cn(
+                  'min-w-0 truncate text-xs font-semibold leading-none',
+                  !isGroup && 'font-mono',
+                )}
+              >
                 {track.name}
               </span>
               <span className="shrink-0 text-[10px] leading-none text-muted-foreground">
@@ -262,7 +356,7 @@ export const TrackHeader = memo(function TrackHeader({
       </ContextMenuTrigger>
 
       <ContextMenuContent className="w-52">
-        <ContextMenuItem onClick={onCloseGaps}>
+        <ContextMenuItem disabled={isGroup} onClick={onCloseGaps}>
           {t('timeline.trackHeader.closeAllGaps')}
         </ContextMenuItem>
 
